@@ -1,17 +1,24 @@
 package com.paddleshock.entities;
 
 import com.jme3.asset.AssetManager;
+import com.jme3.bounding.BoundingBox;
+import com.jme3.bounding.BoundingVolume;
+import com.jme3.material.Material;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.Vector2f;
 import com.jme3.math.Vector3f;
 import com.jme3.scene.Geometry;
 import com.jme3.scene.Node;
+import com.jme3.scene.Spatial;
 import com.jme3.scene.shape.Box;
 
 import com.paddleshock.GameConstants;
 
 /** The playing surface plus side rails that bounce the ball back in. */
 public class Table {
+
+    private static final String BUMPER_MODEL_PATH = "Models/Decor/bollard.glb";
+    private static final float BUMPER_HEIGHT = 0.5f;
 
     private final Node node = new Node("table");
     private final float restitutionMultiplier;
@@ -46,6 +53,36 @@ public class Table {
         Geometry rightRail = rail(assetManager, railThickness, railHeight, GameConstants.TABLE_HALF_LENGTH, railColor);
         rightRail.setLocalTranslation(GameConstants.TABLE_HALF_WIDTH + railThickness, railHeight * 0.5f, 0);
         node.attachChild(rightRail);
+
+        node.attachChild(buildCornerBumpers(assetManager, surfaceColor, railThickness, railHeight));
+    }
+
+    /** Decorative corner posts on the rails, tinted per table variant. Purely visual, no collision. */
+    private Node buildCornerBumpers(AssetManager assetManager, ColorRGBA tint, float railThickness, float railHeight) {
+        Spatial template = assetManager.loadModel(BUMPER_MODEL_PATH);
+        Material material = TexturedMaterials.createSolidLit(assetManager, tint);
+        template.depthFirstTraversal(spatial -> {
+            if (spatial instanceof Geometry geometry) {
+                geometry.setMaterial(material);
+            }
+        });
+
+        template.updateModelBound();
+        BoundingVolume bound = template.getWorldBound();
+        float nativeHeight = bound instanceof BoundingBox box ? box.getYExtent() * 2f : 1f;
+        template.setLocalScale(BUMPER_HEIGHT / nativeHeight);
+
+        Node bumpers = new Node("cornerBumpers");
+        float bumperX = GameConstants.TABLE_HALF_WIDTH + railThickness;
+        float bumperZ = GameConstants.TABLE_HALF_LENGTH - 0.4f;
+        float[][] corners = {{bumperX, bumperZ}, {bumperX, -bumperZ}, {-bumperX, bumperZ}, {-bumperX, -bumperZ}};
+
+        for (float[] corner : corners) {
+            Spatial instance = template.clone();
+            instance.setLocalTranslation(corner[0], railHeight, corner[1]);
+            bumpers.attachChild(instance);
+        }
+        return bumpers;
     }
 
     private Geometry rail(AssetManager assetManager, float halfX, float halfY, float halfZ, ColorRGBA color) {

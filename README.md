@@ -50,3 +50,4 @@ Features in this pass:
   > Trophy by jeremy [CC-BY] via Poly Pizza
   > Tennis ball by Poly by Google [CC-BY] via Poly Pizza
   > beach ball by the_normalgamer [CC-BY] via Poly Pizza
+  > Bollard by J-Toastie [CC-BY] via Poly Pizza
