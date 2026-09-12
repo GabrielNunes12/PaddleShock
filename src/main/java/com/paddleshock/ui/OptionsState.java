@@ -25,6 +25,7 @@ public class OptionsState extends BaseAppState {
     private Label brightnessLabel;
     private Label soundVolumeLabel;
     private Label videoQualityLabel;
+    private Label fullscreenLabel;
 
     private Runnable backAction = () -> {
     };
@@ -68,6 +69,8 @@ public class OptionsState extends BaseAppState {
                 () -> adjustSoundVolume(app, -0.1f), () -> adjustSoundVolume(app, 0.1f));
         videoQualityLabel = addStepperRow(panel, "VIDEO QUALITY",
                 () -> cycleVideoQuality(app, -1), () -> cycleVideoQuality(app, 1));
+        fullscreenLabel = addStepperRow(panel, "FULLSCREEN",
+                () -> toggleFullscreen(app), () -> toggleFullscreen(app));
 
         Button back = panel.addChild(new Button("BACK"));
         back.setInsets(new Insets3f(16, 0, 0, 0));
@@ -148,11 +151,21 @@ public class OptionsState extends BaseAppState {
         refreshLabels(settings);
     }
 
+    private void toggleFullscreen(PaddleShockApp app) {
+        GameSettings settings = app.getGameSettings();
+        boolean next = !settings.isFullscreen();
+        settings.setFullscreen(next);
+        app.saveGameSettings();
+        app.applyFullscreen(next);
+        refreshLabels(settings);
+    }
+
     private void refreshLabels(GameSettings settings) {
         mouseSensitivityLabel.setText(String.format("%.1f", settings.getMouseSensitivity()));
         brightnessLabel.setText(String.format("%.1f", settings.getBrightness()));
         soundVolumeLabel.setText(String.format("%.1f", settings.getSoundVolume()));
         videoQualityLabel.setText(settings.getVideoQuality().name());
+        fullscreenLabel.setText(settings.isFullscreen() ? "ON" : "OFF");
     }
 
     @Override

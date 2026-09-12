@@ -1,5 +1,8 @@
 package com.paddleshock;
 
+import java.awt.Dimension;
+import java.awt.Toolkit;
+
 import com.jme3.system.AppSettings;
 import com.paddleshock.app.PaddleShockApp;
 import com.paddleshock.data.SaveManager;
@@ -16,7 +19,13 @@ public final class Main {
 
         AppSettings settings = new AppSettings(true);
         settings.setTitle("PaddleShock");
-        settings.setResolution(1280, 720);
+        if (savedSettings.isFullscreen()) {
+            Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
+            settings.setResolution(screenSize.width, screenSize.height);
+            settings.setFullscreen(true);
+        } else {
+            settings.setResolution(1280, 720);
+        }
         settings.setSamples(savedSettings.getVideoQuality().getSamples());
         settings.setVSync(true);
         // jME defaults this to true, which reinterprets our UI/material colors as linear

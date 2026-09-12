@@ -1,5 +1,8 @@
 package com.paddleshock.app;
 
+import java.awt.Dimension;
+import java.awt.Toolkit;
+
 import com.jme3.app.SimpleApplication;
 import com.jme3.system.AppSettings;
 import com.simsilica.lemur.GuiGlobals;
@@ -131,6 +134,21 @@ public class PaddleShockApp extends SimpleApplication {
         AppSettings newSettings = new AppSettings(true);
         newSettings.copyFrom(settings);
         newSettings.setSamples(quality.getSamples());
+        setSettings(newSettings);
+        restart();
+    }
+
+    public void applyFullscreen(boolean fullscreen) {
+        AppSettings newSettings = new AppSettings(true);
+        newSettings.copyFrom(settings);
+        if (fullscreen) {
+            Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
+            newSettings.setResolution(screenSize.width, screenSize.height);
+            newSettings.setFullscreen(true);
+        } else {
+            newSettings.setResolution(1280, 720);
+            newSettings.setFullscreen(false);
+        }
         setSettings(newSettings);
         restart();
     }

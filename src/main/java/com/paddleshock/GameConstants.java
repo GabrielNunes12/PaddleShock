@@ -17,7 +17,7 @@ public final class GameConstants {
     // Paddle
     public static final float PADDLE_RADIUS = 0.6f;
     public static final float PADDLE_HEIGHT = 0.3f;
-    public static final float MOUSE_SENSITIVITY = 0.04f;
+    public static final float MOUSE_SENSITIVITY = 0.2f;
     public static final float PADDLE_PLAYER_Z = -6.5f;
     public static final float PADDLE_OPPONENT_Z = 6.5f;
     public static final float PADDLE_Z_RANGE = 2.5f;

@@ -7,13 +7,14 @@ public class GameSettings {
     private float brightness = 1.0f;
     private float soundVolume = 0.8f;
     private VideoQuality videoQuality = VideoQuality.MEDIUM;
+    private boolean fullscreen = false;
 
     public float getMouseSensitivity() {
         return mouseSensitivity;
     }
 
     public void setMouseSensitivity(float mouseSensitivity) {
-        this.mouseSensitivity = clamp(mouseSensitivity, 0.1f, 3.0f);
+        this.mouseSensitivity = clamp(mouseSensitivity, 0.1f, 5.0f);
     }
 
     public float getBrightness() {
@@ -38,6 +39,14 @@ public class GameSettings {
 
     public void setVideoQuality(VideoQuality videoQuality) {
         this.videoQuality = videoQuality;
+    }
+
+    public boolean isFullscreen() {
+        return fullscreen;
+    }
+
+    public void setFullscreen(boolean fullscreen) {
+        this.fullscreen = fullscreen;
     }
 
     private static float clamp(float value, float min, float max) {
