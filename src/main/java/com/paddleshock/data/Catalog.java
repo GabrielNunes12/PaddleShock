@@ -5,6 +5,7 @@ import java.util.Optional;
 
 import com.jme3.math.ColorRGBA;
 
+import com.paddleshock.entities.BallModel;
 import com.paddleshock.entities.TextureSet;
 
 /** Hard-coded store catalog. Each list's first entry is the free default. */
@@ -28,11 +29,11 @@ public final class Catalog {
 
     public static final List<BallDefinition> BALLS = List.of(
             new BallDefinition("ball_classic", "Classic", 0,
-                    1.0f, 1.0f, ColorRGBA.White, TextureSet.RUBBER),
+                    1.0f, 1.0f, ColorRGBA.White, TextureSet.RUBBER, BallModel.CLASSIC),
             new BallDefinition("ball_pellet", "Pellet", 150,
-                    1.3f, 0.7f, new ColorRGBA(1f, 0.3f, 0.3f, 1f), TextureSet.METAL),
+                    1.3f, 0.7f, new ColorRGBA(1f, 0.3f, 0.3f, 1f), TextureSet.METAL, BallModel.NONE),
             new BallDefinition("ball_beach", "Beach Ball", 150,
-                    0.7f, 1.6f, new ColorRGBA(0.3f, 0.8f, 1f, 1f), TextureSet.PLASTIC));
+                    0.7f, 1.6f, new ColorRGBA(0.3f, 0.8f, 1f, 1f), TextureSet.PLASTIC, BallModel.BEACH));
 
     private Catalog() {
     }

@@ -44,6 +44,9 @@ Features in this pass:
 ## Third-party assets
 
 - Textures: CC0 (public domain) from [ambientCG](https://ambientcg.com) — see `src/main/resources/Textures/CREDITS.md`
-- Paddle and decorative mini table-tennis table models: CC-BY, require attribution — see `src/main/resources/Models/CREDITS.md`. Before shipping, add an in-game credits screen showing:
+- Paddle, ball, and decorative models: CC-BY, require attribution — see `src/main/resources/Models/CREDITS.md`. Before shipping, add an in-game credits screen showing:
   > Table Tennis Paddle by jeremy [CC-BY] via Poly Pizza
   > Ping Pong table by burunduk [CC-BY] via Poly Pizza
+  > Trophy by jeremy [CC-BY] via Poly Pizza
+  > Tennis ball by Poly by Google [CC-BY] via Poly Pizza
+  > beach ball by the_normalgamer [CC-BY] via Poly Pizza

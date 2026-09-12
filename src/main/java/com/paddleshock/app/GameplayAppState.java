@@ -123,12 +123,14 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         gameNode.attachChild(opponentPaddle.getNode());
 
         ball = new Ball(getApplication().getAssetManager(), ballDef.getColor(), ballDef.getTextureSet(),
-                ballDef.getSpeedMultiplier(), ballDef.getSizeMultiplier(), tableDef.getRestitutionMultiplier());
-        gameNode.attachChild(ball.getGeometry());
+                ballDef.getBallModel(), ballDef.getSpeedMultiplier(), ballDef.getSizeMultiplier(),
+                tableDef.getRestitutionMultiplier());
+        gameNode.attachChild(ball.getNode());
 
         powerUpManager = new PowerUpManager(getApplication().getAssetManager(), gameNode, playerPaddle, opponentPaddle);
 
         gameNode.attachChild(buildSideDecor());
+        gameNode.attachChild(buildTrophyDecor());
     }
 
     /** A miniature ping-pong table (with its own tiny paddles/net/ball) as a display piece beside the real table. */
@@ -138,6 +140,22 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         decor.rotate(0, FastMath.QUARTER_PI * 0.6f, 0);
         decor.setLocalTranslation(GameConstants.TABLE_HALF_WIDTH + 2f, 0f, -3f);
         return decor;
+    }
+
+    /** A trophy display piece on the opposite side of the table from the mini ping-pong table. */
+    private Spatial buildTrophyDecor() {
+        Spatial trophy = getApplication().getAssetManager().loadModel("Models/Decor/trophy.glb");
+        scaleToHeight(trophy, 1.4f);
+        trophy.setLocalTranslation(-GameConstants.TABLE_HALF_WIDTH - 2f, 0f, -3f);
+        return trophy;
+    }
+
+    /** Scales a loaded model (whose own baked-in size varies per source file) to a target height. */
+    private void scaleToHeight(Spatial spatial, float targetHeight) {
+        spatial.updateModelBound();
+        com.jme3.bounding.BoundingVolume bound = spatial.getWorldBound();
+        float nativeHeight = bound instanceof com.jme3.bounding.BoundingBox box ? box.getYExtent() * 2f : 1f;
+        spatial.setLocalScale(targetHeight / nativeHeight);
     }
 
     private void setUpHud(SimpleApplication simpleApp) {
