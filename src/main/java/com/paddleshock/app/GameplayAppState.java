@@ -114,11 +114,11 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
 
         playerPaddle = new Paddle(getApplication().getAssetManager(), paddleDef.getColor(), paddleDef.getTextureSet(),
                 GameConstants.PADDLE_PLAYER_Z, paddleDef.getSpeedMultiplier(), paddleDef.getSizeMultiplier());
-        gameNode.attachChild(playerPaddle.getGeometry());
+        gameNode.attachChild(playerPaddle.getNode());
 
         opponentPaddle = new Paddle(getApplication().getAssetManager(), new ColorRGBA(1f, 0.35f, 0.3f, 1f),
                 TextureSet.PLASTIC, GameConstants.PADDLE_OPPONENT_Z, 1f, 1f);
-        gameNode.attachChild(opponentPaddle.getGeometry());
+        gameNode.attachChild(opponentPaddle.getNode());
 
         ball = new Ball(getApplication().getAssetManager(), ballDef.getColor(), ballDef.getTextureSet(),
                 ballDef.getSpeedMultiplier(), ballDef.getSizeMultiplier(), tableDef.getRestitutionMultiplier());

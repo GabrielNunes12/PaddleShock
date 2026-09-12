@@ -3,7 +3,7 @@ package com.paddleshock.entities;
 import com.jme3.asset.AssetManager;
 import com.jme3.material.Material;
 import com.jme3.math.ColorRGBA;
-import com.jme3.scene.Geometry;
+import com.jme3.scene.Spatial;
 import com.jme3.texture.Texture;
 import com.jme3.util.TangentBinormalGenerator;
 
@@ -44,7 +44,7 @@ final class TexturedMaterials {
     }
 
     /** Normal mapping needs tangent data that jME's primitive shapes don't generate by default. */
-    static void generateTangents(Geometry geometry) {
-        TangentBinormalGenerator.generate(geometry);
+    static void generateTangents(Spatial spatial) {
+        TangentBinormalGenerator.generate(spatial);
     }
 }

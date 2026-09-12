@@ -1,18 +1,25 @@
 package com.paddleshock.entities;
 
 import com.jme3.asset.AssetManager;
+import com.jme3.material.Material;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.FastMath;
 import com.jme3.math.Vector3f;
 import com.jme3.scene.Geometry;
-import com.jme3.scene.shape.Cylinder;
+import com.jme3.scene.Node;
+import com.jme3.scene.Spatial;
 
 import com.paddleshock.GameConstants;
 
-/** A single paddle. Position moves along X (side to side) and a small Z range. */
+/** A single paddle: an imported table-tennis paddle mesh, tinted/textured per catalog item. */
 public class Paddle {
 
-    private final Geometry geometry;
+    private static final String MODEL_PATH = "Models/Paddle/paddle.glb";
+
+    /** Uniform scale bringing the source model (~2 units wide, ~3.6 tall) down to game scale. */
+    private static final float MODEL_SCALE = 0.4f;
+
+    private final Node node;
     private final float homeZ;
     private float x = 0f;
     private float zOffset = 0f;
@@ -28,12 +35,19 @@ public class Paddle {
         this.baseSpeedMultiplier = baseSpeedMultiplier;
         this.baseRadiusMultiplier = baseRadiusMultiplier;
 
-        Cylinder shape = new Cylinder(16, 24, GameConstants.PADDLE_RADIUS, GameConstants.PADDLE_HEIGHT, true);
-        geometry = new Geometry("paddle", shape);
-        geometry.setMaterial(TexturedMaterials.create(assetManager, textureSet.getColorMap(),
-                textureSet.getNormalMap(), color));
-        TexturedMaterials.generateTangents(geometry);
-        geometry.rotate(FastMath.HALF_PI, 0, 0);
+        Spatial model = assetManager.loadModel(MODEL_PATH);
+        Material material = TexturedMaterials.create(assetManager, textureSet.getColorMap(),
+                textureSet.getNormalMap(), color);
+        model.depthFirstTraversal(spatial -> {
+            if (spatial instanceof Geometry geometry) {
+                geometry.setMaterial(material);
+            }
+        });
+        TexturedMaterials.generateTangents(model);
+        model.setLocalScale(MODEL_SCALE);
+
+        node = new Node("paddle");
+        node.attachChild(model);
         updateTransform();
     }
 
@@ -51,17 +65,17 @@ public class Paddle {
     }
 
     private void updateTransform() {
-        geometry.setLocalTranslation(x, GameConstants.PADDLE_HEIGHT, homeZ + zOffset);
+        node.setLocalTranslation(x, GameConstants.PADDLE_HEIGHT, homeZ + zOffset);
         float scale = baseRadiusMultiplier * buffRadiusMultiplier;
-        geometry.setLocalScale(scale, 1f, scale);
+        node.setLocalScale(scale, 1f, scale);
     }
 
     public Vector3f getPosition() {
-        return geometry.getLocalTranslation();
+        return node.getLocalTranslation();
     }
 
-    public Geometry getGeometry() {
-        return geometry;
+    public Node getNode() {
+        return node;
     }
 
     public float getEffectiveRadius() {

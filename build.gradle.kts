@@ -23,6 +23,7 @@ dependencies {
     implementation("org.jmonkeyengine:jme3-desktop:$jmeVersion")
     implementation("org.jmonkeyengine:jme3-lwjgl3:$jmeVersion")
     implementation("org.jmonkeyengine:jme3-effects:$jmeVersion")
+    implementation("org.jmonkeyengine:jme3-plugins:$jmeVersion")
     implementation("com.simsilica:lemur:1.16.0")
     runtimeOnly("org.codehaus.groovy:groovy:3.0.21")
     runtimeOnly("org.codehaus.groovy:groovy-jsr223:3.0.21")

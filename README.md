@@ -40,3 +40,9 @@ Features in this pass:
 - jMonkeyEngine 3.6
 - Gradle
 - Steamworks (via `steamworks4j`) — planned, not yet integrated
+
+## Third-party assets
+
+- Textures: CC0 (public domain) from [ambientCG](https://ambientcg.com) — see `src/main/resources/Textures/CREDITS.md`
+- Paddle model: CC-BY, requires attribution — see `src/main/resources/Models/CREDITS.md`. Before shipping, add an in-game credits screen showing:
+  > Table Tennis Paddle by jeremy [CC-BY] via Poly Pizza
