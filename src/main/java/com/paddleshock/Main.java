@@ -24,7 +24,7 @@ public final class Main {
             settings.setResolution(screenSize.width, screenSize.height);
             settings.setFullscreen(true);
         } else {
-            settings.setResolution(1280, 720);
+            settings.setResolution(savedSettings.getResolution().getWidth(), savedSettings.getResolution().getHeight());
         }
         settings.setSamples(savedSettings.getVideoQuality().getSamples());
         settings.setVSync(true);

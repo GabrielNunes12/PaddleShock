@@ -8,6 +8,7 @@ public class GameSettings {
     private float soundVolume = 0.8f;
     private VideoQuality videoQuality = VideoQuality.MEDIUM;
     private boolean fullscreen = false;
+    private Resolution resolution = Resolution.R_1280x720;
 
     public float getMouseSensitivity() {
         return mouseSensitivity;
@@ -47,6 +48,14 @@ public class GameSettings {
 
     public void setFullscreen(boolean fullscreen) {
         this.fullscreen = fullscreen;
+    }
+
+    public Resolution getResolution() {
+        return resolution;
+    }
+
+    public void setResolution(Resolution resolution) {
+        this.resolution = resolution;
     }
 
     private static float clamp(float value, float min, float max) {

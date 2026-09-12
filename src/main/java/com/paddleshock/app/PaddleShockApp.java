@@ -11,7 +11,6 @@ import com.simsilica.lemur.style.BaseStyles;
 import com.paddleshock.data.PlayerProfile;
 import com.paddleshock.data.SaveManager;
 import com.paddleshock.settings.GameSettings;
-import com.paddleshock.settings.VideoQuality;
 import com.paddleshock.ui.MainMenuState;
 import com.paddleshock.ui.OptionsState;
 import com.paddleshock.ui.PauseState;
@@ -130,25 +129,21 @@ public class PaddleShockApp extends SimpleApplication {
         optionsState.setEnabled(true);
     }
 
-    public void applyVideoQuality(VideoQuality quality) {
+    /** Rebuilds the display (resolution/fullscreen/antialiasing) from the current settings and restarts. */
+    public void applyDisplaySettings() {
         AppSettings newSettings = new AppSettings(true);
         newSettings.copyFrom(settings);
-        newSettings.setSamples(quality.getSamples());
-        setSettings(newSettings);
-        restart();
-    }
+        newSettings.setSamples(gameSettings.getVideoQuality().getSamples());
 
-    public void applyFullscreen(boolean fullscreen) {
-        AppSettings newSettings = new AppSettings(true);
-        newSettings.copyFrom(settings);
-        if (fullscreen) {
+        if (gameSettings.isFullscreen()) {
             Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
             newSettings.setResolution(screenSize.width, screenSize.height);
             newSettings.setFullscreen(true);
         } else {
-            newSettings.setResolution(1280, 720);
+            newSettings.setResolution(gameSettings.getResolution().getWidth(), gameSettings.getResolution().getHeight());
             newSettings.setFullscreen(false);
         }
+
         setSettings(newSettings);
         restart();
     }

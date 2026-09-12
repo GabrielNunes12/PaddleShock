@@ -15,6 +15,7 @@ import com.simsilica.lemur.component.SpringGridLayout;
 
 import com.paddleshock.app.PaddleShockApp;
 import com.paddleshock.settings.GameSettings;
+import com.paddleshock.settings.Resolution;
 import com.paddleshock.settings.VideoQuality;
 
 public class OptionsState extends BaseAppState {
@@ -26,6 +27,7 @@ public class OptionsState extends BaseAppState {
     private Label soundVolumeLabel;
     private Label videoQualityLabel;
     private Label fullscreenLabel;
+    private Label resolutionLabel;
 
     private Runnable backAction = () -> {
     };
@@ -69,6 +71,8 @@ public class OptionsState extends BaseAppState {
                 () -> adjustSoundVolume(app, -0.1f), () -> adjustSoundVolume(app, 0.1f));
         videoQualityLabel = addStepperRow(panel, "VIDEO QUALITY",
                 () -> cycleVideoQuality(app, -1), () -> cycleVideoQuality(app, 1));
+        resolutionLabel = addStepperRow(panel, "RESOLUTION",
+                () -> cycleResolution(app, -1), () -> cycleResolution(app, 1));
         fullscreenLabel = addStepperRow(panel, "FULLSCREEN",
                 () -> toggleFullscreen(app), () -> toggleFullscreen(app));
 
@@ -147,16 +151,27 @@ public class OptionsState extends BaseAppState {
         int nextIndex = Math.floorMod(settings.getVideoQuality().ordinal() + direction, values.length);
         settings.setVideoQuality(values[nextIndex]);
         app.saveGameSettings();
-        app.applyVideoQuality(values[nextIndex]);
+        app.applyDisplaySettings();
         refreshLabels(settings);
     }
 
     private void toggleFullscreen(PaddleShockApp app) {
         GameSettings settings = app.getGameSettings();
-        boolean next = !settings.isFullscreen();
-        settings.setFullscreen(next);
+        settings.setFullscreen(!settings.isFullscreen());
         app.saveGameSettings();
-        app.applyFullscreen(next);
+        app.applyDisplaySettings();
+        refreshLabels(settings);
+    }
+
+    private void cycleResolution(PaddleShockApp app, int direction) {
+        Resolution[] values = Resolution.values();
+        GameSettings settings = app.getGameSettings();
+        int nextIndex = Math.floorMod(settings.getResolution().ordinal() + direction, values.length);
+        settings.setResolution(values[nextIndex]);
+        app.saveGameSettings();
+        if (!settings.isFullscreen()) {
+            app.applyDisplaySettings();
+        }
         refreshLabels(settings);
     }
 
@@ -165,6 +180,7 @@ public class OptionsState extends BaseAppState {
         brightnessLabel.setText(String.format("%.1f", settings.getBrightness()));
         soundVolumeLabel.setText(String.format("%.1f", settings.getSoundVolume()));
         videoQualityLabel.setText(settings.getVideoQuality().name());
+        resolutionLabel.setText(settings.getResolution().toString());
         fullscreenLabel.setText(settings.isFullscreen() ? "ON" : "OFF");
     }
 
