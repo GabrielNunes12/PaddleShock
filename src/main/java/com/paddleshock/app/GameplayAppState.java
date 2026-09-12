@@ -12,8 +12,10 @@ import com.jme3.input.controls.KeyTrigger;
 import com.jme3.light.AmbientLight;
 import com.jme3.light.DirectionalLight;
 import com.jme3.math.ColorRGBA;
+import com.jme3.math.FastMath;
 import com.jme3.math.Vector3f;
 import com.jme3.scene.Node;
+import com.jme3.scene.Spatial;
 
 import com.paddleshock.GameConstants;
 import com.paddleshock.data.BallDefinition;
@@ -125,6 +127,17 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         gameNode.attachChild(ball.getGeometry());
 
         powerUpManager = new PowerUpManager(getApplication().getAssetManager(), gameNode, playerPaddle, opponentPaddle);
+
+        gameNode.attachChild(buildSideDecor());
+    }
+
+    /** A miniature ping-pong table (with its own tiny paddles/net/ball) as a display piece beside the real table. */
+    private Spatial buildSideDecor() {
+        Spatial decor = getApplication().getAssetManager().loadModel("Models/Decor/pingpong.glb");
+        decor.setLocalScale(3f);
+        decor.rotate(0, FastMath.QUARTER_PI * 0.6f, 0);
+        decor.setLocalTranslation(GameConstants.TABLE_HALF_WIDTH + 2f, 0f, -3f);
+        return decor;
     }
 
     private void setUpHud(SimpleApplication simpleApp) {
