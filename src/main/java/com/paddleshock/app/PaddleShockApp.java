@@ -12,6 +12,7 @@ import com.paddleshock.settings.VideoQuality;
 import com.paddleshock.ui.MainMenuState;
 import com.paddleshock.ui.OptionsState;
 import com.paddleshock.ui.PauseState;
+import com.paddleshock.ui.SplashState;
 import com.paddleshock.ui.StoreState;
 
 /** App shell: owns save data and switches between the menu/gameplay app states. */
@@ -20,6 +21,7 @@ public class PaddleShockApp extends SimpleApplication {
     private PlayerProfile profile;
     private GameSettings gameSettings;
 
+    private SplashState splashState;
     private MainMenuState mainMenuState;
     private PauseState pauseState;
     private OptionsState optionsState;
@@ -39,16 +41,19 @@ public class PaddleShockApp extends SimpleApplication {
         BaseStyles.loadGlassStyle();
         GuiGlobals.getInstance().getStyles().setDefaultStyle("glass");
 
+        splashState = new SplashState();
         mainMenuState = new MainMenuState();
         pauseState = new PauseState();
         optionsState = new OptionsState();
         storeState = new StoreState();
 
+        stateManager.attach(splashState);
         stateManager.attach(mainMenuState);
         stateManager.attach(pauseState);
         stateManager.attach(optionsState);
         stateManager.attach(storeState);
 
+        mainMenuState.setEnabled(false);
         pauseState.setEnabled(false);
         optionsState.setEnabled(false);
         storeState.setEnabled(false);
@@ -75,6 +80,7 @@ public class PaddleShockApp extends SimpleApplication {
             stateManager.detach(gameplayState);
             gameplayState = null;
         }
+        splashState.setEnabled(false);
         pauseState.setEnabled(false);
         optionsState.setEnabled(false);
         storeState.setEnabled(false);

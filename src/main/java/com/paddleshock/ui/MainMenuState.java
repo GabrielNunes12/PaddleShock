@@ -3,8 +3,11 @@ package com.paddleshock.ui;
 import com.jme3.app.Application;
 import com.jme3.app.SimpleApplication;
 import com.jme3.app.state.BaseAppState;
+import com.jme3.math.ColorRGBA;
+import com.jme3.math.Vector2f;
 import com.jme3.math.Vector3f;
 import com.jme3.scene.Node;
+import com.jme3.texture.Texture;
 import com.simsilica.lemur.Axis;
 import com.simsilica.lemur.Button;
 import com.simsilica.lemur.Container;
@@ -18,6 +21,8 @@ import com.paddleshock.app.PaddleShockApp;
 public class MainMenuState extends BaseAppState {
 
     private final Node uiRoot = new Node("mainMenuUi");
+    private Label comingSoonLabel;
+    private float comingSoonTimer;
 
     @Override
     protected void initialize(Application application) {
@@ -26,13 +31,20 @@ public class MainMenuState extends BaseAppState {
 
     private void rebuild(PaddleShockApp app) {
         uiRoot.detachAllChildren();
+        comingSoonLabel = null;
+        comingSoonTimer = 0f;
 
         SimpleApplication simpleApp = (SimpleApplication) app;
         float screenW = simpleApp.getCamera().getWidth();
         float screenH = simpleApp.getCamera().getHeight();
 
         Container background = new Container();
-        background.setBackground(new QuadBackgroundComponent(Theme.BACKGROUND));
+        Texture bgTexture = simpleApp.getAssetManager().loadTexture("Textures/Asphalt/Asphalt_Color.jpg");
+        bgTexture.setWrap(Texture.WrapMode.Repeat);
+        QuadBackgroundComponent bgComponent = new QuadBackgroundComponent(bgTexture);
+        bgComponent.setTextureCoordinateScale(new Vector2f(4f, 2.3f));
+        bgComponent.setColor(new ColorRGBA(0.5f, 0.55f, 0.65f, 1f));
+        background.setBackground(bgComponent);
         background.setPreferredSize(new Vector3f(screenW, screenH, 0));
         background.setLocalTranslation(0, screenH, 0);
         uiRoot.attachChild(background);
@@ -48,23 +60,37 @@ public class MainMenuState extends BaseAppState {
         uiRoot.attachChild(shockLabel);
 
         float logoWidth = paddleLabel.getPreferredSize().x + shockLabel.getPreferredSize().x;
-        float logoY = screenH * 0.68f;
+        float logoY = screenH * 0.78f;
         paddleLabel.setLocalTranslation((screenW - logoWidth) / 2f, logoY, 1);
         shockLabel.setLocalTranslation((screenW - logoWidth) / 2f + paddleLabel.getPreferredSize().x, logoY, 1);
 
         Container menu = new Container(new SpringGridLayout(Axis.Y, Axis.X));
         addMenuButton(menu, "PLAY VS AI", Theme.ORANGE, Theme.ON_ACCENT, app::startMatchVsAI);
+        addMenuButton(menu, "MULTIPLAYER", Theme.PANEL_HOVER, Theme.TEXT,
+                () -> showComingSoon(menu, screenW));
         addMenuButton(menu, "STORE", Theme.PANEL_HOVER, Theme.TEXT, app::showStore);
-        addMenuButton(menu, "OPTIONS", Theme.PANEL_HOVER, Theme.TEXT, () -> app.showOptions(app::showMainMenu));
+        addMenuButton(menu, "SETTINGS", Theme.PANEL_HOVER, Theme.TEXT, () -> app.showOptions(app::showMainMenu));
         addMenuButton(menu, "QUIT", Theme.PANEL_HOVER, Theme.TEXT, app::stop);
 
         Vector3f menuSize = menu.getPreferredSize();
-        menu.setLocalTranslation((screenW - menuSize.x) / 2f, screenH * 0.5f, 1);
+        menu.setLocalTranslation((screenW - menuSize.x) / 2f, screenH * 0.56f, 1);
         uiRoot.attachChild(menu);
     }
 
-    private void addMenuButton(Container menu, String label, com.jme3.math.ColorRGBA bg,
-            com.jme3.math.ColorRGBA fg, Runnable action) {
+    private void showComingSoon(Container menu, float screenW) {
+        if (comingSoonLabel != null) {
+            comingSoonLabel.removeFromParent();
+        }
+        comingSoonLabel = new Label("MULTIPLAYER — COMING SOON");
+        comingSoonLabel.setFontSize(15);
+        comingSoonLabel.setColor(Theme.ORANGE);
+        Vector3f size = comingSoonLabel.getPreferredSize();
+        comingSoonLabel.setLocalTranslation((screenW - size.x) / 2f, menu.getLocalTranslation().y - menu.getPreferredSize().y - 12f, 1);
+        uiRoot.attachChild(comingSoonLabel);
+        comingSoonTimer = 1.8f;
+    }
+
+    private void addMenuButton(Container menu, String label, ColorRGBA bg, ColorRGBA fg, Runnable action) {
         Button button = menu.addChild(new Button(label));
         button.setInsets(new Insets3f(6, 0, 6, 0));
         button.setBackground(new QuadBackgroundComponent(bg));
@@ -72,6 +98,17 @@ public class MainMenuState extends BaseAppState {
         button.setFontSize(18);
         button.setPreferredSize(new Vector3f(280, 48, 0));
         button.addClickCommands(source -> action.run());
+    }
+
+    @Override
+    public void update(float tpf) {
+        if (comingSoonTimer > 0f) {
+            comingSoonTimer -= tpf;
+            if (comingSoonTimer <= 0f && comingSoonLabel != null) {
+                comingSoonLabel.removeFromParent();
+                comingSoonLabel = null;
+            }
+        }
     }
 
     @Override
