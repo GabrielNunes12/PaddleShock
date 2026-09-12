@@ -1,7 +1,6 @@
 package com.paddleshock.entities;
 
 import com.jme3.asset.AssetManager;
-import com.jme3.material.Material;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.Vector3f;
 import com.jme3.scene.Geometry;
@@ -18,17 +17,17 @@ public class Ball {
     private final float baseSpeed;
     private final float restitutionMultiplier;
 
-    public Ball(AssetManager assetManager, ColorRGBA color, float speedMultiplier, float sizeMultiplier,
-            float restitutionMultiplier) {
+    public Ball(AssetManager assetManager, ColorRGBA color, TextureSet textureSet, float speedMultiplier,
+            float sizeMultiplier, float restitutionMultiplier) {
         this.radius = GameConstants.BALL_RADIUS * sizeMultiplier;
         this.baseSpeed = GameConstants.BALL_BASE_SPEED * speedMultiplier;
         this.restitutionMultiplier = restitutionMultiplier;
 
         Sphere shape = new Sphere(16, 16, radius);
         geometry = new Geometry("ball", shape);
-        Material material = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
-        material.setColor("Color", color);
-        geometry.setMaterial(material);
+        geometry.setMaterial(TexturedMaterials.create(assetManager, textureSet.getColorMap(),
+                textureSet.getNormalMap(), color));
+        TexturedMaterials.generateTangents(geometry);
         geometry.setLocalTranslation(0, radius, 0);
     }
 

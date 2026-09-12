@@ -24,6 +24,7 @@ import com.paddleshock.data.TableDefinition;
 import com.paddleshock.entities.Ball;
 import com.paddleshock.entities.Paddle;
 import com.paddleshock.entities.Table;
+import com.paddleshock.entities.TextureSet;
 import com.paddleshock.input.PlayerInput;
 import com.paddleshock.powerups.PowerUpManager;
 
@@ -48,6 +49,9 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     private int opponentScore = 0;
     private BitmapText scoreText;
 
+    private final Vector3f screenRightWorld = new Vector3f();
+    private final Vector3f screenUpWorld = new Vector3f();
+
     @Override
     protected void initialize(Application application) {
         this.app = (PaddleShockApp) application;
@@ -70,6 +74,15 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     private void setUpCamera(SimpleApplication simpleApp) {
         simpleApp.getCamera().setLocation(new Vector3f(0, 7f, -11f));
         simpleApp.getCamera().lookAt(new Vector3f(0, 0, -1f), Vector3f.UNIT_Y);
+
+        // Map mouse movement to table-plane directions using the camera's actual
+        // orientation, rather than assuming screen-right is world +X: the camera
+        // is angled, so that assumption was inverting the paddle's controls.
+        Vector3f camLeft = simpleApp.getCamera().getLeft();
+        screenRightWorld.set(-camLeft.x, 0, -camLeft.z).normalizeLocal();
+
+        Vector3f camDirection = simpleApp.getCamera().getDirection();
+        screenUpWorld.set(camDirection.x, 0, camDirection.z).normalizeLocal();
     }
 
     private void setUpLights() {
@@ -96,18 +109,18 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                 .orElse(Catalog.BALLS.get(0));
 
         table = new Table(getApplication().getAssetManager(), tableDef.getSurfaceColor(),
-                tableDef.getRestitutionMultiplier());
+                tableDef.getTextureSet(), tableDef.getRestitutionMultiplier());
         gameNode.attachChild(table.getNode());
 
-        playerPaddle = new Paddle(getApplication().getAssetManager(), paddleDef.getColor(),
+        playerPaddle = new Paddle(getApplication().getAssetManager(), paddleDef.getColor(), paddleDef.getTextureSet(),
                 GameConstants.PADDLE_PLAYER_Z, paddleDef.getSpeedMultiplier(), paddleDef.getSizeMultiplier());
         gameNode.attachChild(playerPaddle.getGeometry());
 
         opponentPaddle = new Paddle(getApplication().getAssetManager(), new ColorRGBA(1f, 0.35f, 0.3f, 1f),
-                GameConstants.PADDLE_OPPONENT_Z, 1f, 1f);
+                TextureSet.PLASTIC, GameConstants.PADDLE_OPPONENT_Z, 1f, 1f);
         gameNode.attachChild(opponentPaddle.getGeometry());
 
-        ball = new Ball(getApplication().getAssetManager(), ballDef.getColor(),
+        ball = new Ball(getApplication().getAssetManager(), ballDef.getColor(), ballDef.getTextureSet(),
                 ballDef.getSpeedMultiplier(), ballDef.getSizeMultiplier(), tableDef.getRestitutionMultiplier());
         gameNode.attachChild(ball.getGeometry());
 
@@ -142,9 +155,10 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     @Override
     public void update(float tpf) {
         float[] mouseDelta = playerInput.consumeDelta();
-        playerPaddle.moveDelta(
-                mouseDelta[0] * GameConstants.MOUSE_SENSITIVITY * app.getGameSettings().getMouseSensitivity(),
-                mouseDelta[1] * GameConstants.MOUSE_SENSITIVITY * app.getGameSettings().getMouseSensitivity());
+        float scale = GameConstants.MOUSE_SENSITIVITY * app.getGameSettings().getMouseSensitivity();
+        float worldDeltaX = (screenRightWorld.x * mouseDelta[0] + screenUpWorld.x * mouseDelta[1]) * scale;
+        float worldDeltaZ = (screenRightWorld.z * mouseDelta[0] + screenUpWorld.z * mouseDelta[1]) * scale;
+        playerPaddle.moveDelta(worldDeltaX, worldDeltaZ);
         updateOpponentAi(tpf);
 
         ball.update(tpf);

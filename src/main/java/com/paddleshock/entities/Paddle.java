@@ -1,7 +1,6 @@
 package com.paddleshock.entities;
 
 import com.jme3.asset.AssetManager;
-import com.jme3.material.Material;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.FastMath;
 import com.jme3.math.Vector3f;
@@ -23,7 +22,7 @@ public class Paddle {
     private float buffSpeedMultiplier = 1f;
     private float buffRadiusMultiplier = 1f;
 
-    public Paddle(AssetManager assetManager, ColorRGBA color, float homeZ,
+    public Paddle(AssetManager assetManager, ColorRGBA color, TextureSet textureSet, float homeZ,
             float baseSpeedMultiplier, float baseRadiusMultiplier) {
         this.homeZ = homeZ;
         this.baseSpeedMultiplier = baseSpeedMultiplier;
@@ -31,9 +30,9 @@ public class Paddle {
 
         Cylinder shape = new Cylinder(16, 24, GameConstants.PADDLE_RADIUS, GameConstants.PADDLE_HEIGHT, true);
         geometry = new Geometry("paddle", shape);
-        Material material = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
-        material.setColor("Color", color);
-        geometry.setMaterial(material);
+        geometry.setMaterial(TexturedMaterials.create(assetManager, textureSet.getColorMap(),
+                textureSet.getNormalMap(), color));
+        TexturedMaterials.generateTangents(geometry);
         geometry.rotate(FastMath.HALF_PI, 0, 0);
         updateTransform();
     }

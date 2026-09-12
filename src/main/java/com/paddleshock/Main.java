@@ -19,6 +19,9 @@ public final class Main {
         settings.setResolution(1280, 720);
         settings.setSamples(savedSettings.getVideoQuality().getSamples());
         settings.setVSync(true);
+        // jME defaults this to true, which reinterprets our UI/material colors as linear
+        // and washes them out on screen; keep authored colors WYSIWYG instead.
+        settings.setGammaCorrection(false);
 
         app.setSettings(settings);
         app.setShowSettings(false);

@@ -3,10 +3,14 @@ package com.paddleshock.ui;
 import com.jme3.app.Application;
 import com.jme3.app.SimpleApplication;
 import com.jme3.app.state.BaseAppState;
+import com.jme3.math.Vector3f;
+import com.jme3.scene.Node;
+import com.simsilica.lemur.Axis;
 import com.simsilica.lemur.Button;
 import com.simsilica.lemur.Container;
+import com.simsilica.lemur.Insets3f;
 import com.simsilica.lemur.Label;
-import com.simsilica.lemur.Axis;
+import com.simsilica.lemur.component.QuadBackgroundComponent;
 import com.simsilica.lemur.component.SpringGridLayout;
 
 import com.paddleshock.app.PaddleShockApp;
@@ -15,7 +19,8 @@ import com.paddleshock.settings.VideoQuality;
 
 public class OptionsState extends BaseAppState {
 
-    private Container window;
+    private final Node uiRoot = new Node("optionsUi");
+
     private Label mouseSensitivityLabel;
     private Label brightnessLabel;
     private Label soundVolumeLabel;
@@ -30,45 +35,85 @@ public class OptionsState extends BaseAppState {
 
     @Override
     protected void initialize(Application application) {
-        PaddleShockApp app = (PaddleShockApp) application;
+        // Built fresh in rebuild() every time the screen is shown.
+    }
 
-        window = new Container();
-        window.addChild(new Label("Options"));
+    private void rebuild(PaddleShockApp app) {
+        uiRoot.detachAllChildren();
 
-        mouseSensitivityLabel = addStepperRow(window, "Mouse sensitivity",
-                () -> adjustMouseSensitivity(app, -0.1f),
-                () -> adjustMouseSensitivity(app, 0.1f));
+        SimpleApplication simpleApp = (SimpleApplication) app;
+        float screenW = simpleApp.getCamera().getWidth();
+        float screenH = simpleApp.getCamera().getHeight();
 
-        brightnessLabel = addStepperRow(window, "Brightness",
-                () -> adjustBrightness(app, -0.1f),
-                () -> adjustBrightness(app, 0.1f));
+        Container background = new Container();
+        background.setBackground(new QuadBackgroundComponent(Theme.BACKGROUND));
+        background.setPreferredSize(new Vector3f(screenW, screenH, 0));
+        background.setLocalTranslation(0, screenH, 0);
+        uiRoot.attachChild(background);
 
-        soundVolumeLabel = addStepperRow(window, "Sound volume",
-                () -> adjustSoundVolume(app, -0.1f),
-                () -> adjustSoundVolume(app, 0.1f));
+        Container panel = new Container(new SpringGridLayout(Axis.Y, Axis.X));
+        panel.setBackground(new QuadBackgroundComponent(Theme.PANEL));
+        panel.setInsets(new Insets3f(24, 32, 24, 32));
 
-        videoQualityLabel = addStepperRow(window, "Video quality",
-                () -> cycleVideoQuality(app, -1),
-                () -> cycleVideoQuality(app, 1));
+        Label title = panel.addChild(new Label("OPTIONS"));
+        title.setFontSize(28);
+        title.setColor(Theme.ORANGE);
+        title.setInsets(new Insets3f(0, 0, 16, 0));
 
-        Button back = window.addChild(new Button("Back"));
+        mouseSensitivityLabel = addStepperRow(panel, "MOUSE SENSITIVITY",
+                () -> adjustMouseSensitivity(app, -0.1f), () -> adjustMouseSensitivity(app, 0.1f));
+        brightnessLabel = addStepperRow(panel, "BRIGHTNESS",
+                () -> adjustBrightness(app, -0.1f), () -> adjustBrightness(app, 0.1f));
+        soundVolumeLabel = addStepperRow(panel, "SOUND VOLUME",
+                () -> adjustSoundVolume(app, -0.1f), () -> adjustSoundVolume(app, 0.1f));
+        videoQualityLabel = addStepperRow(panel, "VIDEO QUALITY",
+                () -> cycleVideoQuality(app, -1), () -> cycleVideoQuality(app, 1));
+
+        Button back = panel.addChild(new Button("BACK"));
+        back.setInsets(new Insets3f(16, 0, 0, 0));
+        back.setBackground(new QuadBackgroundComponent(Theme.ORANGE));
+        back.setColor(Theme.ON_ACCENT);
+        back.setFontSize(16);
+        back.setPreferredSize(new Vector3f(260, 44, 0));
         back.addClickCommands(source -> {
             setEnabled(false);
             backAction.run();
         });
 
         refreshLabels(app.getGameSettings());
-        centerWindow((SimpleApplication) application);
+
+        Vector3f panelSize = panel.getPreferredSize();
+        panel.setLocalTranslation((screenW - panelSize.x) / 2f, (screenH + panelSize.y) / 2f, 1);
+        uiRoot.attachChild(panel);
     }
 
     private Label addStepperRow(Container parent, String name, Runnable onDecrease, Runnable onIncrease) {
         Container row = parent.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
-        row.addChild(new Label(name));
+        row.setInsets(new Insets3f(4, 0, 4, 0));
+
+        Label nameLabel = row.addChild(new Label(name));
+        nameLabel.setColor(Theme.TEXT_DIM);
+        nameLabel.setFontSize(14);
+        nameLabel.setPreferredSize(new Vector3f(220, 30, 0));
+
         Button minus = row.addChild(new Button("-"));
+        minus.setBackground(new QuadBackgroundComponent(Theme.PANEL_HOVER));
+        minus.setColor(Theme.TEXT);
+        minus.setPreferredSize(new Vector3f(36, 30, 0));
         minus.addClickCommands(source -> onDecrease.run());
+
         Label valueLabel = row.addChild(new Label(""));
+        valueLabel.setColor(Theme.TEXT);
+        valueLabel.setFontSize(14);
+        valueLabel.setPreferredSize(new Vector3f(70, 30, 0));
+        valueLabel.setTextHAlignment(com.simsilica.lemur.HAlignment.Center);
+
         Button plus = row.addChild(new Button("+"));
+        plus.setBackground(new QuadBackgroundComponent(Theme.PANEL_HOVER));
+        plus.setColor(Theme.TEXT);
+        plus.setPreferredSize(new Vector3f(36, 30, 0));
         plus.addClickCommands(source -> onIncrease.run());
+
         return valueLabel;
     }
 
@@ -110,27 +155,20 @@ public class OptionsState extends BaseAppState {
         videoQualityLabel.setText(settings.getVideoQuality().name());
     }
 
-    private void centerWindow(SimpleApplication app) {
-        window.setLocalTranslation(
-                app.getCamera().getWidth() / 2f - 160,
-                app.getCamera().getHeight() / 2f + 140,
-                0);
-    }
-
     @Override
     protected void cleanup(Application application) {
-        // Container is detached in onDisable(); nothing else owns native resources here.
+        // uiRoot is detached in onDisable(); nothing else owns native resources here.
     }
 
     @Override
     protected void onEnable() {
-        ((SimpleApplication) getApplication()).getGuiNode().attachChild(window);
+        rebuild((PaddleShockApp) getApplication());
+        ((SimpleApplication) getApplication()).getGuiNode().attachChild(uiRoot);
         getApplication().getInputManager().setCursorVisible(true);
-        refreshLabels(((PaddleShockApp) getApplication()).getGameSettings());
     }
 
     @Override
     protected void onDisable() {
-        window.removeFromParent();
+        uiRoot.removeFromParent();
     }
 }

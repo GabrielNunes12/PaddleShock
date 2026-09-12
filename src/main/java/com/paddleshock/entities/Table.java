@@ -1,8 +1,8 @@
 package com.paddleshock.entities;
 
 import com.jme3.asset.AssetManager;
-import com.jme3.material.Material;
 import com.jme3.math.ColorRGBA;
+import com.jme3.math.Vector2f;
 import com.jme3.math.Vector3f;
 import com.jme3.scene.Geometry;
 import com.jme3.scene.Node;
@@ -16,41 +16,43 @@ public class Table {
     private final Node node = new Node("table");
     private final float restitutionMultiplier;
 
-    public Table(AssetManager assetManager, ColorRGBA surfaceColor, float restitutionMultiplier) {
+    public Table(AssetManager assetManager, ColorRGBA surfaceColor, TextureSet textureSet,
+            float restitutionMultiplier) {
         this.restitutionMultiplier = restitutionMultiplier;
 
         Box surfaceBox = new Box(
                 GameConstants.TABLE_HALF_WIDTH,
                 0.1f,
                 GameConstants.TABLE_HALF_LENGTH);
+        surfaceBox.scaleTextureCoordinates(new Vector2f(
+                GameConstants.TABLE_HALF_WIDTH,
+                GameConstants.TABLE_HALF_LENGTH));
+
         Geometry surface = new Geometry("tableSurface", surfaceBox);
         surface.setLocalTranslation(0, -0.1f, 0);
-        surface.setMaterial(solidMaterial(assetManager, surfaceColor));
+        surface.setMaterial(TexturedMaterials.create(assetManager, textureSet.getColorMap(),
+                textureSet.getNormalMap(), surfaceColor));
+        TexturedMaterials.generateTangents(surface);
         node.attachChild(surface);
 
         float railHeight = 0.4f;
         float railThickness = 0.2f;
+        ColorRGBA railColor = new ColorRGBA(0.35f, 0.4f, 0.5f, 1f);
 
-        Geometry leftRail = rail(assetManager, railThickness, railHeight, GameConstants.TABLE_HALF_LENGTH);
+        Geometry leftRail = rail(assetManager, railThickness, railHeight, GameConstants.TABLE_HALF_LENGTH, railColor);
         leftRail.setLocalTranslation(-GameConstants.TABLE_HALF_WIDTH - railThickness, railHeight * 0.5f, 0);
         node.attachChild(leftRail);
 
-        Geometry rightRail = rail(assetManager, railThickness, railHeight, GameConstants.TABLE_HALF_LENGTH);
+        Geometry rightRail = rail(assetManager, railThickness, railHeight, GameConstants.TABLE_HALF_LENGTH, railColor);
         rightRail.setLocalTranslation(GameConstants.TABLE_HALF_WIDTH + railThickness, railHeight * 0.5f, 0);
         node.attachChild(rightRail);
     }
 
-    private Geometry rail(AssetManager assetManager, float halfX, float halfY, float halfZ) {
+    private Geometry rail(AssetManager assetManager, float halfX, float halfY, float halfZ, ColorRGBA color) {
         Box box = new Box(halfX, halfY, halfZ);
         Geometry geometry = new Geometry("rail", box);
-        geometry.setMaterial(solidMaterial(assetManager, new ColorRGBA(0.35f, 0.4f, 0.5f, 1f)));
+        geometry.setMaterial(TexturedMaterials.createSolidLit(assetManager, color));
         return geometry;
-    }
-
-    private Material solidMaterial(AssetManager assetManager, ColorRGBA color) {
-        Material material = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
-        material.setColor("Color", color);
-        return material;
     }
 
     public Node getNode() {
