@@ -15,7 +15,7 @@ Features in this pass:
 - Store: buy/equip paddles, tables, and balls, each with different stats (speed/size/bounciness)
 - 3 power-ups that spawn on the table: Paddle Grow, Speed Boost, Slow Opponent
 - Options: mouse sensitivity, brightness, sound volume (persisted, not yet wired to audio), video quality (antialiasing, requires restart to apply)
-- Save data: `~/.paddleshock/profile.json` (currency + owned/equipped items) and `~/.paddleshock/settings.json`
+- Save data: `~/.paddleshock/profile.dat` (currency + owned/equipped items) and `~/.paddleshock/settings.dat`, AES-GCM encrypted (see Save data security below)
 
 ## Running
 
@@ -40,6 +40,18 @@ Features in this pass:
 - jMonkeyEngine 3.6
 - Gradle
 - Steamworks (via `steamworks4j`) — planned, not yet integrated
+
+## Save data security
+
+`profile.dat` and `settings.dat` are encrypted (AES-256-GCM) rather than plain JSON, so casual
+editing (e.g. bumping currency in a text editor) isn't possible - a tampered or corrupted file
+fails its authentication check and the game silently resets to defaults instead of crashing or
+accepting the edit.
+
+Honest limit: the decryption key is embedded in the client (`SaveCrypto.java`), like any
+client-side save encryption. This stops casual editing, not a determined player with the jar in
+hand and time to extract the key - there's no way around that for local single-player save data
+short of server-side validation (relevant later for leaderboards/Steamworks, not for local saves).
 
 ## Third-party assets
 
