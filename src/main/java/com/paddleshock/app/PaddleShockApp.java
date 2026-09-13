@@ -14,6 +14,7 @@ import com.paddleshock.audio.AudioManager;
 import com.paddleshock.data.PlayerProfile;
 import com.paddleshock.data.SaveManager;
 import com.paddleshock.settings.GameSettings;
+import com.paddleshock.steam.SteamManager;
 import com.paddleshock.ui.LoadoutState;
 import com.paddleshock.ui.MainMenuState;
 import com.paddleshock.ui.MatchEndState;
@@ -28,6 +29,7 @@ public class PaddleShockApp extends SimpleApplication {
     private PlayerProfile profile;
     private GameSettings gameSettings;
     private AudioManager audioManager;
+    private SteamManager steamManager;
 
     private SplashState splashState;
     private MainMenuState mainMenuState;
@@ -46,6 +48,8 @@ public class PaddleShockApp extends SimpleApplication {
         // jME's SimpleApplication binds Escape to quitting the app by default; we use
         // Escape for our own pause menu instead, so drop that binding.
         inputManager.deleteMapping(INPUT_MAPPING_EXIT);
+
+        steamManager = new SteamManager();
 
         profile = SaveManager.loadProfile();
         gameSettings = SaveManager.loadSettings();
@@ -77,6 +81,21 @@ public class PaddleShockApp extends SimpleApplication {
         storeState.setEnabled(false);
         matchEndState.setEnabled(false);
         loadoutState.setEnabled(false);
+    }
+
+    @Override
+    public void simpleUpdate(float tpf) {
+        steamManager.update();
+    }
+
+    @Override
+    public void destroy() {
+        steamManager.shutdown();
+        super.destroy();
+    }
+
+    public SteamManager getSteamManager() {
+        return steamManager;
     }
 
     public PlayerProfile getProfile() {
