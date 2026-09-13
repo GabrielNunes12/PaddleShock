@@ -17,31 +17,34 @@ brokering.
   direct `aws lambda invoke` (returns a real lobby code, writes to DynamoDB correctly).
 - **Lambda Function URL** `https://2mjcwpgb6sesrjy36nm6qxdmpu0wbvrb.lambda-url.us-east-1.on.aws/` -
   `AuthType=NONE` (public/unauthenticated - fine, since it only ever brokers ephemeral,
-  non-sensitive lobby codes and ip:port pairs) with a resource policy granting
-  `lambda:InvokeFunctionUrl` to `Principal: "*"`.
+  non-sensitive lobby codes and ip:port pairs) with a resource policy granting both
+  `lambda:InvokeFunctionUrl` and `lambda:InvokeFunction` to `Principal: "*"` (see "Resolved
+  blocker" below for why both are required). **Verified live end-to-end** (create/join/poll all
+  round-trip correctly).
 
-## Known blocker (as of 2026-09-13)
+## Resolved blocker (2026-09-13)
 
-The Function URL itself returns a generic `403 Forbidden` for anonymous requests, despite
-`AuthType=NONE` and a correctly-attached resource policy (confirmed via `get-function-url-config`
-and `get-policy`). This is NOT a propagation delay - retried well past AWS's stated window. Most
-likely explanation: AWS applies a default restriction on **public (anonymous) Function URLs for
-brand-new accounts** that clears automatically after account review (typically 24-48h),
-independent of any IAM/resource policy configuration.
+The Function URL initially returned `403 Forbidden` for all anonymous requests despite
+`AuthType=NONE` and a resource policy granting `lambda:InvokeFunctionUrl`. Root cause per
+[AWS's Function URL auth docs](https://docs.aws.amazon.com/lambda/latest/dg/urls-auth.html):
+**"Starting in October 2025, new function URLs will require both `lambda:InvokeFunctionUrl` and
+`lambda:InvokeFunction` permissions."** We'd only granted the first. Not an account-age
+restriction as initially suspected - fixed by adding the second permission:
 
-**Decision (per user): wait and retry**, rather than switch to IAM-signed requests (which would
-require embedding a real AWS credential in the distributed game client - bad practice) or dig
-through the AWS console for an account notice.
-
-**To retest once the wait period has passed:**
 ```
-curl -s -X POST https://2mjcwpgb6sesrjy36nm6qxdmpu0wbvrb.lambda-url.us-east-1.on.aws/ \
-  -H "content-type: application/json" \
-  -d '{"action":"create","addr":"203.0.113.5:55123"}'
+aws lambda add-permission \
+  --function-name paddleshock-lobby \
+  --statement-id UrlPolicyInvokeFunction \
+  --action lambda:InvokeFunction \
+  --principal "*" \
+  --invoked-via-function-url \
+  --region us-east-1
 ```
-Expect `{"code":"XXXXXX"}`. A `{"Message":"Forbidden...` response means it's still blocked.
 
-## Protocol (once the URL is reachable)
+(`--invoked-via-function-url` sets the `lambda:InvokedViaFunctionUrl` condition so this
+permission only applies to Function URL calls, not other invocation paths.)
+
+## Protocol
 
 Single POST endpoint, JSON body, `action` field selects behavior:
 
@@ -49,7 +52,7 @@ Single POST endpoint, JSON body, `action` field selects behavior:
 - `{"action":"join","code":"ABC123","addr":"<joiner's public ip:port>"}` -> `{"hostAddr":"..."}`
 - `{"action":"poll","code":"ABC123"}` (host polls this) -> `{"joinerAddr": null | "..."}`
 
-## Not yet built (client side, once the URL is confirmed reachable)
+## Not yet built (client side)
 
 - STUN client in `NetHost`/`NetClient`'s existing `DatagramSocket` to discover each side's public
   `ip:port` (the discovery must happen on the same socket/port used for actual game traffic).
