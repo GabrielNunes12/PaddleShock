@@ -31,23 +31,28 @@ public final class LobbyClient {
     }
 
     /** Registers a new lobby for {@code publicAddr} (this host's own address, typically from
-     *  {@code NetHost.getPublicAddress()} formatted via {@code StunClient.format}) and returns
-     *  the short code to share with the joiner. */
-    public static String create(String publicAddr) throws IOException {
+     *  {@code NetHost.getPublicAddress()} formatted via {@code StunClient.format}), owned by
+     *  {@code playerId} (this host's ranked-ladder id - see {@code RankClient}), and returns the
+     *  short code to share with the joiner. The stored playerId lets a later
+     *  {@code reportMatchResult} call for this same code prove it's backed by a real session
+     *  instead of trusting an unverified claim (see aws/README.md "Trust model"). */
+    public static String create(String publicAddr, String playerId) throws IOException {
         JsonObject body = new JsonObject();
         body.addProperty("action", "create");
         body.addProperty("addr", publicAddr);
+        body.addProperty("playerId", playerId);
         JsonObject response = post(body);
         return response.get("code").getAsString();
     }
 
-    /** Registers {@code publicAddr} as the joiner for {@code code} and returns the host's public
-     *  address to connect to. */
-    public static String join(String code, String publicAddr) throws IOException {
+    /** Registers {@code publicAddr}/{@code playerId} as the joiner for {@code code} and returns
+     *  the host's public address to connect to. */
+    public static String join(String code, String publicAddr, String playerId) throws IOException {
         JsonObject body = new JsonObject();
         body.addProperty("action", "join");
         body.addProperty("code", code);
         body.addProperty("addr", publicAddr);
+        body.addProperty("playerId", playerId);
         JsonObject response = post(body);
         return response.get("hostAddr").getAsString();
     }

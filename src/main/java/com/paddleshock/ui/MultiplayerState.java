@@ -489,7 +489,13 @@ public class MultiplayerState extends BaseAppState {
             } else {
                 String error = pendingCodeError.getAndSet(null);
                 if (error != null) {
-                    joinError = "Could not find that code: " + error;
+                    // "lobby already has a joiner" is the losing side of a join race (two players
+                    // entering the same code at nearly the same time) - a different message than
+                    // a bad/expired code, since retrying with a fresh code from the host is the
+                    // right next step here, not re-typing the same one.
+                    joinError = error.contains("already has a joiner")
+                            ? "That code already has a joiner - ask the host for a fresh one."
+                            : "Could not find that code: " + error;
                     statusLabel.setColor(Theme.ORANGE);
                     statusLabel.setText(joinError);
                 }
