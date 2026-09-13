@@ -11,6 +11,14 @@ public class PlayerProfile {
 
     private static final int POWERUP_SLOTS = 3;
 
+    /** Bump when PlayerProfile's schema changes in a way that needs migration. */
+    public static final int CURRENT_VERSION = 1;
+
+    // Defaults to 0 (not CURRENT_VERSION) so Gson leaves it at 0 for pre-versioning saves that
+    // predate this field entirely, letting migrateIfNeeded() tell "old save, never versioned"
+    // apart from "save explicitly at version N".
+    private int saveVersion = CURRENT_VERSION;
+
     private int currency = 300;
 
     // Identifies this player to the ranked ladder backend (see aws/README.md) - a random id
@@ -30,6 +38,38 @@ public class PlayerProfile {
 
     /** Up to 3 owned power-up ids, one per key slot (1/2/3); a slot is empty when null. */
     private List<String> powerUpLoadout = new ArrayList<>(List.of("", "", ""));
+
+    public int getSaveVersion() {
+        return saveVersion;
+    }
+
+    /**
+     * Brings a freshly-deserialized profile up to {@link #CURRENT_VERSION}, applying any
+     * migration steps needed along the way. Safe to call on a profile that's already current
+     * (no-op). A save with saveVersion 0 predates this field entirely (old save, never
+     * versioned) and is treated as version 1 for migration purposes since no schema changes
+     * have happened since.
+     *
+     * A save reporting a version NEWER than this build knows about (saveVersion > CURRENT_VERSION)
+     * is a downgrade scenario - an older build opening a newer save. There's nothing to roll back
+     * here, so we log a warning and proceed best-effort with the fields we understand, leaving
+     * saveVersion as-is rather than silently stamping it down to CURRENT_VERSION.
+     */
+    public void migrateIfNeeded() {
+        int fromVersion = saveVersion == 0 ? 1 : saveVersion;
+
+        if (fromVersion > CURRENT_VERSION) {
+            System.err.println("PlayerProfile save is version " + fromVersion
+                    + ", newer than this build's CURRENT_VERSION (" + CURRENT_VERSION
+                    + "). Proceeding best-effort; some fields may be ignored.");
+            return;
+        }
+
+        // Migration steps go here as the schema evolves, e.g.:
+        // if (fromVersion < 2) { ... upgrade v1 -> v2 fields ...; fromVersion = 2; }
+
+        saveVersion = CURRENT_VERSION;
+    }
 
     public int getCurrency() {
         return currency;

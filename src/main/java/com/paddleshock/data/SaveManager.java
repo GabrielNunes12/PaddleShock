@@ -1,8 +1,11 @@
 package com.paddleshock.data;
 
 import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import com.google.gson.Gson;
@@ -23,7 +26,7 @@ public final class SaveManager {
     }
 
     public static PlayerProfile loadProfile() {
-        return load(PROFILE_FILE, PlayerProfile.class, PlayerProfile::new);
+        return load(PROFILE_FILE, PlayerProfile.class, PlayerProfile::new, PlayerProfile::migrateIfNeeded);
     }
 
     public static void saveProfile(PlayerProfile profile) {
@@ -31,40 +34,113 @@ public final class SaveManager {
     }
 
     public static GameSettings loadSettings() {
-        return load(SETTINGS_FILE, GameSettings.class, GameSettings::new);
+        return load(SETTINGS_FILE, GameSettings.class, GameSettings::new, GameSettings::migrateIfNeeded);
     }
 
     public static void saveSettings(GameSettings settings) {
         save(SETTINGS_FILE, settings);
     }
 
-    private static <T> T load(Path file, Class<T> type, Supplier<T> fallback) {
-        try {
-            if (Files.exists(file)) {
-                byte[] encrypted = Files.readAllBytes(file);
-                String json = SaveCrypto.decrypt(encrypted);
-                if (json == null) {
-                    System.err.println("Save file " + file + " failed its integrity check "
-                            + "(tampered or corrupted); resetting to defaults.");
-                } else {
-                    T loaded = GSON.fromJson(json, type);
-                    if (loaded != null) {
-                        return loaded;
-                    }
-                }
-            }
-        } catch (IOException | JsonSyntaxException e) {
-            System.err.println("Failed to load " + file + ", using defaults: " + e.getMessage());
+    /**
+     * Loads {@code file}, falling back to its {@code .bak} backup if the primary copy is
+     * missing/corrupt/tampered, and only falling back to a brand-new default if both are
+     * unusable. Logs clearly which path was taken so a field report is diagnosable.
+     */
+    private static <T> T load(Path file, Class<T> type, Supplier<T> fallback, Consumer<T> migrator) {
+        Path backup = backupPathFor(file);
+
+        T loaded = tryLoad(file, type);
+        if (loaded != null) {
+            System.out.println("Loaded " + file + " (fresh).");
+            migrator.accept(loaded);
+            return loaded;
         }
-        return fallback.get();
+
+        if (Files.exists(file)) {
+            // The primary file exists but failed to load (corrupt/tampered/truncated) - try the backup.
+            System.err.println("Primary save " + file + " could not be loaded; attempting backup " + backup);
+        }
+
+        T recovered = tryLoad(backup, type);
+        if (recovered != null) {
+            System.out.println("Recovered " + file + " from backup " + backup + ".");
+            migrator.accept(recovered);
+            return recovered;
+        }
+
+        if (Files.exists(file) || Files.exists(backup)) {
+            System.err.println("Both " + file + " and its backup " + backup
+                    + " are unusable; resetting to defaults.");
+        }
+        T freshDefault = fallback.get();
+        migrator.accept(freshDefault);
+        return freshDefault;
     }
 
+    /** Returns the deserialized object, or null if the file doesn't exist or fails to load cleanly. */
+    private static <T> T tryLoad(Path file, Class<T> type) {
+        try {
+            if (!Files.exists(file)) {
+                return null;
+            }
+            byte[] encrypted = Files.readAllBytes(file);
+            String json = SaveCrypto.decrypt(encrypted);
+            if (json == null) {
+                System.err.println("Save file " + file + " failed its integrity check (tampered or corrupted).");
+                return null;
+            }
+            return GSON.fromJson(json, type);
+        } catch (IOException | JsonSyntaxException e) {
+            System.err.println("Failed to read/parse " + file + ": " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Writes {@code data} atomically: encrypt to a temp file in the same directory, back up the
+     * previous generation (keeping exactly one, {@code <file>.bak}), then atomically rename the
+     * temp file into place. This means a crash/power-loss mid-write can never leave a
+     * truncated/corrupt file at {@code file} - the rename either completes fully or not at all,
+     * and the prior generation always survives as the backup.
+     */
     private static void save(Path file, Object data) {
+        Path tempFile = null;
         try {
             Files.createDirectories(SAVE_DIR);
-            Files.write(file, SaveCrypto.encrypt(GSON.toJson(data)));
+            tempFile = Files.createTempFile(SAVE_DIR, file.getFileName().toString(), ".tmp");
+            Files.write(tempFile, SaveCrypto.encrypt(GSON.toJson(data)));
+
+            if (Files.exists(file)) {
+                Path backup = backupPathFor(file);
+                Files.move(file, backup, StandardCopyOption.REPLACE_EXISTING);
+            }
+
+            moveAtomicallyWithFallback(tempFile, file);
+            tempFile = null;
         } catch (IOException e) {
             System.err.println("Failed to save " + file + ": " + e.getMessage());
+        } finally {
+            if (tempFile != null) {
+                try {
+                    Files.deleteIfExists(tempFile);
+                } catch (IOException ignored) {
+                    // Best-effort cleanup of the temp file; not fatal.
+                }
+            }
         }
+    }
+
+    private static void moveAtomicallyWithFallback(Path source, Path target) throws IOException {
+        try {
+            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } catch (AtomicMoveNotSupportedException e) {
+            // Some filesystems (e.g. certain network mounts) don't support atomic moves; fall
+            // back to a plain (non-atomic) move rather than failing the save outright.
+            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private static Path backupPathFor(Path file) {
+        return file.resolveSibling(file.getFileName().toString() + ".bak");
     }
 }
