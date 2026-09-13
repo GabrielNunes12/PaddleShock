@@ -27,6 +27,7 @@ public class NetHost implements AutoCloseable {
 
     private final InetSocketAddress publicAddress;
     private volatile InetSocketAddress joinerAddress;
+    private volatile String joinerPlayerId = "";
     private final AtomicReference<NetProtocol.InputMessage> latestInput =
             new AtomicReference<>(NetProtocol.InputMessage.NEUTRAL);
 
@@ -62,7 +63,7 @@ public class NetHost implements AutoCloseable {
         }
         try {
             switch (NetProtocol.messageType(data)) {
-                case NetProtocol.TYPE_HELLO -> handleHello(from);
+                case NetProtocol.TYPE_HELLO -> handleHello(from, NetProtocol.decodeHello(data));
                 case NetProtocol.TYPE_INPUT -> latestInput.set(NetProtocol.decodeInput(data));
                 default -> {
                     // unknown/malformed - ignore
@@ -73,10 +74,13 @@ public class NetHost implements AutoCloseable {
         }
     }
 
-    private void handleHello(InetSocketAddress from) {
+    private void handleHello(InetSocketAddress from, String playerId) {
         synchronized (this) {
             if (joinerAddress == null || joinerAddress.equals(from)) {
                 joinerAddress = from;
+                if (!playerId.isEmpty()) {
+                    joinerPlayerId = playerId;
+                }
                 sendRaw(from, NetProtocol.encodeHandshake(NetProtocol.TYPE_WELCOME));
             } else {
                 sendRaw(from, NetProtocol.encodeHandshake(NetProtocol.TYPE_REJECT));
@@ -95,6 +99,12 @@ public class NetHost implements AutoCloseable {
     /** Whether a joiner has completed the handshake yet. */
     public boolean hasJoiner() {
         return joinerAddress != null;
+    }
+
+    /** The joiner's ranked-ladder player id (see {@code RankClient}), or {@code ""} if they
+     *  connected without one (an older client, or a punch packet that isn't a real handshake). */
+    public String getJoinerPlayerId() {
+        return joinerPlayerId;
     }
 
     /** The most recently received joiner input, resolved into the same {@link PaddleInput} shape

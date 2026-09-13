@@ -14,7 +14,12 @@ import java.io.IOException;
  *
  * <p>Message shapes:
  * <ul>
- *   <li>{@link #TYPE_HELLO} - joiner to host, connection handshake: just the type byte.</li>
+ *   <li>{@link #TYPE_HELLO} - joiner to host, connection handshake: the type byte plus the
+ *       joiner's ranked-ladder player id (see {@code RankClient}), so the host can report a
+ *       ranked match's result for both players once it ends. A host's own outbound Phase-D punch
+ *       packets reuse this same type byte with no payload at all ({@link #encodeHandshake}) -
+ *       harmless, since those only ever travel host-to-joiner and the joiner already ignores any
+ *       inbound {@code TYPE_HELLO} as unrecognized (it only reacts to WELCOME/REJECT/SNAPSHOT).</li>
  *   <li>{@link #TYPE_WELCOME} - host to joiner: connection accepted, just the type byte.</li>
  *   <li>{@link #TYPE_REJECT} - host to joiner: already has a peer, just the type byte.</li>
  *   <li>{@link #TYPE_INPUT} - joiner to host, sent once per client frame: the joiner's own
@@ -48,6 +53,32 @@ public final class NetProtocol {
 
     public static byte messageType(byte[] data) {
         return data.length == 0 ? 0 : data[0];
+    }
+
+    // ---- HELLO (joiner -> host) ----
+
+    public static byte[] encodeHello(String playerId) {
+        try {
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            DataOutputStream out = new DataOutputStream(bytes);
+            out.writeByte(TYPE_HELLO);
+            out.writeUTF(playerId == null ? "" : playerId);
+            return bytes.toByteArray();
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to encode hello packet", e);
+        }
+    }
+
+    /** Returns the joiner's player id, or {@code ""} for a payload-less packet (a Phase-D punch
+     *  packet reusing this type byte, or an older client) - never throws for that case, only for
+     *  a genuinely truncated/corrupt UTF payload. */
+    public static String decodeHello(byte[] data) throws IOException {
+        if (data.length <= 1) {
+            return "";
+        }
+        DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
+        in.readByte(); // type
+        return in.readUTF();
     }
 
     // ---- INPUT (joiner -> host) ----

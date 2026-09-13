@@ -23,8 +23,11 @@ import com.simsilica.lemur.Insets3f;
 import com.simsilica.lemur.component.QuadBackgroundComponent;
 import com.simsilica.lemur.component.SpringGridLayout;
 
+import java.util.concurrent.atomic.AtomicReference;
+
 import com.paddleshock.GameConstants;
 import com.paddleshock.app.PaddleShockApp;
+import com.paddleshock.net.RankState;
 
 /**
  * Shown when a match ends: a "bold sports broadcast" scoreboard overlay over the frozen
@@ -44,12 +47,48 @@ public class MatchEndState extends BaseAppState {
     private int playerScore;
     private int opponentScore;
 
-    /** Sets the outcome to display next time this state is enabled. */
+    // Ranked-match rank display: the actual RankClient call happens on a background thread owned
+    // by PaddleShockApp (see endRankedHostMatch/endRankedJoinerMatch) - this just polls for its
+    // result and rebuilds once, the same async-result pattern MultiplayerState uses.
+    private boolean ranked = false;
+    private volatile boolean rankLookupDone = false;
+    private final AtomicReference<RankState> rankResult = new AtomicReference<>();
+    private boolean rankShown = false;
+
+    /** Sets the outcome to display next time this state is enabled (a non-ranked match - single
+     *  player vs AI). */
     public void setResult(boolean playerWon, int rewardEarned, int playerScore, int opponentScore) {
         this.playerWon = playerWon;
         this.rewardEarned = rewardEarned;
         this.playerScore = playerScore;
         this.opponentScore = opponentScore;
+        this.ranked = false;
+    }
+
+    /** Same as {@link #setResult}, but for a ranked multiplayer match - shows a "looking up
+     *  rank..." placeholder until {@link #reportRankResult} delivers the actual outcome. */
+    public void setRankedResult(boolean playerWon, int rewardEarned, int playerScore, int opponentScore) {
+        setResult(playerWon, rewardEarned, playerScore, opponentScore);
+        this.ranked = true;
+        this.rankLookupDone = false;
+        this.rankResult.set(null);
+        this.rankShown = false;
+    }
+
+    /** Called from a background thread once the rank report/fetch call completes; {@code null}
+     *  means it failed (offline, service unreachable) - the match itself already completed fine
+     *  either way, so this only affects what's shown, never blocks anything. */
+    public void reportRankResult(RankState state) {
+        rankResult.set(state);
+        rankLookupDone = true;
+    }
+
+    @Override
+    public void update(float tpf) {
+        if (ranked && !rankShown && rankLookupDone) {
+            rankShown = true;
+            rebuild((PaddleShockApp) getApplication());
+        }
     }
 
     @Override
@@ -94,6 +133,10 @@ public class MatchEndState extends BaseAppState {
         attachAngledQuad(528, screenH - 316, 60, 14, 232, 232, 0, Theme.GREEN, 1);
         attachText(550, screenH - 335, "+" + rewardEarned + " CREDITS", 20, Theme.ON_ACCENT);
 
+        if (ranked) {
+            attachText(40, screenH - 358, rankLineText(), 15, rankLineColor());
+        }
+
         // Actions: left-anchored, matching the banner's asymmetric composition.
         Container actions = new Container(new SpringGridLayout(Axis.Y, Axis.X));
         addMenuButton(actions, "REMATCH", Theme.ORANGE, Theme.ON_ACCENT, app::showLoadout);
@@ -120,12 +163,56 @@ public class MatchEndState extends BaseAppState {
         float consolationY = scoreY - 108 - 20;
         attachCenteredText(centerX, consolationY, "First to " + GameConstants.WIN_SCORE + " wins. Try again!", 16, Theme.TEXT_DIM);
 
+        float actionsY = consolationY - 24;
+        if (ranked) {
+            attachCenteredText(centerX, consolationY - 26, rankLineText(), 14, rankLineColor());
+            actionsY -= 30;
+        }
+
         Container actions = new Container(new SpringGridLayout(Axis.Y, Axis.X));
         addMenuButton(actions, "REMATCH", Theme.ORANGE, Theme.ON_ACCENT, app::showLoadout);
         addMenuButton(actions, "MAIN MENU", Theme.PANEL_HOVER, Theme.TEXT, app::showMainMenu);
         Vector3f actionsSize = actions.getPreferredSize();
-        actions.setLocalTranslation(centerX - actionsSize.x / 2f, consolationY - 24, 2);
+        actions.setLocalTranslation(centerX - actionsSize.x / 2f, actionsY, 2);
         uiRoot.attachChild(actions);
+    }
+
+    /** "Silver II (65 LP, +18) - PROMOTED!" style summary of the rank change from this match, or
+     *  a placeholder while the background lookup/report call is still in flight or failed. */
+    private String rankLineText() {
+        if (!rankLookupDone) {
+            return "Updating rank...";
+        }
+        RankState rank = rankResult.get();
+        if (rank == null) {
+            return "(rank unavailable - offline?)";
+        }
+        // Spelled out rather than a "+"/"-" sign: at this HUD font's small size a "+" glyph is
+        // easy to misread as a dash, which would silently flip the apparent meaning.
+        int lpChange = rank.getLpChange();
+        String delta = lpChange == 0 ? "no change"
+                : lpChange > 0 ? lpChange + " gained" : (-lpChange) + " lost";
+        String suffix = switch (rank.getPromoSeriesResult() == null ? "" : rank.getPromoSeriesResult()) {
+            case "started" -> " - PROMO SERIES!";
+            case "ongoing" -> " - promo series continues";
+            case "won" -> "";
+            case "lost" -> " - promos failed, keep grinding";
+            default -> "";
+        };
+        if (rank.wasPromoted()) {
+            suffix = " - PROMOTED!";
+        } else if (rank.wasDemoted()) {
+            suffix = " - demoted";
+        }
+        return rank.formatLabel() + " - " + rank.getLp() + " LP (" + delta + ")" + suffix;
+    }
+
+    private ColorRGBA rankLineColor() {
+        if (!rankLookupDone) {
+            return Theme.TEXT_DIM;
+        }
+        RankState rank = rankResult.get();
+        return rank == null ? Theme.TEXT_DIM : rank.getTier().getColor();
     }
 
     /** Big "playerScore : opponentScore" readout plus a small caption, roughly centered in the given tile. */

@@ -23,12 +23,14 @@ public class NetClient implements AutoCloseable {
     private volatile boolean running = true;
 
     private final InetSocketAddress publicAddress;
+    private final String localPlayerId;
     private volatile boolean connected = false;
     private volatile boolean rejected = false;
     private final AtomicReference<NetProtocol.SnapshotMessage> latestSnapshot = new AtomicReference<>();
 
-    public NetClient(String hostAddress, int port) throws IOException {
+    public NetClient(String hostAddress, int port, String localPlayerId) throws IOException {
         this.hostAddress = new InetSocketAddress(InetAddress.getByName(hostAddress), port);
+        this.localPlayerId = localPlayerId;
         socket = new DatagramSocket();
         // Same ordering constraint as NetHost: STUN discovery's own blocking receives must
         // finish before the background receive thread starts reading this socket.
@@ -41,10 +43,12 @@ public class NetClient implements AutoCloseable {
 
     /** Internal constructor used by {@link #connectByLobbyCode}, where the public address is
      *  already known (discovered before the host's address was) and doesn't need rediscovering. */
-    private NetClient(DatagramSocket socket, InetSocketAddress publicAddress, InetSocketAddress hostAddress) {
+    private NetClient(DatagramSocket socket, InetSocketAddress publicAddress, InetSocketAddress hostAddress,
+            String localPlayerId) {
         this.socket = socket;
         this.publicAddress = publicAddress;
         this.hostAddress = hostAddress;
+        this.localPlayerId = localPlayerId;
         receiveThread = new Thread(this::receiveLoop, "NetClient-recv");
         receiveThread.setDaemon(true);
         receiveThread.start();
@@ -59,7 +63,7 @@ public class NetClient implements AutoCloseable {
      * direct constructor. Blocking network calls (STUN + the lobby HTTPS round trip) - run off
      * the render thread.
      */
-    public static NetClient connectByLobbyCode(String code) throws IOException {
+    public static NetClient connectByLobbyCode(String code, String localPlayerId) throws IOException {
         DatagramSocket socket = new DatagramSocket();
         InetSocketAddress publicAddress = StunClient.discoverPublicAddress(socket);
         if (publicAddress == null) {
@@ -74,14 +78,15 @@ public class NetClient implements AutoCloseable {
             throw e;
         }
         InetSocketAddress hostAddress = StunClient.parseAddress(hostAddressText);
-        return new NetClient(socket, publicAddress, hostAddress);
+        return new NetClient(socket, publicAddress, hostAddress, localPlayerId);
     }
 
     /** Re-sends the handshake "hello"; safe to call repeatedly while waiting for a welcome
      *  (e.g. from a UI poll loop) since the host treats a repeat hello from the same peer as
-     *  a no-op re-accept rather than a second connection. */
+     *  a no-op re-accept rather than a second connection. Carries this player's ranked-ladder id
+     *  (see {@code RankClient}) so the host can report a ranked match's result for both players. */
     public void sendHello() {
-        sendRaw(NetProtocol.encodeHandshake(NetProtocol.TYPE_HELLO));
+        sendRaw(NetProtocol.encodeHello(localPlayerId));
     }
 
     private void receiveLoop() {

@@ -1,9 +1,10 @@
-# PaddleShock AWS matchmaking (rendezvous-only)
+# PaddleShock AWS backend (matchmaking + ranked ladder)
 
-Scope: a tiny AWS backend that hands two players a short lobby code so they can exchange public
-`ip:port` and connect directly over UDP. Gameplay itself stays peer-to-peer (see
-`src/main/java/com/paddleshock/net/`) - nothing here touches game traffic, only lobby-code
-brokering.
+Scope: a tiny AWS backend with two jobs. (1) Matchmaking - hands two players a short lobby code so
+they can exchange public `ip:port` and connect directly over UDP; gameplay itself stays
+peer-to-peer (see `src/main/java/com/paddleshock/net/`), nothing here touches game traffic. (2)
+Ranked ladder - tracks each player's Copper-through-Diamond rank server-side (see "Ranked ladder"
+below) so it isn't just a locally-editable save-file number.
 
 ## What's deployed (account 920394550355, region us-east-1)
 
@@ -51,6 +52,54 @@ Single POST endpoint, JSON body, `action` field selects behavior:
 - `{"action":"create","addr":"<host's public ip:port>"}` -> `{"code":"ABC123"}`
 - `{"action":"join","code":"ABC123","addr":"<joiner's public ip:port>"}` -> `{"hostAddr":"..."}`
 - `{"action":"poll","code":"ABC123"}` (host polls this) -> `{"joinerAddr": null | "..."}`
+- `{"action":"getRank","playerId":"<uuid>"}` -> `{"tier","division","lp","wins","losses","promo","season"}`
+- `{"action":"reportMatchResult","matchId":"<uuid>","hostPlayerId":"<uuid>","joinerPlayerId":"<uuid>","hostWon":true|false}`
+  -> `{"host":{...rank fields...,"lpChange","promoted","demoted","promoSeriesResult"},"joiner":{...same...}}`
+
+## Ranked ladder
+
+Copper -> Bronze -> Silver -> Gold -> Platinum -> Diamond, 4 divisions each (IV..I, stored/wired
+as 4..1), 0-100 LP per division - see `RankTier`/`RankState`/`RankClient` in
+`src/main/java/com/paddleshock/net/` and `RankTier` in `src/main/java/com/paddleshock/rank/`.
+
+- **Identity**: each `PlayerProfile` gets a random UUID (`getPlayerId()`), generated once and
+  persisted with the rest of the save - no accounts/login. Two players on the same machine with
+  isolated `~/.paddleshock` dirs (or `-Duser.home` overrides, used for testing) get distinct ids;
+  two instances sharing one save file will collide (see "Trust model" below - a real concern only
+  for same-machine testing, never for two actual separate players).
+- **Progression**: a win is +20 LP, a loss is -15 LP (`LP_PER_WIN`/`LP_PER_LOSS` in the Lambda).
+  Reaching 100 LP starts a best-of-3 promotion series instead of an instant promotion (except at
+  Diamond I, the ceiling) - 2 series wins promotes a division (LP resets to 0), 2 series losses
+  cancels the series (LP resets to 75, a cushion below the cap rather than an immediate re-trigger).
+  Dropping below 0 LP demotes a division, floored at Copper IV (never demotes below the very start).
+- **Seasons**: the season number is `floor((now - anchor) / 21 days)` - a pure function of time,
+  no cron job or extra storage needed. A rank record with a stale season number gets soft-reset on
+  its next read: tiers above Silver compress down to Silver II/50 LP, tiers at or below Silver just
+  cap their LP at 50 - never a full wipe.
+- **Trust model**: the HOST reports match results for BOTH players in one call, since the host
+  already owns the authoritative match simulation (`MatchSimulation` runs only on the host - see
+  the main session's Phase 1 multiplayer notes) - this is the same trust boundary the P2P
+  architecture already relies on for the match itself, not a new one. Not proof against two
+  colluding accounts, but not self-reportable by a lone player either. The joiner shares its
+  player id with the host via an extended `TYPE_HELLO` payload (see `NetProtocol`/`NetHost`).
+- **Idempotency**: `reportMatchResult` requires a fresh `matchId` per match; a retried call for
+  the same id (e.g. a client-side timeout retry) is rejected rather than double-applying LP. The
+  marker reuses the ranks table (`match:<id>` as the `playerId` key) with the existing TTL
+  mechanism, no extra table needed.
+- **Display**: the joiner has no way to receive the host's authoritative LP delta over the wire
+  (the host's `reportMatchResult` response is never relayed back through the game's own UDP
+  protocol) - `enterJoinedMatch` snapshots the joiner's own rank just before the match starts, and
+  `endRankedJoinerMatch` diffs the post-match rank against that baseline instead, with a short
+  retry-and-wait loop on both ends (see the doc comments on both methods in `PaddleShockApp`) to
+  ride out the inherent race between "this side's match-over event" and "the host's independent
+  report call landing server-side" - both triggered by the same event, on two different machines,
+  with no ordering guarantee between them. Live-verified with debug instrumentation during
+  development: the fix does correctly wait out the race rather than silently showing a 0 LP
+  change; a delta is spelled out as "N gained"/"N lost" rather than a +/- sign, since a "+" glyph
+  in the match-end screen's font is easy to misread as a dash at that size (confirmed via a false
+  alarm during testing - the underlying math was correct the whole time).
+- **Not built**: no UI yet for browsing the ladder/leaderboard, no unranked-vs-ranked distinction
+  (every multiplayer match is currently a ranked one), no demotion-protection grace games.
 
 ## Client-side progress
 

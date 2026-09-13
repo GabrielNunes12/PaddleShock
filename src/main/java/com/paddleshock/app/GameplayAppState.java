@@ -583,7 +583,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             if (snapshot.isMatchOver()) {
                 // From the joiner's own point of view: "you" are the joiner, so isHostWon()
                 // (a host-perspective flag) is negated to get whether the local viewer won.
-                app.endMatch(!snapshot.isHostWon(), joinerDisplayScore, hostDisplayScore);
+                app.endRankedJoinerMatch(!snapshot.isHostWon(), joinerDisplayScore, hostDisplayScore);
             }
         }
     }
@@ -679,7 +679,12 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             updateScoreText();
             app.getAudioManager().playSfx("score.ogg");
             if (result.isMatchOver()) {
-                app.endMatch(result.isPlayerWon(), matchSimulation.getPlayerScore(), matchSimulation.getOpponentScore());
+                if (mode == Mode.HOST) {
+                    app.endRankedHostMatch(result.isPlayerWon(), matchSimulation.getPlayerScore(),
+                            matchSimulation.getOpponentScore(), netHost.getJoinerPlayerId());
+                } else {
+                    app.endMatch(result.isPlayerWon(), matchSimulation.getPlayerScore(), matchSimulation.getOpponentScore());
+                }
             }
         }
     }

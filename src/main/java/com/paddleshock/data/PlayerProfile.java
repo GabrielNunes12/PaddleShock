@@ -4,13 +4,19 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
-/** Persisted player state: currency, owned items, and current loadout. */
+/** Persisted player state: currency, owned items, current loadout, and ranked identity. */
 public class PlayerProfile {
 
     private static final int POWERUP_SLOTS = 3;
 
     private int currency = 300;
+
+    // Identifies this player to the ranked ladder backend (see aws/README.md) - a random id
+    // generated once on first use, not tied to any account/login. Old saves predate this field
+    // and deserialize it as null; getPlayerId() generates and persists one lazily in that case.
+    private String playerId;
 
     private Set<String> ownedPaddleIds = new HashSet<>(Set.of("paddle_classic"));
     private Set<String> ownedTableIds = new HashSet<>(Set.of("table_classic"));
@@ -27,6 +33,16 @@ public class PlayerProfile {
 
     public int getCurrency() {
         return currency;
+    }
+
+    /** This player's identity for the ranked ladder backend - generated once, lazily, and kept
+     *  stable across saves thereafter. Callers should {@code SaveManager.saveProfile()} shortly
+     *  after the first call that actually generates one, or it'll regenerate on next launch. */
+    public String getPlayerId() {
+        if (playerId == null) {
+            playerId = UUID.randomUUID().toString();
+        }
+        return playerId;
     }
 
     public void addCurrency(int amount) {
