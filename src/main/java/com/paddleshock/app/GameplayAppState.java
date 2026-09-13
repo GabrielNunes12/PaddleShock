@@ -42,7 +42,9 @@ import com.paddleshock.entities.Paddle;
 import com.paddleshock.entities.Table;
 import com.paddleshock.entities.TextureSet;
 import com.paddleshock.input.PlayerInput;
-import com.paddleshock.powerups.PowerUpManager;
+import com.paddleshock.sim.MatchSimulation;
+import com.paddleshock.sim.PaddleInput;
+import com.paddleshock.sim.TickResult;
 import com.paddleshock.ui.Theme;
 
 /** A single match vs. the AI: scene setup, per-frame simulation, scoring, pause key. */
@@ -68,7 +70,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     private Paddle opponentPaddle;
     private Ball ball;
     private final PlayerInput playerInput = new PlayerInput();
-    private PowerUpManager powerUpManager;
+    private MatchSimulation matchSimulation;
     private final PowerUpDefinition[] powerUpLoadout = new PowerUpDefinition[3];
     private final Geometry[] powerUpBoxes = new Geometry[3];
     private final BitmapText[] powerUpKeyTexts = new BitmapText[3];
@@ -77,8 +79,11 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     private final BitmapText[] powerUpNameTexts = new BitmapText[3];
     private float aiPowerUpTimer = AI_POWERUP_MIN_INTERVAL;
 
-    private int playerScore = 0;
-    private int opponentScore = 0;
+    /** Set by the key-1/2/3 handler, consumed (and cleared) on the very next {@link #update}, so it
+     *  reaches {@link MatchSimulation#tick} as part of the same tick-shaped input the future remote
+     *  opponent will also send its activations through. */
+    private Integer pendingPlayerPowerUpSlot;
+
     private BitmapText scoreText;
 
     private final Vector3f screenRightWorld = new Vector3f();
@@ -103,7 +108,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         simpleApp.getRootNode().attachChild(gameNode);
         simpleApp.getGuiNode().attachChild(hudNode);
 
-        ball.launch(Math.random() < 0.5 ? 1f : -1f);
+        matchSimulation.startNewMatch();
     }
 
     private void setUpCamera(SimpleApplication simpleApp) {
@@ -167,7 +172,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                 combinedRestitution, level.getGravityMultiplier(), level.getWindAccelX());
         gameNode.attachChild(ball.getNode());
 
-        powerUpManager = new PowerUpManager(playerPaddle, opponentPaddle);
+        matchSimulation = new MatchSimulation(ball, playerPaddle, opponentPaddle, table);
         resolveLoadout(profile);
 
         if ("level_classic".equals(level.getId())) {
@@ -302,7 +307,8 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     }
 
     private void updateScoreText() {
-        scoreText.setText("You " + playerScore + " : " + opponentScore + " AI  (Esc: pause)");
+        scoreText.setText("You " + matchSimulation.getPlayerScore() + " : "
+                + matchSimulation.getOpponentScore() + " AI  (Esc: pause)");
     }
 
     /** A flat square, filled with the power-up's own color, used as its HUD slot icon. */
@@ -340,7 +346,8 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             if (box == null || def == null) {
                 continue;
             }
-            float remaining = powerUpManager == null ? 0f : powerUpManager.getPlayerCooldownRemaining(def.getType());
+            float remaining = matchSimulation == null ? 0f
+                    : matchSimulation.getPowerUpManager().getPlayerCooldownRemaining(def.getType());
             boolean onCooldown = remaining > 0f;
 
             box.getMaterial().setColor("Color", onCooldown ? POWERUP_BOX_COOLDOWN_COLOR : def.getType().getColor());
@@ -383,13 +390,13 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     }
 
     private void activatePlayerPowerUp(int slot) {
-        PowerUpDefinition def = powerUpLoadout[slot];
-        if (def == null) {
+        if (powerUpLoadout[slot] == null) {
             return;
         }
-        if (powerUpManager.activatePlayerPowerUp(def.getType(), def.getCooldownSeconds())) {
-            app.getAudioManager().playSfx("powerup_activate.ogg");
-        }
+        // Buffered rather than applied straight to the PowerUpManager here: activation now flows
+        // through the same tick-shaped PaddleInput the AI (and, later, a remote opponent) uses, so
+        // there's exactly one code path that turns "activate slot N" into a simulation effect.
+        pendingPlayerPowerUpSlot = slot;
     }
 
     @Override
@@ -398,100 +405,82 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         float scale = GameConstants.MOUSE_SENSITIVITY * app.getGameSettings().getMouseSensitivity();
         float worldDeltaX = (screenRightWorld.x * mouseDelta[0] + screenUpWorld.x * mouseDelta[1]) * scale;
         float worldDeltaZ = (screenRightWorld.z * mouseDelta[0] + screenUpWorld.z * mouseDelta[1]) * scale;
-        playerPaddle.moveDelta(worldDeltaX, worldDeltaZ);
-        updateOpponentAi(tpf);
 
-        ball.update(tpf);
-        powerUpManager.update(tpf);
-        updateAiPowerUps(tpf);
+        PaddleInput playerTickInput = new PaddleInput(worldDeltaX, worldDeltaZ, consumePendingPlayerPowerUp());
+        PaddleInput opponentTickInput = computeOpponentAiInput(tpf);
+
+        TickResult result = matchSimulation.tick(tpf, playerTickInput, opponentTickInput);
+
+        applyTickResult(result);
         updatePowerUpHud();
-        handleCollisions();
     }
 
-    private void updateOpponentAi(float tpf) {
-        float toBall = ball.getPosition().x - opponentPaddle.getPosition().x;
+    private PowerUpDefinition consumePendingPlayerPowerUp() {
+        if (pendingPlayerPowerUpSlot == null) {
+            return null;
+        }
+        PowerUpDefinition def = powerUpLoadout[pendingPlayerPowerUpSlot];
+        pendingPlayerPowerUpSlot = null;
+        return def;
+    }
+
+    /** Local AI decision-making: there's no remote opponent yet, so this still lives here rather
+     *  than in {@code MatchSimulation}, but its output is packaged into the same {@link PaddleInput}
+     *  shape a networked opponent will eventually be fed through instead. */
+    private PaddleInput computeOpponentAiInput(float tpf) {
+        float toBall = matchSimulation.getBall().getPosition().x - matchSimulation.getOpponentPaddle().getPosition().x;
         float maxStep = AI_MAX_SPEED * tpf;
         float step = Math.max(-maxStep, Math.min(maxStep, toBall));
-        opponentPaddle.moveDelta(step, 0);
+
+        PowerUpDefinition chosen = pickAiPowerUp(tpf);
+        return new PaddleInput(step, 0, chosen);
     }
 
     /** The AI mirrors the player's own loadout (there's no separate AI/ranked kit yet) and fires
      *  a random ready one every few seconds, so bought power-ups don't just favor the player. */
-    private void updateAiPowerUps(float tpf) {
+    private PowerUpDefinition pickAiPowerUp(float tpf) {
         aiPowerUpTimer -= tpf;
         if (aiPowerUpTimer > 0f) {
-            return;
+            return null;
         }
         aiPowerUpTimer = AI_POWERUP_MIN_INTERVAL
                 + (float) (Math.random() * (AI_POWERUP_MAX_INTERVAL - AI_POWERUP_MIN_INTERVAL));
 
         List<PowerUpDefinition> ready = new ArrayList<>();
         for (PowerUpDefinition def : powerUpLoadout) {
-            if (def != null && powerUpManager.isAiReady(def.getType())) {
+            if (def != null && matchSimulation.getPowerUpManager().isAiReady(def.getType())) {
                 ready.add(def);
             }
         }
         if (ready.isEmpty()) {
-            return;
+            return null;
         }
-        PowerUpDefinition chosen = ready.get((int) (Math.random() * ready.size()));
-        if (powerUpManager.activateAiPowerUp(chosen.getType(), chosen.getCooldownSeconds())) {
-            app.getAudioManager().playSfx("powerup_activate.ogg");
-        }
+        return ready.get((int) (Math.random() * ready.size()));
     }
 
-    private void handleCollisions() {
-        Vector3f pos = ball.getPosition();
-
-        if (table.isOutsideSideRails(pos, ball.getRadius())) {
-            ball.bounceOffSideRail();
+    /** Translates what the simulation reported happened this tick into SFX/HUD/app side effects. */
+    private void applyTickResult(TickResult result) {
+        if (result.isWallBounce()) {
             app.getAudioManager().playSfx("wall_bounce.ogg");
         }
-
-        tryPaddleBounce(playerPaddle);
-        tryPaddleBounce(opponentPaddle);
-
-        if (pos.z < -GameConstants.TABLE_HALF_LENGTH) {
-            opponentScore++;
-            updateScoreText();
-            app.getAudioManager().playSfx("score.ogg");
-            if (opponentScore >= GameConstants.WIN_SCORE) {
-                app.endMatch(false, playerScore, opponentScore);
-            } else {
-                ball.launch(1f);
-            }
-        } else if (pos.z > GameConstants.TABLE_HALF_LENGTH) {
-            playerScore++;
-            updateScoreText();
-            app.getAudioManager().playSfx("score.ogg");
-            if (playerScore >= GameConstants.WIN_SCORE) {
-                app.endMatch(true, playerScore, opponentScore);
-            } else {
-                ball.launch(-1f);
-            }
-        }
-    }
-
-    private void tryPaddleBounce(Paddle paddle) {
-        Vector3f ballPos = ball.getPosition();
-        Vector3f paddlePos = paddle.getPosition();
-
-        float zGap = ballPos.z - paddlePos.z;
-        boolean withinReach = Math.abs(zGap) < (ball.getRadius() + GameConstants.PADDLE_HEIGHT);
-        boolean withinPaddleWidth = Math.abs(ballPos.x - paddlePos.x) < paddle.getEffectiveRadius() + ball.getRadius();
-        boolean lowEnoughToHit = ball.isWithinPaddleReach();
-
-        if (withinReach && withinPaddleWidth && lowEnoughToHit) {
-            ball.bounceOffPaddle(paddle);
+        if (result.isAnyPaddleHit()) {
             app.getAudioManager().playSfx("paddle_hit.ogg");
+        }
+        if (result.isAnyPowerUpActivated()) {
+            app.getAudioManager().playSfx("powerup_activate.ogg");
+        }
+        if (result.getScorer() != TickResult.Scorer.NONE) {
+            updateScoreText();
+            app.getAudioManager().playSfx("score.ogg");
+            if (result.isMatchOver()) {
+                app.endMatch(result.isPlayerWon(), matchSimulation.getPlayerScore(), matchSimulation.getOpponentScore());
+            }
         }
     }
 
     public void startNewMatch() {
-        playerScore = 0;
-        opponentScore = 0;
+        matchSimulation.startNewMatch();
         updateScoreText();
-        ball.launch(Math.random() < 0.5 ? 1f : -1f);
     }
 
     @Override
