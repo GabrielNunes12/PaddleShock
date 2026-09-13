@@ -67,7 +67,16 @@ as 4..1), 0-100 LP per division - see `RankTier`/`RankState`/`RankClient` in
   isolated `~/.paddleshock` dirs (or `-Duser.home` overrides, used for testing) get distinct ids;
   two instances sharing one save file will collide (see "Trust model" below - a real concern only
   for same-machine testing, never for two actual separate players).
-- **Progression**: a win is +20 LP, a loss is -15 LP (`LP_PER_WIN`/`LP_PER_LOSS` in the Lambda).
+- **Progression**: LP per win/loss scales with the player's current streak rather than a flat
+  amount - a fresh streak (right after a loss, a promotion, or a season reset) earns/costs the
+  base amount, and each additional consecutive win/loss adds a bonus/penalty, capped in both
+  directions (`BASE_LP_WIN`=16, `+4`/win, cap 38; `BASE_LP_LOSS`=12, `+3`/loss, cap 28 - all in the
+  Lambda). "Prove it again" every time form resets, "climb faster" while it's hot; a bad run costs
+  progressively more too, capped so it's not devastating in one hit. `streak` is a signed int on
+  the rank record (positive = win streak, negative = loss streak), reset to 0 on a season reset.
+  Live-verified via direct API calls: a win streak produced 16, 20, 24, 28, 32, ... capping at 38;
+  a loss streak produced 12, 15, 18, 21, 24, ... capping at 28 - both confirmed in a real full
+  10-point match too, not just synthetic API calls.
   Reaching 100 LP starts a best-of-3 promotion series instead of an instant promotion (except at
   Diamond I, the ceiling) - 2 series wins promotes a division (LP resets to 0), 2 series losses
   cancels the series (LP resets to 75, a cushion below the cap rather than an immediate re-trigger).

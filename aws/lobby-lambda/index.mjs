@@ -96,8 +96,18 @@ async function handlePoll(body) {
 // ---------------------------------------------------------------------------------------------
 
 const TIERS = ["COPPER", "BRONZE", "SILVER", "GOLD", "PLATINUM", "DIAMOND"];
-const LP_PER_WIN = 20;
-const LP_PER_LOSS = 15;
+// LP per win/loss scales with the player's current streak rather than a flat amount: a cold
+// start (streak reset to 1, e.g. just off a loss, a promotion, or a season reset) earns the base
+// amount, and each additional consecutive win adds a bonus, capped at MAX_LP_WIN - "prove it
+// again" every time form resets, "climb faster" while it's hot. Losses scale the same way in
+// reverse (a losing streak costs progressively more, capped at MAX_LP_LOSS) so a bad run doesn't
+// erase progress in one hit but also doesn't get cheaper the longer it goes.
+const BASE_LP_WIN = 16;
+const STREAK_BONUS_PER_WIN = 4;
+const MAX_LP_WIN = 38;
+const BASE_LP_LOSS = 12;
+const STREAK_PENALTY_PER_LOSS = 3;
+const MAX_LP_LOSS = 28;
 const PROMO_LOSS_CUSHION_LP = 75;
 const SEASON_ANCHOR_EPOCH = 1735689600; // 2025-01-01T00:00:00Z
 const SEASON_DURATION_SECONDS = 21 * 24 * 60 * 60; // 21 days
@@ -108,7 +118,17 @@ function currentSeason() {
 }
 
 function defaultRank(season) {
-    return { tier: "COPPER", division: 4, lp: 0, wins: 0, losses: 0, promo: null, season };
+    return { tier: "COPPER", division: 4, lp: 0, wins: 0, losses: 0, promo: null, streak: 0, season };
+}
+
+/** LP for the Nth consecutive win (N=1 is a fresh streak, right after a loss/promotion/reset). */
+function lpForWinStreak(streak) {
+    return Math.min(MAX_LP_WIN, BASE_LP_WIN + (streak - 1) * STREAK_BONUS_PER_WIN);
+}
+
+/** LP lost for the Nth consecutive loss (N=1 is a fresh losing streak). */
+function lpForLossStreak(streak) {
+    return Math.min(MAX_LP_LOSS, BASE_LP_LOSS + (streak - 1) * STREAK_PENALTY_PER_LOSS);
 }
 
 function isMaxRank(rank) {
@@ -147,6 +167,7 @@ function applySeasonResetIfNeeded(rank, season) {
         rank.lp = Math.min(rank.lp, 50);
     }
     rank.promo = null;
+    rank.streak = 0;
     rank.season = season;
 }
 
@@ -154,6 +175,8 @@ function applySeasonResetIfNeeded(rank, season) {
  *  what happened (LP delta, promotion/demotion/promo-series flags) for the caller to relay back
  *  to the client that reported the match. */
 function applyMatchResult(rank, won) {
+    rank.streak = rank.streak || 0; // old records predate this field
+
     if (rank.promo) {
         if (won) {
             rank.promo.wins += 1;
@@ -175,27 +198,31 @@ function applyMatchResult(rank, won) {
     }
 
     if (won) {
+        rank.streak = rank.streak > 0 ? rank.streak + 1 : 1;
+        const gain = lpForWinStreak(rank.streak);
         rank.wins += 1;
-        rank.lp += LP_PER_WIN;
+        rank.lp += gain;
         if (rank.lp >= 100) {
             rank.lp = 100;
             if (!isMaxRank(rank)) {
                 rank.promo = { wins: 0, losses: 0 };
-                return { lpChange: LP_PER_WIN, promoted: false, demoted: false, promoSeriesResult: "started" };
+                return { lpChange: gain, promoted: false, demoted: false, promoSeriesResult: "started" };
             }
         }
-        return { lpChange: LP_PER_WIN, promoted: false, demoted: false, promoSeriesResult: null };
+        return { lpChange: gain, promoted: false, demoted: false, promoSeriesResult: null };
     }
 
+    rank.streak = rank.streak < 0 ? rank.streak - 1 : -1;
+    const loss = lpForLossStreak(-rank.streak);
     rank.losses += 1;
-    rank.lp -= LP_PER_LOSS;
+    rank.lp -= loss;
     if (rank.lp < 0) {
         rank.lp = 0;
         const wasFloor = rank.tier === "COPPER" && rank.division === 4;
         demoteOneStep(rank);
-        return { lpChange: -LP_PER_LOSS, promoted: false, demoted: !wasFloor, promoSeriesResult: null };
+        return { lpChange: -loss, promoted: false, demoted: !wasFloor, promoSeriesResult: null };
     }
-    return { lpChange: -LP_PER_LOSS, promoted: false, demoted: false, promoSeriesResult: null };
+    return { lpChange: -loss, promoted: false, demoted: false, promoSeriesResult: null };
 }
 
 async function loadRank(playerId, season) {
