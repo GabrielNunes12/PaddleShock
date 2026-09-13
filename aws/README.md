@@ -61,13 +61,39 @@ Single POST endpoint, JSON body, `action` field selects behavior:
   race the receive thread for incoming packets). Exposed via `getPublicAddress()` on both.
   Live-verified against real Google STUN servers (~70ms, consistent across runs) and regression
   -tested against the full two-instance LAN host/join flow (unaffected).
-- **Not yet built**: lobby-code UI in `MultiplayerState` (replacing/augmenting the IP:port text
-  field) to actually call the AWS Lambda and use the discovered public addresses (Phase C);
-  `NetHost` becoming an active puncher (sends toward the joiner's public addr once known) instead
-  of purely reactive - required for NAT hole-punching to actually open a path both ways (Phase D).
+- **Done (Phase C)**: `LobbyClient` (`src/main/java/com/paddleshock/net/LobbyClient.java`) wraps
+  the 3 Lambda actions over `java.net.http.HttpClient`. `NetHost.registerLobby()` and the new
+  `NetClient.connectByLobbyCode(String)` (a static factory - it must discover its own public
+  address on the real game socket BEFORE it can register as a joiner and learn the host's
+  address, so it can't use the existing instance constructor, which needs the host address up
+  front) wire this into the actual connect flow. `MultiplayerState`'s JOIN field now accepts
+  either an IP:port (unchanged) or a lobby code (detected by the absence of a `:`, normalized to
+  uppercase since codes are generated uppercase and DynamoDB keys are case-sensitive); the HOST
+  screen shows the LAN address as before plus an "Internet code" once background registration
+  completes. All background lobby calls are generation-guarded (an in-flight call superseded by
+  a newer attempt, or by leaving the screen, closes its own result instead of leaking a socket).
+  **Live-verified**: a real lobby code was generated, entered on a second instance (lowercase, to
+  confirm normalization), resolved via the Lambda to the correct host address, and the joiner
+  reached "Connecting...". The actual UDP handshake did not complete in this test - see below,
+  this is expected, not a Phase C defect.
+- **Not yet built (Phase D)**: `NetHost` becoming an active puncher (sending toward the joiner's
+  public address as soon as it learns it, instead of only ever reacting to an inbound HELLO) -
+  required for the connection to actually complete across most real NATs. Phase C only built the
+  address-exchange plumbing; it doesn't make the UDP path itself traversable yet.
+
+### Why the live test's connection didn't complete
+
+Both test instances ran on the same machine/network. The joiner's HELLO packets were correctly
+addressed to the host's real public `ip:port` (confirmed via a manual Lambda poll - the joiner's
+registered address matched), but never arrived at the host (`hasJoiner()` stayed false). This
+matches sending a packet to your own public IP and depending on your router to route it back in
+("NAT hairpinning") - not all consumer routers support it, independent of anything this code
+does. It's exactly the gap Phase D's active punching is meant to close (punching from both sides
+at once opens paths hairpinning alone can't) - true cross-network validation needs two genuinely
+different networks (Phase E), not two processes on one machine.
 
 See the main session's design doc discussion (not committed) for the full phase breakdown
-(A: AWS infra [this], B: STUN client, C: lobby UI, D: active punching, E: cross-network QA).
+(A: AWS infra, B: STUN client, C: lobby UI [this], D: active punching, E: cross-network QA).
 
 ## Redeploying the Lambda after code changes
 

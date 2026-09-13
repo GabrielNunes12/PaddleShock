@@ -185,6 +185,12 @@ public class PaddleShockApp extends SimpleApplication {
         return new NetClient(hostAddress, port);
     }
 
+    /** Connects to a host via an AWS lobby code instead of a typed IP:port - see
+     *  {@link NetClient#connectByLobbyCode}. */
+    public NetClient joinMatchByLobbyCode(String code) throws IOException {
+        return NetClient.connectByLobbyCode(code);
+    }
+
     /** Enters the match as the listen-server host, once a joiner has connected to {@code netHost}. */
     public void enterHostedMatch(NetHost netHost) {
         mainMenuState.setEnabled(false);

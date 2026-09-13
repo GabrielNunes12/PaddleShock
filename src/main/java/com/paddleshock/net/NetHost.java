@@ -128,6 +128,16 @@ public class NetHost implements AutoCloseable {
         return publicAddress;
     }
 
+    /** Registers this host with the AWS lobby broker and returns a short code the joiner can
+     *  enter instead of typing this machine's raw address. Blocking network call - run off the
+     *  render thread. Throws if no public address was discovered (offline, or STUN blocked). */
+    public String registerLobby() throws IOException {
+        if (publicAddress == null) {
+            throw new IOException("no public address available for internet play");
+        }
+        return LobbyClient.create(StunClient.format(publicAddress));
+    }
+
     @Override
     public void close() {
         running = false;

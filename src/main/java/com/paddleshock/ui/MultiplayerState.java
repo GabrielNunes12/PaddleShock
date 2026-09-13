@@ -6,6 +6,8 @@ import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.util.Enumeration;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import com.jme3.app.Application;
 import com.jme3.app.SimpleApplication;
@@ -27,9 +29,15 @@ import com.paddleshock.net.NetClient;
 import com.paddleshock.net.NetHost;
 
 /**
- * LAN multiplayer screen: pick HOST (bind a UDP port, show this machine's LAN IP, wait for a
- * joiner) or JOIN (type the host's IP:port, connect). Functional, not polished - matches
- * {@link LoadoutState}'s full-screen dark-panel layout for visual consistency, nothing more.
+ * Multiplayer screen: pick HOST (bind a UDP port, show this machine's LAN address AND an AWS
+ * lobby code for internet play, wait for a joiner) or JOIN (type the host's LAN IP:port, or enter
+ * a lobby code instead). Functional, not polished - matches {@link LoadoutState}'s full-screen
+ * dark-panel layout for visual consistency, nothing more.
+ *
+ * <p>The lobby code (see {@code aws/README.md}) only brokers address exchange via AWS - it does
+ * not yet make internet play work through arbitrary NATs (that's active hole-punching, still
+ * unbuilt - Phase D). Today it works for LAN play (as before) and for hosts whose public address
+ * is actually reachable (e.g. port-forwarded, or a NAT that hairpins).
  */
 public class MultiplayerState extends BaseAppState {
 
@@ -43,6 +51,21 @@ public class MultiplayerState extends BaseAppState {
     private Label statusLabel;
     private TextField addressField;
     private String joinError;
+
+    // Host-side: AWS lobby code registration, run off the render thread. lobbyGeneration guards
+    // against a stale background result (from a cancelled/replaced hosting attempt) overwriting
+    // a newer one - see beginHosting().
+    private final AtomicInteger lobbyGeneration = new AtomicInteger(0);
+    private final AtomicReference<String> lobbyCode = new AtomicReference<>();
+    private final AtomicReference<String> lobbyError = new AtomicReference<>();
+    private volatile boolean lobbyPending = false;
+    private boolean lobbyResultShown = false;
+
+    // Joiner-side: resolving a lobby code to a NetClient, also off the render thread.
+    // lobbyJoinGeneration serves the same purpose as lobbyGeneration above.
+    private final AtomicInteger lobbyJoinGeneration = new AtomicInteger(0);
+    private final AtomicReference<NetClient> pendingCodeClient = new AtomicReference<>();
+    private final AtomicReference<String> pendingCodeError = new AtomicReference<>();
 
     @Override
     protected void initialize(Application application) {
@@ -131,6 +154,41 @@ public class MultiplayerState extends BaseAppState {
         }
         view = View.HOSTING;
         rebuild();
+        beginLobbyRegistration();
+    }
+
+    /** Kicks off (on a background thread - it's a blocking HTTPS call) registering this host
+     *  with the AWS lobby broker, so players on a different network can join via a short code
+     *  instead of needing the LAN address. Purely additive: if it fails (no internet, STUN
+     *  blocked, Lambda unreachable) LAN-only hosting still works exactly as before. */
+    private void beginLobbyRegistration() {
+        int myGeneration = lobbyGeneration.incrementAndGet();
+        lobbyCode.set(null);
+        lobbyError.set(null);
+        lobbyResultShown = false;
+        NetHost hostRef = netHost;
+        if (hostRef.getPublicAddress() == null) {
+            lobbyPending = false;
+            return;
+        }
+        lobbyPending = true;
+        Thread thread = new Thread(() -> {
+            String code = null;
+            String error = null;
+            try {
+                code = hostRef.registerLobby();
+            } catch (IOException e) {
+                error = e.getMessage();
+            }
+            if (lobbyGeneration.get() == myGeneration) {
+                lobbyCode.set(code);
+                lobbyError.set(error);
+                lobbyPending = false;
+            }
+            // else: superseded by a newer hosting attempt (or the screen was left) - discard
+        }, "lobby-register");
+        thread.setDaemon(true);
+        thread.start();
     }
 
     private void buildHosting(PaddleShockApp app, Container panel) {
@@ -144,10 +202,33 @@ public class MultiplayerState extends BaseAppState {
         addressLabel.setColor(Theme.TEXT);
         addressLabel.setInsets(new Insets3f(0, 0, 4, 0));
 
-        Label hint = panel.addChild(new Label("Give this address to your opponent."));
+        Label hint = panel.addChild(new Label("Same network? Give them this address."));
         hint.setFontSize(12);
         hint.setColor(Theme.TEXT_DIM);
-        hint.setInsets(new Insets3f(0, 0, 18, 0));
+        hint.setInsets(new Insets3f(0, 0, 10, 0));
+
+        String code = lobbyCode.get();
+        String error = lobbyError.get();
+        if (lobbyPending) {
+            Label pending = panel.addChild(new Label("Looking up an internet code..."));
+            pending.setFontSize(12);
+            pending.setColor(Theme.TEXT_DIM);
+            pending.setInsets(new Insets3f(0, 0, 14, 0));
+        } else if (code != null) {
+            Label codeLabel = panel.addChild(new Label("Internet code: " + code));
+            codeLabel.setFontSize(20);
+            codeLabel.setColor(Theme.BLUE);
+            codeLabel.setInsets(new Insets3f(0, 0, 4, 0));
+            Label codeHint = panel.addChild(new Label("Different network? Give them this code instead."));
+            codeHint.setFontSize(12);
+            codeHint.setColor(Theme.TEXT_DIM);
+            codeHint.setInsets(new Insets3f(0, 0, 14, 0));
+        } else if (error != null) {
+            Label errorLabel = panel.addChild(new Label("(Internet code unavailable: " + error + ")"));
+            errorLabel.setFontSize(11);
+            errorLabel.setColor(Theme.TEXT_DIM);
+            errorLabel.setInsets(new Insets3f(0, 0, 14, 0));
+        }
 
         statusLabel = panel.addChild(new Label("Waiting for opponent..."));
         statusLabel.setFontSize(16);
@@ -177,7 +258,7 @@ public class MultiplayerState extends BaseAppState {
         title.setColor(Theme.BLUE);
         title.setInsets(new Insets3f(0, 0, 4, 0));
 
-        Label hint = panel.addChild(new Label("Enter the host's address (IP:port):"));
+        Label hint = panel.addChild(new Label("Enter the host's LAN address (IP:port) or their internet code:"));
         hint.setFontSize(12);
         hint.setColor(Theme.TEXT_DIM);
         hint.setInsets(new Insets3f(0, 0, 8, 0));
@@ -217,6 +298,19 @@ public class MultiplayerState extends BaseAppState {
 
     private void attemptConnect(PaddleShockApp app) {
         String raw = addressField.getText().trim();
+        if (raw.isEmpty()) {
+            joinError = "Enter a LAN address (IP:port) or an internet code.";
+            statusLabel.setText(joinError);
+            return;
+        }
+        if (raw.contains(":")) {
+            connectByAddress(app, raw);
+        } else {
+            connectByLobbyCode(app, raw.toUpperCase(java.util.Locale.ROOT));
+        }
+    }
+
+    private void connectByAddress(PaddleShockApp app, String raw) {
         int colon = raw.lastIndexOf(':');
         if (colon <= 0 || colon == raw.length() - 1) {
             joinError = "Enter address as IP:port, e.g. 192.168.1.10:" + GameConstants.MULTIPLAYER_DEFAULT_PORT;
@@ -246,6 +340,40 @@ public class MultiplayerState extends BaseAppState {
         joinError = null;
         statusLabel.setColor(Theme.TEXT);
         statusLabel.setText("Connecting...");
+    }
+
+    /** Resolves a lobby code to a host address via AWS (blocking HTTPS calls), off the render
+     *  thread - the result is picked up in {@link #update}. {@code lobbyJoinGeneration} lets a
+     *  newer attempt (another click, or leaving the screen) supersede an older one still in
+     *  flight; the superseded thread closes its own result instead of leaking it. */
+    private void connectByLobbyCode(PaddleShockApp app, String code) {
+        if (netClient != null) {
+            netClient.close();
+            netClient = null;
+        }
+        joinError = null;
+        statusLabel.setColor(Theme.TEXT);
+        statusLabel.setText("Looking up code...");
+
+        int myGeneration = lobbyJoinGeneration.incrementAndGet();
+        pendingCodeClient.set(null);
+        pendingCodeError.set(null);
+        Thread thread = new Thread(() -> {
+            try {
+                NetClient client = app.joinMatchByLobbyCode(code);
+                if (lobbyJoinGeneration.get() == myGeneration) {
+                    pendingCodeClient.set(client);
+                } else {
+                    client.close();
+                }
+            } catch (IOException e) {
+                if (lobbyJoinGeneration.get() == myGeneration) {
+                    pendingCodeError.set(e.getMessage());
+                }
+            }
+        }, "lobby-join");
+        thread.setDaemon(true);
+        thread.start();
     }
 
     private void styleButton(Button button, com.jme3.math.ColorRGBA bg, com.jme3.math.ColorRGBA fg, int fontSize) {
@@ -282,6 +410,29 @@ public class MultiplayerState extends BaseAppState {
     @Override
     public void update(float tpf) {
         PaddleShockApp app = (PaddleShockApp) getApplication();
+
+        if (view == View.HOSTING && !lobbyResultShown && !lobbyPending
+                && (lobbyCode.get() != null || lobbyError.get() != null)) {
+            lobbyResultShown = true;
+            rebuild();
+        }
+
+        if (view == View.JOINING && netClient == null) {
+            NetClient resolved = pendingCodeClient.getAndSet(null);
+            if (resolved != null) {
+                netClient = resolved;
+                statusLabel.setColor(Theme.TEXT);
+                statusLabel.setText("Connecting...");
+            } else {
+                String error = pendingCodeError.getAndSet(null);
+                if (error != null) {
+                    joinError = "Could not find that code: " + error;
+                    statusLabel.setColor(Theme.ORANGE);
+                    statusLabel.setText(joinError);
+                }
+            }
+        }
+
         if (view == View.HOSTING && netHost != null && netHost.hasJoiner()) {
             // Null the field BEFORE handing off: enterHostedMatch() disables this state, which
             // synchronously fires onDisable() - that must not see (and close) the socket we just
@@ -331,6 +482,15 @@ public class MultiplayerState extends BaseAppState {
         if (netClient != null) {
             netClient.close();
             netClient = null;
+        }
+        // Supersede any in-flight background lobby lookups so a late result closes itself
+        // instead of leaking (see connectByLobbyCode/beginLobbyRegistration), and close any
+        // result that already arrived but was never consumed.
+        lobbyGeneration.incrementAndGet();
+        lobbyJoinGeneration.incrementAndGet();
+        NetClient orphaned = pendingCodeClient.getAndSet(null);
+        if (orphaned != null) {
+            orphaned.close();
         }
     }
 }

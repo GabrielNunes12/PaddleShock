@@ -39,6 +39,58 @@ public class NetClient implements AutoCloseable {
         sendHello();
     }
 
+    /** Internal constructor used by {@link #connectByLobbyCode}, where the public address is
+     *  already known (discovered before the host's address was) and doesn't need rediscovering. */
+    private NetClient(DatagramSocket socket, InetSocketAddress publicAddress, InetSocketAddress hostAddress) {
+        this.socket = socket;
+        this.publicAddress = publicAddress;
+        this.hostAddress = hostAddress;
+        receiveThread = new Thread(this::receiveLoop, "NetClient-recv");
+        receiveThread.setDaemon(true);
+        receiveThread.start();
+        sendHello();
+    }
+
+    /**
+     * Connects via an AWS lobby code instead of a typed IP:port: binds a socket, discovers this
+     * machine's public address on THAT socket (must happen first - the registered address has to
+     * match the socket that will actually carry game traffic), registers as the joiner for
+     * {@code code} to learn the host's public address, then connects to it exactly like the
+     * direct constructor. Blocking network calls (STUN + the lobby HTTPS round trip) - run off
+     * the render thread.
+     */
+    public static NetClient connectByLobbyCode(String code) throws IOException {
+        DatagramSocket socket = new DatagramSocket();
+        InetSocketAddress publicAddress = StunClient.discoverPublicAddress(socket);
+        if (publicAddress == null) {
+            socket.close();
+            throw new IOException("no public address available for internet play (offline, or STUN is blocked)");
+        }
+        String hostAddressText;
+        try {
+            hostAddressText = LobbyClient.join(code, StunClient.format(publicAddress));
+        } catch (IOException e) {
+            socket.close();
+            throw e;
+        }
+        InetSocketAddress hostAddress = parseAddress(hostAddressText);
+        return new NetClient(socket, publicAddress, hostAddress);
+    }
+
+    private static InetSocketAddress parseAddress(String text) throws IOException {
+        int colon = text.lastIndexOf(':');
+        if (colon <= 0 || colon == text.length() - 1) {
+            throw new IOException("lobby service returned a malformed address: " + text);
+        }
+        try {
+            InetAddress host = InetAddress.getByName(text.substring(0, colon));
+            int port = Integer.parseInt(text.substring(colon + 1));
+            return new InetSocketAddress(host, port);
+        } catch (NumberFormatException e) {
+            throw new IOException("lobby service returned a malformed address: " + text);
+        }
+    }
+
     /** Re-sends the handshake "hello"; safe to call repeatedly while waiting for a welcome
      *  (e.g. from a UI poll loop) since the host treats a repeat hello from the same peer as
      *  a no-op re-accept rather than a second connection. */
