@@ -39,6 +39,9 @@ public class PaddleShockApp extends SimpleApplication {
         flyCam.setEnabled(false);
         setDisplayStatView(false);
         setDisplayFps(false);
+        // jME's SimpleApplication binds Escape to quitting the app by default; we use
+        // Escape for our own pause menu instead, so drop that binding.
+        inputManager.deleteMapping(INPUT_MAPPING_EXIT);
 
         profile = SaveManager.loadProfile();
         gameSettings = SaveManager.loadSettings();
