@@ -14,6 +14,7 @@ import com.paddleshock.audio.AudioManager;
 import com.paddleshock.data.PlayerProfile;
 import com.paddleshock.data.SaveManager;
 import com.paddleshock.settings.GameSettings;
+import com.paddleshock.ui.LoadoutState;
 import com.paddleshock.ui.MainMenuState;
 import com.paddleshock.ui.MatchEndState;
 import com.paddleshock.ui.OptionsState;
@@ -34,6 +35,7 @@ public class PaddleShockApp extends SimpleApplication {
     private OptionsState optionsState;
     private StoreState storeState;
     private MatchEndState matchEndState;
+    private LoadoutState loadoutState;
     private GameplayAppState gameplayState;
 
     @Override
@@ -59,6 +61,7 @@ public class PaddleShockApp extends SimpleApplication {
         optionsState = new OptionsState();
         storeState = new StoreState();
         matchEndState = new MatchEndState();
+        loadoutState = new LoadoutState();
 
         stateManager.attach(splashState);
         stateManager.attach(mainMenuState);
@@ -66,12 +69,14 @@ public class PaddleShockApp extends SimpleApplication {
         stateManager.attach(optionsState);
         stateManager.attach(storeState);
         stateManager.attach(matchEndState);
+        stateManager.attach(loadoutState);
 
         mainMenuState.setEnabled(false);
         pauseState.setEnabled(false);
         optionsState.setEnabled(false);
         storeState.setEnabled(false);
         matchEndState.setEnabled(false);
+        loadoutState.setEnabled(false);
     }
 
     public PlayerProfile getProfile() {
@@ -104,13 +109,23 @@ public class PaddleShockApp extends SimpleApplication {
         optionsState.setEnabled(false);
         storeState.setEnabled(false);
         matchEndState.setEnabled(false);
+        loadoutState.setEnabled(false);
         mainMenuState.setEnabled(true);
+        audioManager.playMenuMusic();
+    }
+
+    /** Shown before every match (fresh or rematch) to confirm/change loadout and buy from a store modal. */
+    public void showLoadout() {
+        mainMenuState.setEnabled(false);
+        matchEndState.setEnabled(false);
+        loadoutState.setEnabled(true);
         audioManager.playMenuMusic();
     }
 
     public void startMatchVsAI() {
         mainMenuState.setEnabled(false);
         matchEndState.setEnabled(false);
+        loadoutState.setEnabled(false);
         if (gameplayState != null) {
             stateManager.detach(gameplayState);
         }
@@ -158,8 +173,15 @@ public class PaddleShockApp extends SimpleApplication {
     public void showStore() {
         mainMenuState.setEnabled(false);
         matchEndState.setEnabled(false);
+        storeState.showFull(this::showMainMenu);
         storeState.setEnabled(true);
         audioManager.playMenuMusic();
+    }
+
+    /** Opens the store as a dimmed modal on top of whatever's currently shown (match setup), without navigating away. */
+    public void showStoreModal(Runnable onClose) {
+        storeState.showAsModal(onClose);
+        storeState.setEnabled(true);
     }
 
     public void showOptions(Runnable backAction) {

@@ -27,12 +27,35 @@ public class StoreState extends BaseAppState {
 
     private static final float HEADER_HEIGHT = 92f;
     private static final float FOOTER_HEIGHT = 64f;
-    private static final float CARD_WIDTH = 340f;
-    private static final float CARD_HEIGHT = 300f;
-    private static final float SWATCH_HEIGHT = 60f;
+    private static final float FULL_CARD_WIDTH = 340f;
+    private static final float FULL_CARD_HEIGHT = 300f;
+    private static final float FULL_SWATCH_HEIGHT = 60f;
+    private static final float MODAL_CARD_WIDTH = 230f;
+    private static final float MODAL_CARD_HEIGHT = 260f;
+    private static final float MODAL_SWATCH_HEIGHT = 50f;
 
     private final Node uiRoot = new Node("storeUi");
     private String selectedCategory = "paddle";
+
+    /** When true, renders as a dimmed overlay panel (opened from match setup) instead of a full screen. */
+    private boolean modal = false;
+    private Runnable backAction = () -> {
+    };
+    private float cardWidth = FULL_CARD_WIDTH;
+    private float cardHeight = FULL_CARD_HEIGHT;
+    private float swatchHeight = FULL_SWATCH_HEIGHT;
+
+    /** Opens as a full-screen browse (main menu / match-end "STORE" buttons); returns to onClose. */
+    public void showFull(Runnable onClose) {
+        this.modal = false;
+        this.backAction = onClose;
+    }
+
+    /** Opens as a dimmed modal on top of whatever's currently shown (match setup); returns via onClose. */
+    public void showAsModal(Runnable onClose) {
+        this.modal = true;
+        this.backAction = onClose;
+    }
 
     @Override
     protected void initialize(Application application) {
@@ -46,10 +69,70 @@ public class StoreState extends BaseAppState {
         float screenW = simpleApp.getCamera().getWidth();
         float screenH = simpleApp.getCamera().getHeight();
 
-        buildBackground(screenW, screenH);
-        buildHeader(app, screenW, screenH);
-        buildCards(app, screenW, screenH);
-        buildFooter(app, screenW);
+        cardWidth = modal ? MODAL_CARD_WIDTH : FULL_CARD_WIDTH;
+        cardHeight = modal ? MODAL_CARD_HEIGHT : FULL_CARD_HEIGHT;
+        swatchHeight = modal ? MODAL_SWATCH_HEIGHT : FULL_SWATCH_HEIGHT;
+
+        if (modal) {
+            buildModal(app, screenW, screenH);
+        } else {
+            buildBackground(screenW, screenH);
+            buildHeader(app, screenW, screenH);
+            buildCards(app, screenW, screenH);
+            buildFooter(app, screenW);
+        }
+    }
+
+    /** A dimmed backdrop plus a single centered panel holding tabs, cards and a close button. */
+    private void buildModal(PaddleShockApp app, float screenW, float screenH) {
+        Container overlay = new Container();
+        com.simsilica.lemur.component.QuadBackgroundComponent overlayBg = quad(Theme.BACKGROUND);
+        overlayBg.setAlpha(0.82f);
+        overlay.setBackground(overlayBg);
+        overlay.setPreferredSize(new Vector3f(screenW, screenH, 0));
+        overlay.setLocalTranslation(0, screenH, 0);
+        uiRoot.attachChild(overlay);
+
+        Container panel = new Container(new SpringGridLayout(Axis.Y, Axis.X));
+        panel.setBackground(quad(Theme.PANEL));
+        panel.setInsets(new Insets3f(20, 26, 20, 26));
+
+        Label title = panel.addChild(new Label("STORE"));
+        title.setFontSize(22);
+        title.setColor(Theme.ORANGE);
+        title.setInsets(new Insets3f(0, 0, 2, 0));
+
+        PlayerProfile profile = app.getProfile();
+        Label currency = panel.addChild(new Label(profile.getCurrency() + " credits"));
+        currency.setFontSize(14);
+        currency.setColor(Theme.TEXT_DIM);
+        currency.setInsets(new Insets3f(0, 0, 12, 0));
+
+        Container tabs = panel.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
+        tabs.setInsets(new Insets3f(0, 0, 12, 0));
+        addTab(tabs, app, "PADDLES", "paddle");
+        addTab(tabs, app, "TABLES", "table");
+        addTab(tabs, app, "BALLS", "ball");
+        addTab(tabs, app, "POWER-UPS", "powerup");
+
+        Container cardsRow = panel.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
+        cardsRow.setInsets(new Insets3f(0, 0, 16, 0));
+        populateCards(cardsRow, app, profile);
+
+        Button close = panel.addChild(new Button("CLOSE"));
+        close.setBackground(quad(Theme.ORANGE));
+        close.setColor(Theme.ON_ACCENT);
+        close.setFontSize(15);
+        close.setPreferredSize(new Vector3f(220, 42, 0));
+        close.addClickCommands(source -> {
+            app.getAudioManager().playSfx("button_click.ogg");
+            setEnabled(false);
+            backAction.run();
+        });
+
+        Vector3f panelSize = panel.getPreferredSize();
+        panel.setLocalTranslation((screenW - panelSize.x) / 2f, (screenH + panelSize.y) / 2f, 1);
+        uiRoot.attachChild(panel);
     }
 
     private void buildBackground(float screenW, float screenH) {
@@ -115,7 +198,15 @@ public class StoreState extends BaseAppState {
     private void buildCards(PaddleShockApp app, float screenW, float screenH) {
         Container cardsRow = new Container(new SpringGridLayout(Axis.X, Axis.Y));
         PlayerProfile profile = app.getProfile();
+        populateCards(cardsRow, app, profile);
 
+        Vector3f rowSize = cardsRow.getPreferredSize();
+        cardsRow.setLocalTranslation((screenW - rowSize.x) / 2f,
+                screenH - HEADER_HEIGHT - 40f, 1);
+        uiRoot.attachChild(cardsRow);
+    }
+
+    private void populateCards(Container cardsRow, PaddleShockApp app, PlayerProfile profile) {
         switch (selectedCategory) {
             case "paddle" -> {
                 for (PaddleDefinition item : Catalog.PADDLES) {
@@ -145,11 +236,6 @@ public class StoreState extends BaseAppState {
             }
             default -> throw new IllegalStateException("Unknown category: " + selectedCategory);
         }
-
-        Vector3f rowSize = cardsRow.getPreferredSize();
-        cardsRow.setLocalTranslation((screenW - rowSize.x) / 2f,
-                screenH - HEADER_HEIGHT - 40f, 1);
-        uiRoot.attachChild(cardsRow);
     }
 
     private void addCard(Container cardsRow, PaddleShockApp app, PlayerProfile profile, String category,
@@ -165,11 +251,11 @@ public class StoreState extends BaseAppState {
         Container card = cardsRow.addChild(new Container(new SpringGridLayout(Axis.Y, Axis.X)));
         card.setInsets(new Insets3f(0, 12, 0, 12));
         card.setBackground(quad(cardColor));
-        card.setPreferredSize(new Vector3f(CARD_WIDTH, CARD_HEIGHT, 0));
+        card.setPreferredSize(new Vector3f(cardWidth, cardHeight, 0));
 
         Container swatch = card.addChild(new Container());
         swatch.setBackground(quad(tint));
-        swatch.setPreferredSize(new Vector3f(CARD_WIDTH, SWATCH_HEIGHT, 0));
+        swatch.setPreferredSize(new Vector3f(cardWidth, swatchHeight, 0));
 
         Label name = card.addChild(new Label(displayName.toUpperCase()));
         name.setInsets(new Insets3f(10, 16, 4, 16));
@@ -195,7 +281,7 @@ public class StoreState extends BaseAppState {
         action.setBackground(quad(actionColor));
         action.setColor(Theme.ON_ACCENT);
         action.setFontSize(15);
-        action.setPreferredSize(new Vector3f(CARD_WIDTH - 32, 40, 0));
+        action.setPreferredSize(new Vector3f(cardWidth - 32, 40, 0));
         action.setEnabled(!equipped);
         action.addClickCommands((Command<Button>) source -> {
             if (owned) {
@@ -225,11 +311,11 @@ public class StoreState extends BaseAppState {
         Container card = cardsRow.addChild(new Container(new SpringGridLayout(Axis.Y, Axis.X)));
         card.setInsets(new Insets3f(0, 12, 0, 12));
         card.setBackground(quad(cardColor));
-        card.setPreferredSize(new Vector3f(CARD_WIDTH, CARD_HEIGHT, 0));
+        card.setPreferredSize(new Vector3f(cardWidth, cardHeight, 0));
 
         Container swatch = card.addChild(new Container());
         swatch.setBackground(quad(item.getType().getColor()));
-        swatch.setPreferredSize(new Vector3f(CARD_WIDTH, SWATCH_HEIGHT, 0));
+        swatch.setPreferredSize(new Vector3f(cardWidth, swatchHeight, 0));
 
         Label name = card.addChild(new Label(item.getDisplayName().toUpperCase()));
         name.setInsets(new Insets3f(10, 16, 4, 16));
@@ -256,7 +342,7 @@ public class StoreState extends BaseAppState {
             buy.setBackground(quad(Theme.ORANGE));
             buy.setColor(Theme.ON_ACCENT);
             buy.setFontSize(15);
-            buy.setPreferredSize(new Vector3f(CARD_WIDTH - 32, 40, 0));
+            buy.setPreferredSize(new Vector3f(cardWidth - 32, 40, 0));
             buy.addClickCommands((Command<Button>) source -> {
                 profile.purchasePowerUp(item.getId(), item.getPrice());
                 app.saveProfile();
@@ -272,7 +358,7 @@ public class StoreState extends BaseAppState {
                 slotButton.setBackground(quad(isThisSlot ? Theme.GREEN : Theme.PANEL_HOVER));
                 slotButton.setColor(isThisSlot ? Theme.ON_ACCENT : Theme.TEXT);
                 slotButton.setFontSize(13);
-                slotButton.setPreferredSize(new Vector3f((CARD_WIDTH - 32) / 3f, 36, 0));
+                slotButton.setPreferredSize(new Vector3f((cardWidth - 32) / 3f, 36, 0));
                 int slotIndex = i;
                 slotButton.addClickCommands((Command<Button>) source -> {
                     profile.setLoadoutSlot(slotIndex, isThisSlot ? "" : item.getId());
@@ -298,7 +384,8 @@ public class StoreState extends BaseAppState {
         back.setLocalTranslation(32, FOOTER_HEIGHT - 12, 2);
         back.addClickCommands(source -> {
             app.getAudioManager().playSfx("button_click.ogg");
-            app.showMainMenu();
+            setEnabled(false);
+            backAction.run();
         });
         uiRoot.attachChild(back);
     }
@@ -327,6 +414,9 @@ public class StoreState extends BaseAppState {
     @Override
     protected void onEnable() {
         rebuild((PaddleShockApp) getApplication());
+        // Pushed well above the Z range any other screen uses, so a modal open on top of
+        // match setup always wins the GUI bucket's back-to-front draw (and pick) order.
+        uiRoot.setLocalTranslation(0, 0, modal ? 50f : 0f);
         ((SimpleApplication) getApplication()).getGuiNode().attachChild(uiRoot);
         getApplication().getInputManager().setCursorVisible(true);
     }

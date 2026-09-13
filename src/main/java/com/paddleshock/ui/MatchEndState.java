@@ -96,7 +96,7 @@ public class MatchEndState extends BaseAppState {
 
         // Actions: left-anchored, matching the banner's asymmetric composition.
         Container actions = new Container(new SpringGridLayout(Axis.Y, Axis.X));
-        addMenuButton(actions, "REMATCH", Theme.ORANGE, Theme.ON_ACCENT, app::startMatchVsAI);
+        addMenuButton(actions, "REMATCH", Theme.ORANGE, Theme.ON_ACCENT, app::showLoadout);
         addMenuButton(actions, "STORE", Theme.PANEL_HOVER, Theme.TEXT, app::showStore);
         addMenuButton(actions, "MAIN MENU", Theme.PANEL_HOVER, Theme.TEXT, app::showMainMenu);
         actions.setLocalTranslation(40, screenH - 460, 2);
@@ -121,7 +121,7 @@ public class MatchEndState extends BaseAppState {
         attachCenteredText(centerX, consolationY, "First to " + GameConstants.WIN_SCORE + " wins. Try again!", 16, Theme.TEXT_DIM);
 
         Container actions = new Container(new SpringGridLayout(Axis.Y, Axis.X));
-        addMenuButton(actions, "REMATCH", Theme.ORANGE, Theme.ON_ACCENT, app::startMatchVsAI);
+        addMenuButton(actions, "REMATCH", Theme.ORANGE, Theme.ON_ACCENT, app::showLoadout);
         addMenuButton(actions, "MAIN MENU", Theme.PANEL_HOVER, Theme.TEXT, app::showMainMenu);
         Vector3f actionsSize = actions.getPreferredSize();
         actions.setLocalTranslation(centerX - actionsSize.x / 2f, consolationY - 24, 2);

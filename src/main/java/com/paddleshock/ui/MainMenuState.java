@@ -65,7 +65,7 @@ public class MainMenuState extends BaseAppState {
         shockLabel.setLocalTranslation((screenW - logoWidth) / 2f + paddleLabel.getPreferredSize().x, logoY, 1);
 
         Container menu = new Container(new SpringGridLayout(Axis.Y, Axis.X));
-        addMenuButton(menu, "PLAY VS AI", Theme.ORANGE, Theme.ON_ACCENT, app::startMatchVsAI);
+        addMenuButton(menu, "PLAY VS AI", Theme.ORANGE, Theme.ON_ACCENT, app::showLoadout);
         addMenuButton(menu, "MULTIPLAYER", Theme.PANEL_HOVER, Theme.TEXT,
                 () -> showComingSoon(menu, screenW));
         addMenuButton(menu, "STORE", Theme.PANEL_HOVER, Theme.TEXT, app::showStore);
