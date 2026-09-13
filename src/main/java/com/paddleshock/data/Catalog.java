@@ -7,6 +7,7 @@ import com.jme3.math.ColorRGBA;
 
 import com.paddleshock.entities.BallModel;
 import com.paddleshock.entities.TextureSet;
+import com.paddleshock.powerups.PowerUpType;
 
 /** Hard-coded store catalog. Each list's first entry is the free default. */
 public final class Catalog {
@@ -35,7 +36,17 @@ public final class Catalog {
             new BallDefinition("ball_beach", "Beach Ball", 150,
                     0.7f, 1.6f, new ColorRGBA(0.3f, 0.8f, 1f, 1f), TextureSet.PLASTIC, BallModel.BEACH));
 
+    /** No free default here - power-ups start locked and are unlocked one-by-one from the store. */
+    public static final List<PowerUpDefinition> POWERUPS = List.of(
+            new PowerUpDefinition("powerup_paddle_grow", "Paddle Grow", 120, PowerUpType.PADDLE_GROW, 20f),
+            new PowerUpDefinition("powerup_speed_boost", "Speed Boost", 120, PowerUpType.SPEED_BOOST, 20f),
+            new PowerUpDefinition("powerup_slow_opponent", "Slow Opponent", 120, PowerUpType.SLOW_OPPONENT, 20f));
+
     private Catalog() {
+    }
+
+    public static Optional<PowerUpDefinition> findPowerUp(String id) {
+        return POWERUPS.stream().filter(p -> p.getId().equals(id)).findFirst();
     }
 
     public static Optional<PaddleDefinition> findPaddle(String id) {

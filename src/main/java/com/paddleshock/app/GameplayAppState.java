@@ -17,11 +17,15 @@ import com.jme3.math.Vector3f;
 import com.jme3.scene.Node;
 import com.jme3.scene.Spatial;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import com.paddleshock.GameConstants;
 import com.paddleshock.data.BallDefinition;
 import com.paddleshock.data.Catalog;
 import com.paddleshock.data.PaddleDefinition;
 import com.paddleshock.data.PlayerProfile;
+import com.paddleshock.data.PowerUpDefinition;
 import com.paddleshock.data.TableDefinition;
 import com.paddleshock.entities.Ball;
 import com.paddleshock.entities.Paddle;
@@ -29,12 +33,17 @@ import com.paddleshock.entities.Table;
 import com.paddleshock.entities.TextureSet;
 import com.paddleshock.input.PlayerInput;
 import com.paddleshock.powerups.PowerUpManager;
+import com.paddleshock.ui.Theme;
 
 /** A single match vs. the AI: scene setup, per-frame simulation, scoring, pause key. */
 public class GameplayAppState extends BaseAppState implements ActionListener {
 
     private static final String ACTION_PAUSE = "PS_Pause";
+    private static final String[] POWERUP_ACTIONS = {"PS_PowerUp1", "PS_PowerUp2", "PS_PowerUp3"};
+    private static final int[] POWERUP_KEYS = {KeyInput.KEY_1, KeyInput.KEY_2, KeyInput.KEY_3};
     private static final float AI_MAX_SPEED = 6.5f;
+    private static final float AI_POWERUP_MIN_INTERVAL = 3f;
+    private static final float AI_POWERUP_MAX_INTERVAL = 6f;
 
     private final Node gameNode = new Node("gameplayRoot");
     private final Node hudNode = new Node("gameplayHud");
@@ -46,6 +55,9 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     private Ball ball;
     private final PlayerInput playerInput = new PlayerInput();
     private PowerUpManager powerUpManager;
+    private final PowerUpDefinition[] powerUpLoadout = new PowerUpDefinition[3];
+    private final BitmapText[] powerUpTexts = new BitmapText[3];
+    private float aiPowerUpTimer = AI_POWERUP_MIN_INTERVAL;
 
     private int playerScore = 0;
     private int opponentScore = 0;
@@ -66,6 +78,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
 
         playerInput.register(app.getInputManager());
         registerPauseKey(app.getInputManager());
+        registerPowerUpKeys(app.getInputManager());
 
         simpleApp.getRootNode().attachChild(gameNode);
         simpleApp.getGuiNode().attachChild(hudNode);
@@ -127,10 +140,20 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                 tableDef.getRestitutionMultiplier());
         gameNode.attachChild(ball.getNode());
 
-        powerUpManager = new PowerUpManager(getApplication().getAssetManager(), gameNode, playerPaddle, opponentPaddle);
+        powerUpManager = new PowerUpManager(playerPaddle, opponentPaddle);
+        resolveLoadout(profile);
 
         gameNode.attachChild(buildSideDecor());
         gameNode.attachChild(buildTrophyDecor());
+    }
+
+    /** Resolves the player's 3 store-configured power-up slots into their catalog definitions. */
+    private void resolveLoadout(PlayerProfile profile) {
+        List<String> loadout = profile.getLoadout();
+        for (int i = 0; i < powerUpLoadout.length; i++) {
+            String id = loadout.get(i);
+            powerUpLoadout[i] = id.isEmpty() ? null : Catalog.findPowerUp(id).orElse(null);
+        }
     }
 
     /** A miniature ping-pong table (with its own tiny paddles/net/ball) as a display piece beside the real table. */
@@ -165,10 +188,41 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         scoreText.setLocalTranslation(20, simpleApp.getCamera().getHeight() - 20, 0);
         hudNode.attachChild(scoreText);
         updateScoreText();
+
+        for (int i = 0; i < powerUpLoadout.length; i++) {
+            if (powerUpLoadout[i] == null) {
+                continue;
+            }
+            BitmapText text = new BitmapText(font);
+            text.setSize(16);
+            text.setLocalTranslation(20 + i * 230f, simpleApp.getCamera().getHeight() - 56, 0);
+            hudNode.attachChild(text);
+            powerUpTexts[i] = text;
+        }
+        updatePowerUpHud();
     }
 
     private void updateScoreText() {
         scoreText.setText("You " + playerScore + " : " + opponentScore + " AI  (Esc: pause)");
+    }
+
+    private void updatePowerUpHud() {
+        for (int i = 0; i < powerUpTexts.length; i++) {
+            BitmapText text = powerUpTexts[i];
+            PowerUpDefinition def = powerUpLoadout[i];
+            if (text == null || def == null) {
+                continue;
+            }
+            float remaining = powerUpManager == null ? 0f : powerUpManager.getPlayerCooldownRemaining(def.getType());
+            String key = "[" + (i + 1) + "] ";
+            if (remaining > 0f) {
+                text.setText(key + def.getDisplayName().toUpperCase() + "  " + (int) Math.ceil(remaining) + "s");
+                text.setColor(Theme.TEXT_DIM);
+            } else {
+                text.setText(key + def.getDisplayName().toUpperCase());
+                text.setColor(Theme.ORANGE);
+            }
+        }
     }
 
     private void registerPauseKey(InputManager inputManager) {
@@ -176,11 +230,36 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         inputManager.addListener(this, ACTION_PAUSE);
     }
 
+    private void registerPowerUpKeys(InputManager inputManager) {
+        for (int i = 0; i < POWERUP_ACTIONS.length; i++) {
+            inputManager.addMapping(POWERUP_ACTIONS[i], new KeyTrigger(POWERUP_KEYS[i]));
+            inputManager.addListener(this, POWERUP_ACTIONS[i]);
+        }
+    }
+
     @Override
     public void onAction(String name, boolean isPressed, float tpf) {
         if (ACTION_PAUSE.equals(name) && isPressed && isEnabled()) {
             app.showPause();
+            return;
         }
+        if (!isPressed || !isEnabled()) {
+            return;
+        }
+        for (int i = 0; i < POWERUP_ACTIONS.length; i++) {
+            if (POWERUP_ACTIONS[i].equals(name)) {
+                activatePlayerPowerUp(i);
+                return;
+            }
+        }
+    }
+
+    private void activatePlayerPowerUp(int slot) {
+        PowerUpDefinition def = powerUpLoadout[slot];
+        if (def == null) {
+            return;
+        }
+        powerUpManager.activatePlayerPowerUp(def.getType(), def.getCooldownSeconds());
     }
 
     @Override
@@ -194,6 +273,8 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
 
         ball.update(tpf);
         powerUpManager.update(tpf);
+        updateAiPowerUps(tpf);
+        updatePowerUpHud();
         handleCollisions();
     }
 
@@ -202,6 +283,29 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         float maxStep = AI_MAX_SPEED * tpf;
         float step = Math.max(-maxStep, Math.min(maxStep, toBall));
         opponentPaddle.moveDelta(step, 0);
+    }
+
+    /** The AI mirrors the player's own loadout (there's no separate AI/ranked kit yet) and fires
+     *  a random ready one every few seconds, so bought power-ups don't just favor the player. */
+    private void updateAiPowerUps(float tpf) {
+        aiPowerUpTimer -= tpf;
+        if (aiPowerUpTimer > 0f) {
+            return;
+        }
+        aiPowerUpTimer = AI_POWERUP_MIN_INTERVAL
+                + (float) (Math.random() * (AI_POWERUP_MAX_INTERVAL - AI_POWERUP_MIN_INTERVAL));
+
+        List<PowerUpDefinition> ready = new ArrayList<>();
+        for (PowerUpDefinition def : powerUpLoadout) {
+            if (def != null && powerUpManager.isAiReady(def.getType())) {
+                ready.add(def);
+            }
+        }
+        if (ready.isEmpty()) {
+            return;
+        }
+        PowerUpDefinition chosen = ready.get((int) (Math.random() * ready.size()));
+        powerUpManager.activateAiPowerUp(chosen.getType(), chosen.getCooldownSeconds());
     }
 
     private void handleCollisions() {
@@ -259,6 +363,9 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         simpleApp.getRootNode().detachChild(gameNode);
         simpleApp.getGuiNode().detachChild(hudNode);
         simpleApp.getInputManager().deleteMapping(ACTION_PAUSE);
+        for (String action : POWERUP_ACTIONS) {
+            simpleApp.getInputManager().deleteMapping(action);
+        }
         simpleApp.getInputManager().removeListener(this);
     }
 

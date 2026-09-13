@@ -19,6 +19,7 @@ import com.paddleshock.data.BallDefinition;
 import com.paddleshock.data.Catalog;
 import com.paddleshock.data.PaddleDefinition;
 import com.paddleshock.data.PlayerProfile;
+import com.paddleshock.data.PowerUpDefinition;
 import com.paddleshock.data.TableDefinition;
 
 /** The store: category tabs, a grid of item cards, currency, buy/equip. */
@@ -82,6 +83,7 @@ public class StoreState extends BaseAppState {
         addTab(tabs, app, "PADDLES", "paddle");
         addTab(tabs, app, "TABLES", "table");
         addTab(tabs, app, "BALLS", "ball");
+        addTab(tabs, app, "POWER-UPS", "powerup");
         Vector3f tabsSize = tabs.getPreferredSize();
         tabs.setLocalTranslation((screenW - tabsSize.x) / 2f, screenH - (HEADER_HEIGHT - tabsSize.y) / 2f, 2);
         uiRoot.attachChild(tabs);
@@ -133,6 +135,11 @@ public class StoreState extends BaseAppState {
                     String stats = "SPEED " + percent(item.getSpeedMultiplier()) + "   SIZE " + percent(item.getSizeMultiplier());
                     addCard(cardsRow, app, profile, "ball", item.getId(), item.getDisplayName(),
                             item.getPrice(), item.getColor(), stats);
+                }
+            }
+            case "powerup" -> {
+                for (PowerUpDefinition item : Catalog.POWERUPS) {
+                    addPowerUpCard(cardsRow, app, profile, item);
                 }
             }
             default -> throw new IllegalStateException("Unknown category: " + selectedCategory);
@@ -198,6 +205,79 @@ public class StoreState extends BaseAppState {
             app.saveProfile();
             rebuild(app);
         });
+    }
+
+    private void addPowerUpCard(Container cardsRow, PaddleShockApp app, PlayerProfile profile, PowerUpDefinition item) {
+        boolean owned = profile.ownsPowerUp(item.getId());
+        int assignedSlot = -1;
+        for (int i = 0; i < 3; i++) {
+            if (item.getId().equals(profile.getLoadoutSlot(i))) {
+                assignedSlot = i;
+            }
+        }
+
+        ColorRGBA cardColor = assignedSlot >= 0 ? mix(Theme.PANEL, Theme.GREEN, 0.12f)
+                : owned ? mix(Theme.PANEL, Theme.BLUE, 0.10f)
+                : Theme.PANEL;
+
+        Container card = cardsRow.addChild(new Container(new SpringGridLayout(Axis.Y, Axis.X)));
+        card.setInsets(new Insets3f(0, 12, 0, 12));
+        card.setBackground(quad(cardColor));
+        card.setPreferredSize(new Vector3f(CARD_WIDTH, CARD_HEIGHT, 0));
+
+        Container swatch = card.addChild(new Container());
+        swatch.setBackground(quad(item.getType().getColor()));
+        swatch.setPreferredSize(new Vector3f(CARD_WIDTH, SWATCH_HEIGHT, 0));
+
+        Label name = card.addChild(new Label(item.getDisplayName().toUpperCase()));
+        name.setInsets(new Insets3f(10, 16, 4, 16));
+        name.setFontSize(20);
+        name.setColor(owned ? Theme.TEXT : Theme.TEXT_DIM);
+
+        String statusText = assignedSlot >= 0 ? "KEY " + (assignedSlot + 1)
+                : owned ? "OWNED" : item.getPrice() + " credits";
+        Label status = card.addChild(new Label(statusText));
+        status.setInsets(new Insets3f(0, 16, 4, 16));
+        status.setFontSize(14);
+        status.setColor(Theme.TEXT_DIM);
+
+        String statsLine = "COOLDOWN " + Math.round(item.getCooldownSeconds()) + "s   DURATION "
+                + Math.round(item.getType().getDuration()) + "s";
+        Label stats = card.addChild(new Label(statsLine));
+        stats.setInsets(new Insets3f(4, 16, 14, 16));
+        stats.setFontSize(13);
+        stats.setColor(Theme.TEXT_DIM);
+
+        if (!owned) {
+            Button buy = card.addChild(new Button("BUY " + item.getPrice()));
+            buy.setInsets(new Insets3f(10, 16, 14, 16));
+            buy.setBackground(quad(Theme.ORANGE));
+            buy.setColor(Theme.ON_ACCENT);
+            buy.setFontSize(15);
+            buy.setPreferredSize(new Vector3f(CARD_WIDTH - 32, 40, 0));
+            buy.addClickCommands((Command<Button>) source -> {
+                profile.purchasePowerUp(item.getId(), item.getPrice());
+                app.saveProfile();
+                rebuild(app);
+            });
+        } else {
+            Container slots = card.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
+            slots.setInsets(new Insets3f(10, 16, 14, 16));
+            for (int i = 0; i < 3; i++) {
+                boolean isThisSlot = i == assignedSlot;
+                Button slotButton = slots.addChild(new Button("KEY " + (i + 1)));
+                slotButton.setBackground(quad(isThisSlot ? Theme.GREEN : Theme.PANEL_HOVER));
+                slotButton.setColor(isThisSlot ? Theme.ON_ACCENT : Theme.TEXT);
+                slotButton.setFontSize(13);
+                slotButton.setPreferredSize(new Vector3f((CARD_WIDTH - 32) / 3f, 36, 0));
+                int slotIndex = i;
+                slotButton.addClickCommands((Command<Button>) source -> {
+                    profile.setLoadoutSlot(slotIndex, isThisSlot ? "" : item.getId());
+                    app.saveProfile();
+                    rebuild(app);
+                });
+            }
+        }
     }
 
     private void buildFooter(PaddleShockApp app, float screenW) {
