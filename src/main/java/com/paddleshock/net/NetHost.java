@@ -157,6 +157,14 @@ public class NetHost implements AutoCloseable {
      * (e.g. a LAN joiner connected directly) or once {@link #close()} is called.
      */
     public void pollAndPunchUntilJoined(String lobbyCode) {
+        try {
+            pollAndPunchUntilJoinedInner(lobbyCode);
+        } finally {
+            lobbyAttemptFinished = true;
+        }
+    }
+
+    private void pollAndPunchUntilJoinedInner(String lobbyCode) {
         String joinerAddressText = null;
         long pollDeadline = System.currentTimeMillis() + LOBBY_POLL_TIMEOUT_MS;
         while (running && !hasJoiner() && System.currentTimeMillis() < pollDeadline) {
@@ -187,6 +195,14 @@ public class NetHost implements AutoCloseable {
             sendRaw(target, NetProtocol.encodeHandshake(NetProtocol.TYPE_HELLO));
             sleepQuietly(PUNCH_INTERVAL_MS);
         }
+    }
+
+    private volatile boolean lobbyAttemptFinished = false;
+
+    /** True once {@link #pollAndPunchUntilJoined} has returned (successfully or not) - lets the
+     *  UI tell "still trying the internet code" apart from "gave up, only LAN can work now". */
+    public boolean isLobbyAttemptFinished() {
+        return lobbyAttemptFinished;
     }
 
     private static void sleepQuietly(long millis) {

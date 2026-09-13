@@ -1,5 +1,7 @@
 package com.paddleshock.ui;
 
+import java.awt.Toolkit;
+import java.awt.datatransfer.StringSelection;
 import java.io.IOException;
 import java.net.Inet4Address;
 import java.net.InetAddress;
@@ -31,13 +33,14 @@ import com.paddleshock.net.NetHost;
 /**
  * Multiplayer screen: pick HOST (bind a UDP port, show this machine's LAN address AND an AWS
  * lobby code for internet play, wait for a joiner) or JOIN (type the host's LAN IP:port, or enter
- * a lobby code instead). Functional, not polished - matches {@link LoadoutState}'s full-screen
- * dark-panel layout for visual consistency, nothing more.
+ * a lobby code instead). Matches {@link LoadoutState}'s full-screen dark-panel layout for visual
+ * consistency.
  *
- * <p>The lobby code (see {@code aws/README.md}) only brokers address exchange via AWS - it does
- * not yet make internet play work through arbitrary NATs (that's active hole-punching, still
- * unbuilt - Phase D). Today it works for LAN play (as before) and for hosts whose public address
- * is actually reachable (e.g. port-forwarded, or a NAT that hairpins).
+ * <p>The lobby code (see {@code aws/README.md}) brokers address exchange via AWS and drives
+ * active UDP hole-punching (confirmed working across genuinely different networks - see the
+ * README's Phase E section) - this doesn't guarantee traversal of every NAT (notably symmetric
+ * NATs), so the JOIN side gives up with a clear error after {@link #JOIN_TIMEOUT_SECONDS} rather
+ * than retrying forever, and the HOST side shows when its internet code has expired unused.
  */
 public class MultiplayerState extends BaseAppState {
 
@@ -74,6 +77,15 @@ public class MultiplayerState extends BaseAppState {
     // the pendingCodeClient pickup in update()).
     private static final float HELLO_RETRY_INTERVAL_SECONDS = 0.3f;
     private float helloRetryTimer;
+
+    // Joiner-side: give up on a code/address connect attempt after this long instead of retrying
+    // forever with no feedback - reset to 0 whenever netClient is freshly assigned.
+    private static final float JOIN_TIMEOUT_SECONDS = 20f;
+    private float joinTimeoutTimer;
+
+    // Host-side: whether the "internet code expired" message has already been shown, so it's
+    // only rebuilt once (mirrors lobbyResultShown above).
+    private boolean lobbyTimeoutShown = false;
 
     @Override
     protected void initialize(Application application) {
@@ -174,6 +186,7 @@ public class MultiplayerState extends BaseAppState {
         lobbyCode.set(null);
         lobbyError.set(null);
         lobbyResultShown = false;
+        lobbyTimeoutShown = false;
         NetHost hostRef = netHost;
         if (hostRef.getPublicAddress() == null) {
             lobbyPending = false;
@@ -223,16 +236,34 @@ public class MultiplayerState extends BaseAppState {
 
         String code = lobbyCode.get();
         String error = lobbyError.get();
+        NetHost hostRef = netHost;
+        boolean punchExpired = hostRef != null && hostRef.isLobbyAttemptFinished() && !hostRef.hasJoiner();
+
         if (lobbyPending) {
             Label pending = panel.addChild(new Label("Looking up an internet code..."));
             pending.setFontSize(12);
             pending.setColor(Theme.TEXT_DIM);
             pending.setInsets(new Insets3f(0, 0, 14, 0));
+        } else if (code != null && punchExpired) {
+            Label expiredLabel = panel.addChild(new Label("Internet code " + code + " expired (no one joined)."));
+            expiredLabel.setFontSize(13);
+            expiredLabel.setColor(Theme.TEXT_DIM);
+            expiredLabel.setInsets(new Insets3f(0, 0, 14, 0));
         } else if (code != null) {
-            Label codeLabel = panel.addChild(new Label("Internet code: " + code));
+            Container codeRow = panel.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
+            codeRow.setInsets(new Insets3f(0, 0, 4, 0));
+            Label codeLabel = codeRow.addChild(new Label("Internet code: " + code));
             codeLabel.setFontSize(20);
             codeLabel.setColor(Theme.BLUE);
-            codeLabel.setInsets(new Insets3f(0, 0, 4, 0));
+            Button copyButton = codeRow.addChild(new Button("COPY"));
+            copyButton.setInsets(new Insets3f(0, 12, 0, 0));
+            copyButton.setBackground(new QuadBackgroundComponent(Theme.PANEL_HOVER));
+            copyButton.setColor(Theme.TEXT);
+            copyButton.setFontSize(13);
+            copyButton.addClickCommands(source -> {
+                app.getAudioManager().playSfx("button_click.ogg");
+                copyToClipboard(code);
+            });
             Label codeHint = panel.addChild(new Label("Different network? Give them this code instead."));
             codeHint.setFontSize(12);
             codeHint.setColor(Theme.TEXT_DIM);
@@ -352,6 +383,7 @@ public class MultiplayerState extends BaseAppState {
             return;
         }
         helloRetryTimer = 0f;
+        joinTimeoutTimer = 0f;
         joinError = null;
         statusLabel.setColor(Theme.TEXT);
         statusLabel.setText("Connecting...");
@@ -389,6 +421,15 @@ public class MultiplayerState extends BaseAppState {
         }, "lobby-join");
         thread.setDaemon(true);
         thread.start();
+    }
+
+    private void copyToClipboard(String text) {
+        try {
+            Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(text), null);
+        } catch (Exception e) {
+            // Clipboard access can fail in some sandboxed/headless environments - not worth
+            // surfacing an error for a convenience feature; the code is still shown on screen.
+        }
     }
 
     private void styleButton(Button button, com.jme3.math.ColorRGBA bg, com.jme3.math.ColorRGBA fg, int fontSize) {
@@ -431,12 +472,18 @@ public class MultiplayerState extends BaseAppState {
             lobbyResultShown = true;
             rebuild();
         }
+        if (view == View.HOSTING && !lobbyTimeoutShown && netHost != null
+                && netHost.isLobbyAttemptFinished() && !netHost.hasJoiner()) {
+            lobbyTimeoutShown = true;
+            rebuild();
+        }
 
         if (view == View.JOINING && netClient == null) {
             NetClient resolved = pendingCodeClient.getAndSet(null);
             if (resolved != null) {
                 netClient = resolved;
                 helloRetryTimer = 0f;
+                joinTimeoutTimer = 0f;
                 statusLabel.setColor(Theme.TEXT);
                 statusLabel.setText("Connecting...");
             } else {
@@ -468,14 +515,31 @@ public class MultiplayerState extends BaseAppState {
                 netClient.close();
                 netClient = null;
             } else {
-                // Keep resending HELLO instead of the original single send-at-construction: for
-                // internet play (Phase D) the host may still be actively punching its own NAT
-                // open when the first HELLO went out, so it needs a retry to land once that
-                // finishes rather than only ever getting the one early attempt.
-                helloRetryTimer += tpf;
-                if (helloRetryTimer >= HELLO_RETRY_INTERVAL_SECONDS) {
-                    helloRetryTimer = 0f;
-                    netClient.sendHello();
+                joinTimeoutTimer += tpf;
+                if (joinTimeoutTimer >= JOIN_TIMEOUT_SECONDS) {
+                    // Give up instead of retrying forever with no feedback - the host may be
+                    // offline, the code may be stale, or this network's NAT may not be
+                    // traversable even with active punching (Phase D has no guarantee against a
+                    // symmetric NAT on either side).
+                    joinError = "Could not connect - the host may be offline, or this connection "
+                            + "couldn't be established over the internet.";
+                    statusLabel.setColor(Theme.ORANGE);
+                    statusLabel.setText(joinError);
+                    netClient.close();
+                    netClient = null;
+                } else {
+                    // Keep resending HELLO instead of the original single send-at-construction:
+                    // for internet play (Phase D) the host may still be actively punching its own
+                    // NAT open when the first HELLO went out, so it needs a retry to land once
+                    // that finishes rather than only ever getting the one early attempt.
+                    helloRetryTimer += tpf;
+                    if (helloRetryTimer >= HELLO_RETRY_INTERVAL_SECONDS) {
+                        helloRetryTimer = 0f;
+                        netClient.sendHello();
+                    }
+                    if (joinTimeoutTimer >= 4f && joinTimeoutTimer - tpf < 4f) {
+                        statusLabel.setText("Still trying... (this can take longer over the internet)");
+                    }
                 }
             }
         }
