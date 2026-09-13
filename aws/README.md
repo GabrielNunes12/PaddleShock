@@ -66,6 +66,10 @@ Single POST endpoint, JSON body, `action` field selects behavior:
   -> `{"host":{...rank fields...,"lpChange","promoted","demoted","promoSeriesResult"},"joiner":{...same...}}`.
   `code` is optional but strongly recommended - see "Security hardening" below for what it buys
   and what it doesn't.
+- `{"action":"getLeaderboard","limit":50}` -> `{"entries":[{"playerId","tier","division","lp","wins","losses"}, ...]}`,
+  sorted best-first (tier desc, division asc/better, lp desc). Implemented as a full table scan
+  (capped at 1000 items) since the ladder is hobby-scale today - revisit with a GSI if it grows.
+  Carries no `playerId`, so (like `poll`) it's unaffected by the rate limiter below.
 - Any action carrying a `playerId` (or `hostPlayerId`) is subject to per-id rate limiting - a
   `429 {"error":"too many requests, slow down"}` means back off.
 

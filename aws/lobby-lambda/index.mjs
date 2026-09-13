@@ -1,5 +1,5 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, PutCommand, UpdateCommand, GetCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, PutCommand, UpdateCommand, GetCommand, DeleteCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
 
 // Rendezvous matchmaking + ranked ladder for PaddleShock. Gameplay itself stays peer-to-peer
 // over UDP (see NetHost/NetClient) - this Lambda only brokers lobby codes and tracks rank state;
@@ -264,6 +264,50 @@ async function handleGetRank(body) {
     return response(200, rank);
 }
 
+const LEADERBOARD_MAX_LIMIT = 100;
+const LEADERBOARD_SCAN_CAP = 1000; // enough for a hobby-scale ladder; revisit with a GSI if this grows
+
+/** Top players by tier (best first), then division (lower/better first), then LP (higher first).
+ *  A full table scan is fine at this scale (see LEADERBOARD_SCAN_CAP) - a real leaderboard at
+ *  meaningful scale would want a GSI instead of scanning the whole table on every request. */
+async function handleGetLeaderboard(body) {
+    const limit = Math.min(LEADERBOARD_MAX_LIMIT, Math.max(1, Number(body.limit) || 20));
+    const result = await client.send(new ScanCommand({
+        TableName: RANKS_TABLE,
+        Limit: LEADERBOARD_SCAN_CAP,
+    }));
+    const season = currentSeason();
+    const entries = (result.Items || [])
+        // "match:"/"rate:" prefixed keys are internal bookkeeping (idempotency/rate-limit
+        // markers), not real player records - they lack a "tier" field entirely.
+        .filter((item) => typeof item.tier === "string")
+        .map((item) => {
+            const rank = { ...item };
+            applySeasonResetIfNeeded(rank, season); // display-only - never persisted here
+            return rank;
+        })
+        .sort((a, b) => {
+            const tierDiff = TIERS.indexOf(b.tier) - TIERS.indexOf(a.tier);
+            if (tierDiff !== 0) {
+                return tierDiff;
+            }
+            if (a.division !== b.division) {
+                return a.division - b.division; // lower division number = better (I beats IV)
+            }
+            return b.lp - a.lp;
+        })
+        .slice(0, limit)
+        .map((rank) => ({
+            playerId: rank.playerId,
+            tier: rank.tier,
+            division: rank.division,
+            lp: rank.lp,
+            wins: rank.wins,
+            losses: rank.losses,
+        }));
+    return response(200, { entries });
+}
+
 async function handleReportMatchResult(body) {
     const { hostPlayerId, joinerPlayerId, hostWon, matchId, code } = body;
     if (!hostPlayerId || !joinerPlayerId || typeof hostWon !== "boolean" || !matchId) {
@@ -405,6 +449,7 @@ export const handler = async (event) => {
         case "join": return handleJoin(body);
         case "poll": return handlePoll(body);
         case "getRank": return handleGetRank(body);
+        case "getLeaderboard": return handleGetLeaderboard(body);
         case "reportMatchResult": return handleReportMatchResult(body);
         default: return response(400, { error: "unknown action" });
     }
