@@ -42,15 +42,23 @@ public final class RankClient {
     /** Reports the outcome of a ranked match for both players at once (host-authoritative - see
      *  class docs) and returns each player's updated rank plus what changed. {@code matchId}
      *  should be a fresh random id per match; a retried report for the same id is a no-op rather
-     *  than double-applying the result. Blocking network call - run off the render thread. */
+     *  than double-applying the result. {@code lobbyCode} should be {@code NetHost.getLobbyCode()}
+     *  for a lobby-code (internet) match, so the backend can verify this report is backed by a
+     *  real session between these two players instead of trusting the ids outright; pass
+     *  {@code null} for a direct IP:port LAN match, which never registered a lobby session in the
+     *  first place and so can't be verified this way (see {@code aws/README.md} "Trust model" for
+     *  that accepted tradeoff). Blocking network call - run off the render thread. */
     public static MatchReportResult reportMatchResult(String matchId, String hostPlayerId,
-            String joinerPlayerId, boolean hostWon) throws IOException {
+            String joinerPlayerId, boolean hostWon, String lobbyCode) throws IOException {
         JsonObject body = new JsonObject();
         body.addProperty("action", "reportMatchResult");
         body.addProperty("matchId", matchId);
         body.addProperty("hostPlayerId", hostPlayerId);
         body.addProperty("joinerPlayerId", joinerPlayerId);
         body.addProperty("hostWon", hostWon);
+        if (lobbyCode != null) {
+            body.addProperty("code", lobbyCode);
+        }
         return GSON.fromJson(post(body), MatchReportResult.class);
     }
 

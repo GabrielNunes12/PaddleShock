@@ -24,6 +24,7 @@ public class NetClient implements AutoCloseable {
 
     private final InetSocketAddress publicAddress;
     private final String localPlayerId;
+    private final String lobbyCode; // null for a direct IP:port connect - see connectByLobbyCode
     private volatile boolean connected = false;
     private volatile boolean rejected = false;
     private final AtomicReference<NetProtocol.SnapshotMessage> latestSnapshot = new AtomicReference<>();
@@ -31,6 +32,7 @@ public class NetClient implements AutoCloseable {
     public NetClient(String hostAddress, int port, String localPlayerId) throws IOException {
         this.hostAddress = new InetSocketAddress(InetAddress.getByName(hostAddress), port);
         this.localPlayerId = localPlayerId;
+        this.lobbyCode = null;
         socket = new DatagramSocket();
         // Same ordering constraint as NetHost: STUN discovery's own blocking receives must
         // finish before the background receive thread starts reading this socket.
@@ -44,11 +46,12 @@ public class NetClient implements AutoCloseable {
     /** Internal constructor used by {@link #connectByLobbyCode}, where the public address is
      *  already known (discovered before the host's address was) and doesn't need rediscovering. */
     private NetClient(DatagramSocket socket, InetSocketAddress publicAddress, InetSocketAddress hostAddress,
-            String localPlayerId) {
+            String localPlayerId, String lobbyCode) {
         this.socket = socket;
         this.publicAddress = publicAddress;
         this.hostAddress = hostAddress;
         this.localPlayerId = localPlayerId;
+        this.lobbyCode = lobbyCode;
         receiveThread = new Thread(this::receiveLoop, "NetClient-recv");
         receiveThread.setDaemon(true);
         receiveThread.start();
@@ -72,13 +75,13 @@ public class NetClient implements AutoCloseable {
         }
         String hostAddressText;
         try {
-            hostAddressText = LobbyClient.join(code, StunClient.format(publicAddress));
+            hostAddressText = LobbyClient.join(code, StunClient.format(publicAddress), localPlayerId);
         } catch (IOException e) {
             socket.close();
             throw e;
         }
         InetSocketAddress hostAddress = StunClient.parseAddress(hostAddressText);
-        return new NetClient(socket, publicAddress, hostAddress, localPlayerId);
+        return new NetClient(socket, publicAddress, hostAddress, localPlayerId, code);
     }
 
     /** Re-sends the handshake "hello"; safe to call repeatedly while waiting for a welcome
@@ -156,6 +159,14 @@ public class NetClient implements AutoCloseable {
      *  STUN traffic was blocked) - callers should fall back to LAN-only direct connect. */
     public InetSocketAddress getPublicAddress() {
         return publicAddress;
+    }
+
+    /** The AWS lobby code this client joined through (see {@link #connectByLobbyCode}), or
+     *  {@code null} for a direct IP:port LAN connect. The joiner never reports match results
+     *  itself (the host does, for both players - see {@code aws/README.md} "Trust model"), so
+     *  this is kept mainly for symmetry/diagnostics with {@code NetHost.getLobbyCode()}. */
+    public String getLobbyCode() {
+        return lobbyCode;
     }
 
     @Override

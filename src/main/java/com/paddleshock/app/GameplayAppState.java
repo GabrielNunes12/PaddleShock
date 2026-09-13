@@ -694,7 +694,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             if (result.isMatchOver()) {
                 if (mode == Mode.HOST) {
                     app.endRankedHostMatch(result.isPlayerWon(), matchSimulation.getPlayerScore(),
-                            matchSimulation.getOpponentScore(), netHost.getJoinerPlayerId());
+                            matchSimulation.getOpponentScore(), netHost.getJoinerPlayerId(), netHost.getLobbyCode());
                 } else {
                     app.endMatch(result.isPlayerWon(), matchSimulation.getPlayerScore(), matchSimulation.getOpponentScore());
                 }

@@ -26,13 +26,16 @@ public class NetHost implements AutoCloseable {
     private volatile boolean running = true;
 
     private final InetSocketAddress publicAddress;
+    private final String localPlayerId;
     private volatile InetSocketAddress joinerAddress;
     private volatile String joinerPlayerId = "";
+    private volatile String lobbyCode;
     private final AtomicReference<NetProtocol.InputMessage> latestInput =
             new AtomicReference<>(NetProtocol.InputMessage.NEUTRAL);
 
-    public NetHost(int port) throws SocketException {
+    public NetHost(int port, String localPlayerId) throws SocketException {
         socket = new DatagramSocket(port);
+        this.localPlayerId = localPlayerId;
         // STUN discovery does its own blocking socket.receive() calls, so it must finish (and
         // its per-attempt SO_TIMEOUT must be restored) before the receive thread starts reading
         // the same socket - otherwise the two would race for incoming packets.
@@ -140,12 +143,27 @@ public class NetHost implements AutoCloseable {
 
     /** Registers this host with the AWS lobby broker and returns a short code the joiner can
      *  enter instead of typing this machine's raw address. Blocking network call - run off the
-     *  render thread. Throws if no public address was discovered (offline, or STUN blocked). */
+     *  render thread. Throws if no public address was discovered (offline, or STUN blocked). The
+     *  returned code is also retained (see {@link #getLobbyCode()}) so a ranked match-result
+     *  report at the end of the match can reference the actual session that was brokered. */
     public String registerLobby() throws IOException {
         if (publicAddress == null) {
             throw new IOException("no public address available for internet play");
         }
-        return LobbyClient.create(StunClient.format(publicAddress));
+        String code = LobbyClient.create(StunClient.format(publicAddress), localPlayerId);
+        lobbyCode = code;
+        return code;
+    }
+
+    /** The AWS lobby code this host registered under via {@link #registerLobby()}, or
+     *  {@code null} for a LAN-direct match (registration never attempted, failed, or hasn't
+     *  completed yet). A ranked match report includes this so the backend can verify the report
+     *  is backed by a real session instead of trusting an unverified claim - see
+     *  {@code aws/README.md} "Trust model". {@code null} here means the eventual report simply
+     *  can't be tied to a session (LAN-direct matches never touch the lobby table at all), a
+     *  known, accepted tradeoff rather than an oversight. */
+    public String getLobbyCode() {
+        return lobbyCode;
     }
 
     private static final long LOBBY_POLL_TIMEOUT_MS = 30_000;

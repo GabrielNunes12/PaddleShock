@@ -185,7 +185,7 @@ public class PaddleShockApp extends SimpleApplication {
      *  local IP/port and waits for a joiner before actually entering the match via
      *  {@link #enterHostedMatch(NetHost)}. */
     public NetHost startHostMatch(int port) throws SocketException {
-        return new NetHost(port);
+        return new NetHost(port, profile.getPlayerId());
     }
 
     /** Connects to a LAN host at {@code hostAddress}:{@code port} and returns the client; the
@@ -271,8 +271,12 @@ public class PaddleShockApp extends SimpleApplication {
      *  reports the result for both players (host is the sole reporter - it already owns the
      *  authoritative simulation, so this isn't a new trust boundary) and shows the LP/rank
      *  change once that call returns. {@code joinerPlayerId} may be empty if the joiner connected
-     *  without one (an older client) - the report is skipped in that case, LAN play still works. */
-    public void endRankedHostMatch(boolean playerWon, int playerScore, int opponentScore, String joinerPlayerId) {
+     *  without one (an older client) - the report is skipped in that case, LAN play still works.
+     *  {@code lobbyCode} is {@code NetHost.getLobbyCode()} for a lobby-code (internet) match, or
+     *  {@code null} for a direct IP:port LAN match - see {@code RankClient.reportMatchResult} for
+     *  what the backend does with it. */
+    public void endRankedHostMatch(boolean playerWon, int playerScore, int opponentScore,
+            String joinerPlayerId, String lobbyCode) {
         int reward = endMatchCommon(playerWon, playerScore, opponentScore);
         matchEndState.setRankedResult(playerWon, reward, playerScore, opponentScore);
         matchEndState.setEnabled(true);
@@ -286,7 +290,8 @@ public class PaddleShockApp extends SimpleApplication {
             RankState result = null;
             try {
                 String matchId = java.util.UUID.randomUUID().toString();
-                result = RankClient.reportMatchResult(matchId, hostPlayerId, joinerPlayerId, playerWon).getHost();
+                result = RankClient.reportMatchResult(matchId, hostPlayerId, joinerPlayerId, playerWon, lobbyCode)
+                        .getHost();
             } catch (IOException e) {
                 // offline, or the rank service is unreachable - the match itself already
                 // completed normally, so just show "rank unavailable" rather than fail anything.

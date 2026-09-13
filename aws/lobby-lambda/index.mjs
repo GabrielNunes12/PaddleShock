@@ -1,5 +1,5 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, PutCommand, UpdateCommand, GetCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, PutCommand, UpdateCommand, GetCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
 
 // Rendezvous matchmaking + ranked ladder for PaddleShock. Gameplay itself stays peer-to-peer
 // over UDP (see NetHost/NetClient) - this Lambda only brokers lobby codes and tracks rank state;
@@ -38,7 +38,17 @@ async function handleCreate(body) {
         try {
             await client.send(new PutCommand({
                 TableName: TABLE,
-                Item: { code, hostAddr: body.addr, joinerAddr: null, ttl: now + LOBBY_TTL_SECONDS },
+                // hostPlayerId/joinerPlayerId let reportMatchResult later verify a report is
+                // backed by a real session between these two players (see handleReportMatchResult)
+                // instead of trusting whatever ids a caller sends it directly.
+                Item: {
+                    code,
+                    hostAddr: body.addr,
+                    hostPlayerId: body.playerId ?? null,
+                    joinerAddr: null,
+                    joinerPlayerId: null,
+                    ttl: now + LOBBY_TTL_SECONDS,
+                },
                 ConditionExpression: "attribute_not_exists(code)",
             }));
             return response(200, { code });
@@ -57,18 +67,28 @@ async function handleJoin(body) {
         return response(400, { error: "missing code/addr" });
     }
     try {
+        // ConditionExpression closes a race: without it, two near-simultaneous joins on the same
+        // code would both succeed and the second would silently clobber the first's joinerAddr,
+        // stranding the first joiner with no error. Only allow the write through if nobody has
+        // joined yet (joinerAddr is still the null handleCreate set it to) or if this is the same
+        // joiner retrying (same addr) - anything else (a genuinely different second joiner) loses
+        // the race and gets a clear error instead of silently overwriting the winner.
         const result = await client.send(new UpdateCommand({
             TableName: TABLE,
             Key: { code: body.code },
-            UpdateExpression: "SET joinerAddr = :a",
-            ConditionExpression: "attribute_exists(code)",
-            ExpressionAttributeValues: { ":a": body.addr },
+            UpdateExpression: "SET joinerAddr = :a, joinerPlayerId = :p",
+            ConditionExpression: "attribute_exists(code) AND (joinerAddr = :nullAddr OR joinerAddr = :a)",
+            ExpressionAttributeValues: { ":a": body.addr, ":p": body.playerId ?? null, ":nullAddr": null },
             ReturnValues: "ALL_NEW",
         }));
         return response(200, { hostAddr: result.Attributes.hostAddr });
     } catch (e) {
         if (e.name === "ConditionalCheckFailedException") {
-            return response(404, { error: "lobby not found or expired" });
+            const existing = await client.send(new GetCommand({ TableName: TABLE, Key: { code: body.code } }));
+            if (!existing.Item) {
+                return response(404, { error: "lobby not found or expired" });
+            }
+            return response(409, { error: "lobby already has a joiner" });
         }
         throw e;
     }
@@ -245,7 +265,7 @@ async function handleGetRank(body) {
 }
 
 async function handleReportMatchResult(body) {
-    const { hostPlayerId, joinerPlayerId, hostWon, matchId } = body;
+    const { hostPlayerId, joinerPlayerId, hostWon, matchId, code } = body;
     if (!hostPlayerId || !joinerPlayerId || typeof hostWon !== "boolean" || !matchId) {
         return response(400, { error: "missing hostPlayerId/joinerPlayerId/hostWon/matchId" });
     }
@@ -267,6 +287,23 @@ async function handleReportMatchResult(body) {
         throw e;
     }
 
+    // Forgery guard: tie the report to a real lobby session so a caller can't just POST an
+    // arbitrary victim playerId and a fabricated result directly (repeating with a fresh matchId
+    // each time to dodge the idempotency guard above). Only lobby-code matches have a `code` to
+    // check against - direct IP:port LAN matches never touch this table at all, so there is
+    // nothing to verify for those and this check is skipped (see aws/README.md "Trust model" for
+    // that accepted tradeoff). When a code IS supplied, both ids must match the session that was
+    // actually brokered for it.
+    if (code) {
+        const lobby = await client.send(new GetCommand({ TableName: TABLE, Key: { code } }));
+        if (!lobby.Item) {
+            return response(403, { error: "no matching lobby session (missing, expired, or already consumed)" });
+        }
+        if (lobby.Item.hostPlayerId !== hostPlayerId || lobby.Item.joinerPlayerId !== joinerPlayerId) {
+            return response(403, { error: "hostPlayerId/joinerPlayerId does not match the lobby session" });
+        }
+    }
+
     const season = currentSeason();
     const hostRank = await loadRank(hostPlayerId, season);
     const joinerRank = await loadRank(joinerPlayerId, season);
@@ -275,10 +312,55 @@ async function handleReportMatchResult(body) {
     await saveRank(hostPlayerId, hostRank);
     await saveRank(joinerPlayerId, joinerRank);
 
+    // Consume the lobby record on success so it can't be replayed for a second fraudulent report
+    // (e.g. reusing the same code/ids with a fresh matchId to farm LP again).
+    if (code) {
+        await client.send(new DeleteCommand({ TableName: TABLE, Key: { code } }));
+    }
+
     return response(200, {
         host: { ...hostRank, ...hostSummary },
         joiner: { ...joinerRank, ...joinerSummary },
     });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Rate limiting: the Function URL is public/unauthenticated with no API Gateway in front of it,
+// so there is no reliable source IP to key off (that only becomes available behind API Gateway,
+// which is out of scope here - see aws/README.md). Instead this throttles per playerId (the one
+// identifier every meaningful action already carries) with a simple fixed-window counter stored
+// in the ranks table under a "rate:" prefixed key, expiring on its own via the TTL attribute -
+// same pattern as the match-idempotency marker above. Not perfect (an attacker with many fake
+// playerIds isn't slowed down, and `poll`, which carries no playerId, isn't covered at all) but a
+// real deterrent against a naive scripted flood using one or a few ids.
+// ---------------------------------------------------------------------------------------------
+
+const RATE_LIMIT_WINDOW_SECONDS = 30;
+const RATE_LIMIT_MAX_REQUESTS = 10;
+
+/** Returns false if playerId has exceeded the request budget for the current window. */
+async function checkRateLimit(playerId) {
+    const windowStart = Math.floor(Date.now() / 1000 / RATE_LIMIT_WINDOW_SECONDS);
+    const key = `rate:${playerId}:${windowStart}`;
+    const now = Math.floor(Date.now() / 1000);
+    const result = await client.send(new UpdateCommand({
+        TableName: RANKS_TABLE,
+        Key: { playerId: key },
+        // "ttl" is a DynamoDB reserved keyword - needs an ExpressionAttributeNames alias to use
+        // it inside an UpdateExpression (unlike Put/GetCommand, which reference it as a plain
+        // item attribute name and are unaffected).
+        UpdateExpression: "ADD reqCount :one SET #ttl = if_not_exists(#ttl, :ttl)",
+        ExpressionAttributeNames: { "#ttl": "ttl" },
+        ExpressionAttributeValues: { ":one": 1, ":ttl": now + RATE_LIMIT_WINDOW_SECONDS + 5 },
+        ReturnValues: "UPDATED_NEW",
+    }));
+    return result.Attributes.reqCount <= RATE_LIMIT_MAX_REQUESTS;
+}
+
+/** The identifier to rate-limit this request by, or null if the action carries none (currently
+ *  just `poll`, which is intentionally left unthrottled - see comment above). */
+function rateLimitIdFor(body) {
+    return body.playerId || body.hostPlayerId || null;
 }
 
 // Exported purely so the ranked-ladder LP math can be unit-tested in isolation (see
@@ -308,6 +390,14 @@ export const handler = async (event) => {
         body = JSON.parse(event.body || "{}");
     } catch {
         return response(400, { error: "malformed JSON body" });
+    }
+
+    const rateLimitId = rateLimitIdFor(body);
+    if (rateLimitId) {
+        const allowed = await checkRateLimit(rateLimitId);
+        if (!allowed) {
+            return response(429, { error: "too many requests, slow down" });
+        }
     }
 
     switch (body.action) {

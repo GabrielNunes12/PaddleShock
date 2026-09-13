@@ -12,7 +12,9 @@ below) so it isn't just a locally-editable save-file number.
   auto-expire ~10 min after creation, so stale lobbies clean themselves up for free).
 - **IAM role** `paddleshock-lobby-lambda-role` - trusts `lambda.amazonaws.com`, has
   `AWSLambdaBasicExecutionRole` (CloudWatch Logs) plus an inline policy scoped to
-  `PutItem`/`GetItem`/`UpdateItem` on just the `paddleshock-lobbies` table ARN.
+  `PutItem`/`GetItem`/`UpdateItem`/`DeleteItem` on the `paddleshock-lobbies` and `paddleshock-ranks`
+  table ARNs (`DeleteItem` added 2026-09-13 so a lobby record can be consumed after a verified
+  match report - see "Security hardening" below).
 - **Lambda function** `paddleshock-lobby` (Node.js 20.x, source in `lobby-lambda/index.mjs`) -
   handles `create` / `join` / `poll` actions via a single JSON-body handler. Verified working via
   direct `aws lambda invoke` (returns a real lobby code, writes to DynamoDB correctly).
@@ -49,12 +51,93 @@ permission only applies to Function URL calls, not other invocation paths.)
 
 Single POST endpoint, JSON body, `action` field selects behavior:
 
-- `{"action":"create","addr":"<host's public ip:port>"}` -> `{"code":"ABC123"}`
-- `{"action":"join","code":"ABC123","addr":"<joiner's public ip:port>"}` -> `{"hostAddr":"..."}`
+- `{"action":"create","addr":"<host's public ip:port>","playerId":"<host's ranked-ladder uuid>"}`
+  -> `{"code":"ABC123"}` - `playerId` is stored on the lobby record so a later
+  `reportMatchResult` for this code can prove it's backed by a real session (see "Security
+  hardening" below); optional for backward compatibility, but a lobby created without one can
+  never back a verified report.
+- `{"action":"join","code":"ABC123","addr":"<joiner's public ip:port>","playerId":"<joiner's uuid>"}`
+  -> `{"hostAddr":"..."}` on success; `409 {"error":"lobby already has a joiner"}` if a different
+  joiner already registered for this code (see "Security hardening"); `404` if the code doesn't
+  exist/expired.
 - `{"action":"poll","code":"ABC123"}` (host polls this) -> `{"joinerAddr": null | "..."}`
 - `{"action":"getRank","playerId":"<uuid>"}` -> `{"tier","division","lp","wins","losses","promo","season"}`
-- `{"action":"reportMatchResult","matchId":"<uuid>","hostPlayerId":"<uuid>","joinerPlayerId":"<uuid>","hostWon":true|false}`
-  -> `{"host":{...rank fields...,"lpChange","promoted","demoted","promoSeriesResult"},"joiner":{...same...}}`
+- `{"action":"reportMatchResult","matchId":"<uuid>","hostPlayerId":"<uuid>","joinerPlayerId":"<uuid>","hostWon":true|false,"code":"ABC123"}`
+  -> `{"host":{...rank fields...,"lpChange","promoted","demoted","promoSeriesResult"},"joiner":{...same...}}`.
+  `code` is optional but strongly recommended - see "Security hardening" below for what it buys
+  and what it doesn't.
+- Any action carrying a `playerId` (or `hostPlayerId`) is subject to per-id rate limiting - a
+  `429 {"error":"too many requests, slow down"}` means back off.
+
+## Security hardening (2026-09-13)
+
+Three issues found in a QA pass, all fixed:
+
+1. **Match-report forgery.** `reportMatchResult` used to trust whatever `hostPlayerId`/
+   `joinerPlayerId`/`hostWon` a caller sent, with no proof these two players were ever in a match
+   together - anyone could POST a victim's known player id directly and fabricate results
+   (repeating with a fresh `matchId` each time to dodge the idempotency guard) to farm LP or grief
+   someone else's rank.
+
+   **Fix**: `create`/`join` now also store the caller's `playerId` on the lobby record (as
+   `hostPlayerId`/`joinerPlayerId`). `reportMatchResult` now accepts an optional `code`; when
+   present, it looks up that lobby and requires `lobby.hostPlayerId === hostPlayerId &&
+   lobby.joinerPlayerId === joinerPlayerId` before applying anything (`403` otherwise), then
+   deletes the lobby record on success so it can't be replayed for a second fraudulent report with
+   a new `matchId`. Client-side: `LobbyClient.create`/`join` now send the local player's id;
+   `NetHost`/`NetClient` retain the lobby code (`getLobbyCode()`) for the lifetime of the
+   connection; `PaddleShockApp.endRankedHostMatch` threads it through to
+   `RankClient.reportMatchResult`, which sends it as `code`.
+
+   **Accepted tradeoff - LAN-direct matches**: a direct IP:port connection never touches this
+   table at all (no `create`/`join` call happens), so there is no session to check against.
+   `reportMatchResult` skips the lobby-verification check entirely when `code` is absent, which
+   means a LAN-direct report is exactly as forgeable as before this fix - not a regression, but
+   not a fix for that path either. Routing every LAN match through AWS just to get a checkable
+   session record was judged not worth the added latency/dependency for same-network play; lobby-
+   code (internet) matches, the more exposed case since the endpoint is public and anyone can PIN
+   a code without ever running the game, get the real protection.
+
+2. **Lobby-join race.** `join`'s `UpdateCommand` had no `ConditionExpression`, so two
+   near-simultaneous joins on the same code both succeeded and the second silently clobbered the
+   first's `joinerAddr` - the real first joiner was stranded with no error. Fixed with a
+   `ConditionExpression` (same collision-retry pattern `create` already used) that only allows the
+   write through if nobody has joined yet or this is the same joiner retrying (same `addr`); a
+   genuinely different second joiner now gets a clear `409 "lobby already has a joiner"` instead of
+   silently losing. `MultiplayerState.connectByLobbyCode`'s error handling surfaces this as "That
+   code already has a joiner - ask the host for a fresh one." instead of the generic "could not
+   find that code" message.
+
+3. **No rate limiting.** The Function URL is public/unauthenticated with no throttling - a
+   scripted flood could cheaply burn DynamoDB writes or scrape rank data by guessing player ids.
+   Added a simple in-Lambda fixed-window counter: any request carrying a `playerId` or
+   `hostPlayerId` is limited to `RATE_LIMIT_MAX_REQUESTS` (10) per `RATE_LIMIT_WINDOW_SECONDS` (30)
+   per id, tracked in the ranks table under a `rate:<id>:<window>` key with its own short TTL (same
+   pattern as the match-idempotency marker) - no new table needed. Exceeding it gets a `429`.
+   **Known limitation**: there's no API Gateway in front of this Function URL, so there's no
+   reliable source IP to key off; `poll` (the only action with no `playerId`) isn't rate-limited at
+   all, and an attacker willing to mint many fake player ids isn't meaningfully slowed. This is a
+   real deterrent against a naive flood using one or a few ids, not a complete defense - migrating
+   to API Gateway for real IP-based throttling was explicitly out of scope (would require changing
+   the client's hardcoded endpoint URL).
+
+**IAM**: the Lambda's role (`paddleshock-lobby-lambda-role`) needed `dynamodb:DeleteItem` added on
+`paddleshock-lobbies` (for consuming a lobby record after a successful report) - `PutItem`/
+`GetItem`/`UpdateItem` were already granted on both tables.
+
+**Verification**: live-tested against the deployed Lambda via curl - legit create -> join ->
+report flow applies LP correctly and consumes the lobby; a forged report against a code that was
+only created (never joined) is rejected (`403`); a forged report with a real session but a wrong
+`joinerPlayerId` is rejected (`403`); a replayed report against an already-consumed code is
+rejected (`403`); a no-`code` (LAN-direct-style) report still applies normally (documented
+tradeoff above); two near-simultaneous joins to one code produced exactly one `200` winner and one
+`409` loser; 11th+ request within a window from the same `playerId` got `429`. All test player/
+lobby/rank records created during this testing were deleted from DynamoDB afterward (the
+`match:`/`rate:` marker items left behind self-expire via their own TTL). `./gradlew compileJava`
+passes. The full two-instance UI-automation harness (`tools/mp-test-harness.ps1`) was not run for
+this change - the curl-level verification above plus a clean compile were judged sufficient
+confirmation within the time available; a future pass should still run it for full end-to-end
+confidence on the actual UDP handshake + rank-report path.
 
 ## Ranked ladder
 
