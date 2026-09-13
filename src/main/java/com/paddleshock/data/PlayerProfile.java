@@ -20,6 +20,10 @@ public class PlayerProfile {
         return currency;
     }
 
+    public void addCurrency(int amount) {
+        currency += amount;
+    }
+
     public boolean owns(String category, String id) {
         return ownedSetFor(category).contains(id);
     }

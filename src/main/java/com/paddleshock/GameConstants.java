@@ -27,4 +27,9 @@ public final class GameConstants {
     public static final float BALL_BASE_SPEED = 7f;
     public static final float BALL_MAX_SPEED = 16f;
     public static final float BALL_SPEED_RAMP = 1.03f;
+
+    // Match: first to WIN_SCORE takes the match; winner earns a random credit reward.
+    public static final int WIN_SCORE = 10;
+    public static final int MATCH_REWARD_MIN = 10;
+    public static final int MATCH_REWARD_MAX = 15;
 }

@@ -2,16 +2,19 @@ package com.paddleshock.app;
 
 import java.awt.Dimension;
 import java.awt.Toolkit;
+import java.util.concurrent.ThreadLocalRandom;
 
 import com.jme3.app.SimpleApplication;
 import com.jme3.system.AppSettings;
 import com.simsilica.lemur.GuiGlobals;
 import com.simsilica.lemur.style.BaseStyles;
 
+import com.paddleshock.GameConstants;
 import com.paddleshock.data.PlayerProfile;
 import com.paddleshock.data.SaveManager;
 import com.paddleshock.settings.GameSettings;
 import com.paddleshock.ui.MainMenuState;
+import com.paddleshock.ui.MatchEndState;
 import com.paddleshock.ui.OptionsState;
 import com.paddleshock.ui.PauseState;
 import com.paddleshock.ui.SplashState;
@@ -28,6 +31,7 @@ public class PaddleShockApp extends SimpleApplication {
     private PauseState pauseState;
     private OptionsState optionsState;
     private StoreState storeState;
+    private MatchEndState matchEndState;
     private GameplayAppState gameplayState;
 
     @Override
@@ -48,17 +52,20 @@ public class PaddleShockApp extends SimpleApplication {
         pauseState = new PauseState();
         optionsState = new OptionsState();
         storeState = new StoreState();
+        matchEndState = new MatchEndState();
 
         stateManager.attach(splashState);
         stateManager.attach(mainMenuState);
         stateManager.attach(pauseState);
         stateManager.attach(optionsState);
         stateManager.attach(storeState);
+        stateManager.attach(matchEndState);
 
         mainMenuState.setEnabled(false);
         pauseState.setEnabled(false);
         optionsState.setEnabled(false);
         storeState.setEnabled(false);
+        matchEndState.setEnabled(false);
     }
 
     public PlayerProfile getProfile() {
@@ -86,11 +93,13 @@ public class PaddleShockApp extends SimpleApplication {
         pauseState.setEnabled(false);
         optionsState.setEnabled(false);
         storeState.setEnabled(false);
+        matchEndState.setEnabled(false);
         mainMenuState.setEnabled(true);
     }
 
     public void startMatchVsAI() {
         mainMenuState.setEnabled(false);
+        matchEndState.setEnabled(false);
         if (gameplayState != null) {
             stateManager.detach(gameplayState);
         }
@@ -117,8 +126,24 @@ public class PaddleShockApp extends SimpleApplication {
         mainMenuState.setEnabled(true);
     }
 
+    /** Called by the gameplay state once a side reaches the winning score; awards credits on a player win. */
+    public void endMatch(boolean playerWon, int playerScore, int opponentScore) {
+        gameplayState.setEnabled(false);
+
+        int reward = 0;
+        if (playerWon) {
+            reward = ThreadLocalRandom.current().nextInt(GameConstants.MATCH_REWARD_MIN, GameConstants.MATCH_REWARD_MAX + 1);
+            profile.addCurrency(reward);
+            saveProfile();
+        }
+
+        matchEndState.setResult(playerWon, reward, playerScore, opponentScore);
+        matchEndState.setEnabled(true);
+    }
+
     public void showStore() {
         mainMenuState.setEnabled(false);
+        matchEndState.setEnabled(false);
         storeState.setEnabled(true);
     }
 

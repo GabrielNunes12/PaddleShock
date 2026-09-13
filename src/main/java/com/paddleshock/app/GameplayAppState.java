@@ -161,7 +161,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     private void setUpHud(SimpleApplication simpleApp) {
         BitmapFont font = simpleApp.getAssetManager().loadFont("Interface/Fonts/Default.fnt");
         scoreText = new BitmapText(font);
-        scoreText.setSize(font.getCharSet().getRenderedSize() * 2f);
+        scoreText.setSize(28);
         scoreText.setLocalTranslation(20, simpleApp.getCamera().getHeight() - 20, 0);
         hudNode.attachChild(scoreText);
         updateScoreText();
@@ -217,11 +217,19 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         if (pos.z < -GameConstants.TABLE_HALF_LENGTH) {
             opponentScore++;
             updateScoreText();
-            ball.launch(1f);
+            if (opponentScore >= GameConstants.WIN_SCORE) {
+                app.endMatch(false, playerScore, opponentScore);
+            } else {
+                ball.launch(1f);
+            }
         } else if (pos.z > GameConstants.TABLE_HALF_LENGTH) {
             playerScore++;
             updateScoreText();
-            ball.launch(-1f);
+            if (playerScore >= GameConstants.WIN_SCORE) {
+                app.endMatch(true, playerScore, opponentScore);
+            } else {
+                ball.launch(-1f);
+            }
         }
     }
 
