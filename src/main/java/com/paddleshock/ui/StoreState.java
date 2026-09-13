@@ -284,13 +284,14 @@ public class StoreState extends BaseAppState {
         action.setPreferredSize(new Vector3f(cardWidth - 32, 40, 0));
         action.setEnabled(!equipped);
         action.addClickCommands((Command<Button>) source -> {
+            boolean success = true;
             if (owned) {
                 profile.equip(category, id);
             } else {
-                profile.purchase(category, id, price);
+                success = profile.purchase(category, id, price);
             }
             app.saveProfile();
-            app.getAudioManager().playSfx("button_confirm.ogg");
+            app.getAudioManager().playSfx(success ? "button_confirm.ogg" : "purchase_denied.ogg");
             rebuild(app);
         });
     }
@@ -344,9 +345,9 @@ public class StoreState extends BaseAppState {
             buy.setFontSize(15);
             buy.setPreferredSize(new Vector3f(cardWidth - 32, 40, 0));
             buy.addClickCommands((Command<Button>) source -> {
-                profile.purchasePowerUp(item.getId(), item.getPrice());
+                boolean success = profile.purchasePowerUp(item.getId(), item.getPrice());
                 app.saveProfile();
-                app.getAudioManager().playSfx("button_confirm.ogg");
+                app.getAudioManager().playSfx(success ? "button_confirm.ogg" : "purchase_denied.ogg");
                 rebuild(app);
             });
         } else {

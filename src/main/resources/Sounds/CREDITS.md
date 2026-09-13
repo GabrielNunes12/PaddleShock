@@ -10,6 +10,7 @@ All CC0 (public domain), by [Kenney](https://kenney.nl) — no attribution requi
 - `powerup_activate.ogg` — from **Interface Sounds** (`maximize_003.ogg`)
 - `button_click.ogg` — from **Interface Sounds** (`click_001.ogg`)
 - `button_confirm.ogg` — from **Interface Sounds** (`confirmation_001.ogg`)
+- `purchase_denied.ogg` — from **Interface Sounds** (`error_001.ogg`)
 - `match_win.ogg` / `match_defeat.ogg` — from **Music Jingles** (`jingles_NES16.ogg` / `jingles_NES02.ogg`)
 
 Source packs: [Impact Sounds](https://kenney.nl/assets/impact-sounds),
