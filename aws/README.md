@@ -86,22 +86,29 @@ Single POST endpoint, JSON body, `action` field selects behavior:
   only once at construction, so the joiner is still retrying when the host's punch eventually
   opens a path. Regression-tested: the full LAN (IP:port) host/join flow still works end to end
   with the background punch thread running concurrently, and produced no exceptions.
-  **Not independently live-verified for real cross-NAT traversal** - see below.
-
-### A same-machine test can't validate NAT traversal
-
-Both live tests so far (Phase C and D) ran two instances on one machine/network, which cannot
-prove hole-punching works: the failure mode is NAT **hairpinning** (routing a packet addressed to
-your own public IP back into your own LAN), a distinct router feature from **hole-punching**
-between two genuinely different networks - Phase D's active punching does not and cannot fix a
-router that lacks hairpin support, because in a same-machine test there's no second NAT for the
-punching to actually open. The code path for punching runs correctly (confirmed via logs: no
-exceptions, LAN flow unaffected) but its actual real-world effectiveness against a genuine
-cross-NAT scenario is unverified. Phase E (two different real networks, e.g. a phone hotspot vs.
-home wifi) is the only way to actually validate this.
+- **Done (Phase E) - real cross-network validation, 2026-09-13**: a same-machine test can't prove
+  hole-punching works (its only possible failure mode is NAT **hairpinning** - routing a packet
+  addressed to your own public IP back into your own LAN - a router feature distinct from
+  **hole-punching** between two genuinely different networks). So this ran the actual production
+  `NetHost`/`NetClient` code (via two tiny CLI probes, no jME/graphics involved - see
+  `HostProbe`/`JoinProbe`, not committed, they're just thin wrappers calling the real classes) as
+  two separate processes on two real, different networks: `HostProbe` on the developer's home
+  network, `JoinProbe` on a temporary AWS EC2 instance (spun up, tested, and torn down within
+  minutes - t3.micro, terminated immediately after, no lasting cost). Result:
+  ```
+  [home network]  PROBE lobby code: 7DGPVJ
+                  PROBE hasJoiner after punch window: true
+                  PROBE RESULT: SUCCESS
+  [EC2, different network]  PROBE joining via code: 7DGPVJ
+                             PROBE RESULT: SUCCESS
+  ```
+  Both sides agree: the joiner's HELLO reached the host, and the host's WELCOME reached the
+  joiner, entirely over the internet via a lobby code, with zero manual IP sharing or port
+  forwarding. **This is the real, working feature** - LAN-over-internet multiplayer via AWS
+  lobby codes and active UDP hole-punching, confirmed end to end.
 
 See the main session's design doc discussion (not committed) for the full phase breakdown
-(A: AWS infra, B: STUN client, C: lobby UI, D: active punching [this], E: cross-network QA).
+(A: AWS infra, B: STUN client, C: lobby UI, D: active punching, E: cross-network QA [this]).
 
 ## Redeploying the Lambda after code changes
 
