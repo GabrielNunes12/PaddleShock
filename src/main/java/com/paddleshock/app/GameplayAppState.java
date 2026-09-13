@@ -11,11 +11,19 @@ import com.jme3.input.controls.ActionListener;
 import com.jme3.input.controls.KeyTrigger;
 import com.jme3.light.AmbientLight;
 import com.jme3.light.DirectionalLight;
+import com.jme3.material.Material;
+import com.jme3.material.RenderState;
+import com.jme3.material.RenderState.BlendMode;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.FastMath;
 import com.jme3.math.Vector3f;
+import com.jme3.renderer.queue.RenderQueue.Bucket;
+import com.jme3.scene.Geometry;
+import com.jme3.scene.Mesh;
 import com.jme3.scene.Node;
 import com.jme3.scene.Spatial;
+import com.jme3.scene.VertexBuffer.Type;
+import com.jme3.util.BufferUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -44,6 +52,9 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     private static final float AI_MAX_SPEED = 6.5f;
     private static final float AI_POWERUP_MIN_INTERVAL = 3f;
     private static final float AI_POWERUP_MAX_INTERVAL = 6f;
+    private static final float POWERUP_BOX_SIZE = 64f;
+    private static final float POWERUP_BOX_GAP = 12f;
+    private static final ColorRGBA POWERUP_BOX_COOLDOWN_COLOR = new ColorRGBA(0.180f, 0.196f, 0.235f, 1f);
 
     private final Node gameNode = new Node("gameplayRoot");
     private final Node hudNode = new Node("gameplayHud");
@@ -56,7 +67,11 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     private final PlayerInput playerInput = new PlayerInput();
     private PowerUpManager powerUpManager;
     private final PowerUpDefinition[] powerUpLoadout = new PowerUpDefinition[3];
-    private final BitmapText[] powerUpTexts = new BitmapText[3];
+    private final Geometry[] powerUpBoxes = new Geometry[3];
+    private final BitmapText[] powerUpKeyTexts = new BitmapText[3];
+    private final BitmapText[] powerUpIconTexts = new BitmapText[3];
+    private final BitmapText[] powerUpCooldownTexts = new BitmapText[3];
+    private final BitmapText[] powerUpNameTexts = new BitmapText[3];
     private float aiPowerUpTimer = AI_POWERUP_MIN_INTERVAL;
 
     private int playerScore = 0;
@@ -189,15 +204,45 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         hudNode.attachChild(scoreText);
         updateScoreText();
 
+        float boxTopY = simpleApp.getCamera().getHeight() - 64;
         for (int i = 0; i < powerUpLoadout.length; i++) {
-            if (powerUpLoadout[i] == null) {
+            PowerUpDefinition def = powerUpLoadout[i];
+            if (def == null) {
                 continue;
             }
-            BitmapText text = new BitmapText(font);
-            text.setSize(16);
-            text.setLocalTranslation(20 + i * 230f, simpleApp.getCamera().getHeight() - 56, 0);
-            hudNode.attachChild(text);
-            powerUpTexts[i] = text;
+            float boxX = 20 + i * (POWERUP_BOX_SIZE + POWERUP_BOX_GAP);
+            powerUpBoxes[i] = attachPowerUpBox(boxX, boxTopY, def.getType().getColor());
+
+            BitmapText keyText = new BitmapText(font);
+            keyText.setSize(13);
+            keyText.setColor(Theme.TEXT);
+            keyText.setText(Integer.toString(i + 1));
+            keyText.setLocalTranslation(boxX + 6, boxTopY - 2, 2);
+            hudNode.attachChild(keyText);
+            powerUpKeyTexts[i] = keyText;
+
+            BitmapText iconText = new BitmapText(font);
+            iconText.setSize(28);
+            iconText.setColor(Theme.ON_ACCENT);
+            iconText.setText(def.getDisplayName().substring(0, 1).toUpperCase());
+            iconText.setLocalTranslation(boxX + POWERUP_BOX_SIZE / 2f - 9, boxTopY - POWERUP_BOX_SIZE / 2f + 15, 2);
+            hudNode.attachChild(iconText);
+            powerUpIconTexts[i] = iconText;
+
+            BitmapText cooldownText = new BitmapText(font);
+            cooldownText.setSize(20);
+            cooldownText.setColor(Theme.TEXT);
+            cooldownText.setLocalTranslation(boxX + POWERUP_BOX_SIZE / 2f - 8, boxTopY - POWERUP_BOX_SIZE / 2f + 11, 3);
+            hudNode.attachChild(cooldownText);
+            powerUpCooldownTexts[i] = cooldownText;
+
+            BitmapText nameText = new BitmapText(font);
+            nameText.setSize(12);
+            nameText.setColor(Theme.TEXT_DIM);
+            nameText.setText(def.getDisplayName().toUpperCase());
+            nameText.setLocalTranslation(boxX, boxTopY - POWERUP_BOX_SIZE - 6, 0);
+            hudNode.attachChild(nameText);
+            powerUpNameTexts[i] = nameText;
         }
         updatePowerUpHud();
     }
@@ -206,22 +251,51 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         scoreText.setText("You " + playerScore + " : " + opponentScore + " AI  (Esc: pause)");
     }
 
+    /** A flat square, filled with the power-up's own color, used as its HUD slot icon. */
+    private Geometry attachPowerUpBox(float x, float topY, ColorRGBA color) {
+        Vector3f[] vertices = {
+            new Vector3f(0, 0, 0),
+            new Vector3f(POWERUP_BOX_SIZE, 0, 0),
+            new Vector3f(POWERUP_BOX_SIZE, -POWERUP_BOX_SIZE, 0),
+            new Vector3f(0, -POWERUP_BOX_SIZE, 0),
+        };
+
+        Mesh mesh = new Mesh();
+        mesh.setBuffer(Type.Position, 3, BufferUtils.createFloatBuffer(vertices));
+        mesh.setBuffer(Type.Index, 3, new short[] {0, 1, 2, 0, 2, 3});
+        mesh.updateBound();
+
+        Material material = new Material(getApplication().getAssetManager(), "Common/MatDefs/Misc/Unshaded.j3md");
+        material.setColor("Color", color);
+        material.getAdditionalRenderState().setBlendMode(BlendMode.Alpha);
+        material.getAdditionalRenderState().setFaceCullMode(RenderState.FaceCullMode.Off);
+
+        Geometry geometry = new Geometry("powerUpBox", mesh);
+        geometry.setMaterial(material);
+        geometry.setQueueBucket(Bucket.Gui);
+        geometry.setLocalTranslation(x, topY, 0);
+        hudNode.attachChild(geometry);
+        return geometry;
+    }
+
+    /** Grays a slot's box out and counts its cooldown down once used; back to full color when ready. */
     private void updatePowerUpHud() {
-        for (int i = 0; i < powerUpTexts.length; i++) {
-            BitmapText text = powerUpTexts[i];
+        for (int i = 0; i < powerUpBoxes.length; i++) {
+            Geometry box = powerUpBoxes[i];
             PowerUpDefinition def = powerUpLoadout[i];
-            if (text == null || def == null) {
+            if (box == null || def == null) {
                 continue;
             }
             float remaining = powerUpManager == null ? 0f : powerUpManager.getPlayerCooldownRemaining(def.getType());
-            String key = "[" + (i + 1) + "] ";
-            if (remaining > 0f) {
-                text.setText(key + def.getDisplayName().toUpperCase() + "  " + (int) Math.ceil(remaining) + "s");
-                text.setColor(Theme.TEXT_DIM);
-            } else {
-                text.setText(key + def.getDisplayName().toUpperCase());
-                text.setColor(Theme.ORANGE);
+            boolean onCooldown = remaining > 0f;
+
+            box.getMaterial().setColor("Color", onCooldown ? POWERUP_BOX_COOLDOWN_COLOR : def.getType().getColor());
+            powerUpIconTexts[i].setCullHint(onCooldown ? Spatial.CullHint.Always : Spatial.CullHint.Never);
+            powerUpCooldownTexts[i].setCullHint(onCooldown ? Spatial.CullHint.Never : Spatial.CullHint.Always);
+            if (onCooldown) {
+                powerUpCooldownTexts[i].setText(Integer.toString((int) Math.ceil(remaining)));
             }
+            powerUpNameTexts[i].setColor(onCooldown ? Theme.TEXT_DIM : Theme.TEXT);
         }
     }
 
