@@ -21,10 +21,11 @@ public class LevelDefinition extends ItemDefinition {
     private final float gravityMultiplier;
     private final float windAccelX;
     private final float bounceMultiplier;
+    private final boolean floating;
 
     public LevelDefinition(String id, String displayName, int price, ColorRGBA skyColor, ColorRGBA sunTint,
             ColorRGBA ambientTint, ColorRGBA groundColor, TextureSet groundTexture, ColorRGBA backdropColor,
-            String tagline, float gravityMultiplier, float windAccelX, float bounceMultiplier) {
+            String tagline, float gravityMultiplier, float windAccelX, float bounceMultiplier, boolean floating) {
         super(id, displayName, price);
         this.skyColor = skyColor;
         this.sunTint = sunTint;
@@ -36,6 +37,7 @@ public class LevelDefinition extends ItemDefinition {
         this.gravityMultiplier = gravityMultiplier;
         this.windAccelX = windAccelX;
         this.bounceMultiplier = bounceMultiplier;
+        this.floating = floating;
     }
 
     public ColorRGBA getSkyColor() {
@@ -79,5 +81,11 @@ public class LevelDefinition extends ItemDefinition {
     /** Multiplies the ball's table-bounce restitution on top of the table's own - energetic arenas hop higher/longer. */
     public float getBounceMultiplier() {
         return bounceMultiplier;
+    }
+
+    /** True for a level with no floor at all (e.g. Space Station) - ground/backdrop are skipped
+     *  in favor of a starfield and a planet. */
+    public boolean isFloating() {
+        return floating;
     }
 }

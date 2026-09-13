@@ -144,7 +144,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                 .orElse(Catalog.BALLS.get(0));
 
         Arena arena = new Arena(getApplication().getAssetManager(), level.getGroundColor(),
-                level.getGroundTexture(), level.getBackdropColor());
+                level.getGroundTexture(), level.getBackdropColor(), level.isFloating());
         gameNode.attachChild(arena.getNode());
 
         table = new Table(getApplication().getAssetManager(), tableDef.getSurfaceColor(),
@@ -216,8 +216,10 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                 decor.attachChild(loadProp("Models/Decor/arcade_machine.glb", 2.0f, leftX, -3f, -FastMath.QUARTER_PI * 0.6f));
             }
             case "level_sunset" -> {
-                decor.attachChild(loadProp("Models/Decor/palm_tree.glb", 3.4f, rightX, -3f, 0f));
-                decor.attachChild(loadProp("Models/Decor/beach_umbrella.glb", 2.2f, leftX, -3f, 0f));
+                // Smaller and pushed further out/back than the other props - the raw models read
+                // oversized and crowded the frame at the same size/spot the others use.
+                decor.attachChild(loadProp("Models/Decor/palm_tree.glb", 2.6f, rightX + 1.5f, 1f, 0f));
+                decor.attachChild(loadProp("Models/Decor/beach_umbrella.glb", 1.7f, leftX - 1.5f, 1f, 0f));
             }
             case "level_space" -> {
                 decor.attachChild(loadProp("Models/Decor/satellite_dish.glb", 1.8f, rightX, -3f, 0f));
