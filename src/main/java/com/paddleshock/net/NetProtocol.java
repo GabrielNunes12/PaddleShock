@@ -43,6 +43,17 @@ public final class NetProtocol {
     public static final byte TYPE_REJECT = 3;
     public static final byte TYPE_INPUT = 4;
     public static final byte TYPE_SNAPSHOT = 5;
+    /** Either side proposes replaying the same two players once a match ends - see
+     *  {@code NetHost}/{@code NetClient} rematch methods and {@code MatchEndState}. Payload-less. */
+    public static final byte TYPE_REMATCH_REQUEST = 6;
+    /** The peer agrees to a proposed rematch. Payload-less. */
+    public static final byte TYPE_REMATCH_ACCEPT = 7;
+    /** The peer declines a proposed rematch. Payload-less. */
+    public static final byte TYPE_REMATCH_DECLINE = 8;
+    /** Host to joiner only, sent once after the host's {@code reportMatchResult} call succeeds:
+     *  the joiner's own authoritative post-match {@code RankState} (as returned by the Lambda),
+     *  so the joiner can show the real result instead of guessing via {@code withDeltaFrom}. */
+    public static final byte TYPE_RANK_RESULT = 9;
 
     /** Max UDP payload we ever send; comfortably above the largest (snapshot) message. */
     public static final int MAX_PACKET_SIZE = 256;
@@ -194,5 +205,48 @@ public final class NetProtocol {
         int flags = in.readByte() & 0xFF;
         return new SnapshotMessage(ballX, ballY, ballZ, ballVelX, ballVelZ, ballVerticalVel,
                 hostPaddleX, hostPaddleZ, joinerPaddleX, joinerPaddleZ, hostScore, joinerScore, flags);
+    }
+
+    // ---- RANK_RESULT (host -> joiner) ----
+
+    public record RankResultMessage(
+            String tier, int division, int lp, int wins, int losses,
+            int lpChange, boolean promoted, boolean demoted, String promoSeriesResult) {
+    }
+
+    public static byte[] encodeRankResult(String tier, int division, int lp, int wins, int losses,
+            int lpChange, boolean promoted, boolean demoted, String promoSeriesResult) {
+        try {
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            DataOutputStream out = new DataOutputStream(bytes);
+            out.writeByte(TYPE_RANK_RESULT);
+            out.writeUTF(tier);
+            out.writeInt(division);
+            out.writeInt(lp);
+            out.writeInt(wins);
+            out.writeInt(losses);
+            out.writeInt(lpChange);
+            out.writeBoolean(promoted);
+            out.writeBoolean(demoted);
+            out.writeUTF(promoSeriesResult == null ? "" : promoSeriesResult);
+            return bytes.toByteArray();
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to encode rank result packet", e);
+        }
+    }
+
+    public static RankResultMessage decodeRankResult(byte[] data) throws IOException {
+        DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
+        in.readByte(); // type
+        String tier = in.readUTF();
+        int division = in.readInt();
+        int lp = in.readInt();
+        int wins = in.readInt();
+        int losses = in.readInt();
+        int lpChange = in.readInt();
+        boolean promoted = in.readBoolean();
+        boolean demoted = in.readBoolean();
+        String promoSeriesResult = in.readUTF();
+        return new RankResultMessage(tier, division, lp, wins, losses, lpChange, promoted, demoted, promoSeriesResult);
     }
 }

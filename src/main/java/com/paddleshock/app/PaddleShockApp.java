@@ -18,6 +18,7 @@ import com.paddleshock.data.PlayerProfile;
 import com.paddleshock.data.SaveManager;
 import com.paddleshock.net.NetClient;
 import com.paddleshock.net.NetHost;
+import com.paddleshock.net.NetProtocol;
 import com.paddleshock.net.RankClient;
 import com.paddleshock.net.RankState;
 import com.paddleshock.settings.GameSettings;
@@ -241,6 +242,20 @@ public class PaddleShockApp extends SimpleApplication {
         thread.start();
     }
 
+    public GameplayAppState getGameplayState() {
+        return gameplayState;
+    }
+
+    /** Resumes a multiplayer rematch on the SAME connection/GameplayAppState instead of tearing
+     *  the match down and rebuilding it - see {@code MatchEndState}'s rematch negotiation, which
+     *  calls this only once both sides have agreed. */
+    public void resumeMultiplayerRematch() {
+        matchEndState.setEnabled(false);
+        gameplayState.startNewMatch();
+        gameplayState.setEnabled(true);
+        audioManager.playRandomMatchMusic();
+    }
+
     public void showPause() {
         gameplayState.setEnabled(false);
         pauseState.setEnabled(true);
@@ -272,11 +287,12 @@ public class PaddleShockApp extends SimpleApplication {
      *  authoritative simulation, so this isn't a new trust boundary) and shows the LP/rank
      *  change once that call returns. {@code joinerPlayerId} may be empty if the joiner connected
      *  without one (an older client) - the report is skipped in that case, LAN play still works. */
-    public void endRankedHostMatch(boolean playerWon, int playerScore, int opponentScore, String joinerPlayerId) {
+    public void endRankedHostMatch(boolean playerWon, int playerScore, int opponentScore, NetHost netHost) {
         int reward = endMatchCommon(playerWon, playerScore, opponentScore);
         matchEndState.setRankedResult(playerWon, reward, playerScore, opponentScore);
         matchEndState.setEnabled(true);
 
+        String joinerPlayerId = netHost == null ? "" : netHost.getJoinerPlayerId();
         if (joinerPlayerId == null || joinerPlayerId.isEmpty()) {
             matchEndState.reportRankResult(null);
             return;
@@ -286,7 +302,14 @@ public class PaddleShockApp extends SimpleApplication {
             RankState result = null;
             try {
                 String matchId = java.util.UUID.randomUUID().toString();
-                result = RankClient.reportMatchResult(matchId, hostPlayerId, joinerPlayerId, playerWon).getHost();
+                RankClient.MatchReportResult report =
+                        RankClient.reportMatchResult(matchId, hostPlayerId, joinerPlayerId, playerWon);
+                result = report.getHost();
+                // Relay the joiner's own authoritative result back over the still-open connection
+                // so it can show the real number instead of guessing via withDeltaFrom - see
+                // endRankedJoinerMatch. Best-effort: if the joiner already disconnected, NetHost
+                // silently drops this and the joiner's own fallback kicks in.
+                netHost.sendRankResult(report.getJoiner());
             } catch (IOException e) {
                 // offline, or the rank service is unreachable - the match itself already
                 // completed normally, so just show "rank unavailable" rather than fail anything.
@@ -297,16 +320,74 @@ public class PaddleShockApp extends SimpleApplication {
         thread.start();
     }
 
+    /** Same as {@link #endRankedHostMatch}, but for a mid-match joiner disconnect/timeout: the
+     *  host reports a forfeit win for itself (only if this was actually a ranked match - i.e. the
+     *  joiner connected with a player id at all) and shows a real "opponent disconnected" notice
+     *  rather than a plain win screen. */
+    public void endRankedHostMatchByForfeit(int playerScore, int opponentScore, NetHost netHost) {
+        int reward = endMatchCommon(true, playerScore, opponentScore);
+        String joinerPlayerId = netHost == null ? "" : netHost.getJoinerPlayerId();
+        boolean ranked = joinerPlayerId != null && !joinerPlayerId.isEmpty();
+
+        if (ranked) {
+            matchEndState.setRankedResult(true, reward, playerScore, opponentScore);
+        } else {
+            matchEndState.setResult(true, reward, playerScore, opponentScore);
+        }
+        matchEndState.setExtraNotice("Opponent disconnected - win awarded by forfeit");
+        matchEndState.setEnabled(true);
+
+        if (!ranked) {
+            return;
+        }
+        String hostPlayerId = profile.getPlayerId();
+        Thread thread = new Thread(() -> {
+            RankState result = null;
+            try {
+                String matchId = java.util.UUID.randomUUID().toString();
+                // The joiner is gone - no relay is possible or needed; it never shows a ranked
+                // result at all for a timeout (see handleJoinerConnectionLost).
+                result = RankClient.reportMatchResult(matchId, hostPlayerId, joinerPlayerId, true).getHost();
+            } catch (IOException e) {
+                // offline, or the rank service is unreachable - the forfeit itself still stands.
+            }
+            matchEndState.reportRankResult(result);
+        }, "rank-report-forfeit");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    /** A joiner whose host vanished mid-match: show a real "connection lost" dead end instead of
+     *  freezing on the last snapshot forever. Deliberately does NOT report anything to the ranked
+     *  ladder - only the host reports match results (see the ranked-ladder trust model in {@code
+     *  aws/README.md}); a joiner can't verify anything the host isn't also seeing. */
+    public void handleJoinerConnectionLost(int playerScore, int opponentScore) {
+        gameplayState.setEnabled(false);
+        audioManager.stopMusic();
+        matchEndState.setConnectionLost(playerScore, opponentScore);
+        matchEndState.setEnabled(true);
+    }
+
     /** Same as {@link #endMatch}, but for the JOINER side of a ranked multiplayer match: the
      *  host already reported the result for both players, so this just re-fetches this player's
      *  own updated rank for display. */
-    public void endRankedJoinerMatch(boolean playerWon, int playerScore, int opponentScore) {
+    public void endRankedJoinerMatch(boolean playerWon, int playerScore, int opponentScore, NetClient netClient) {
         int reward = endMatchCommon(playerWon, playerScore, opponentScore);
         matchEndState.setRankedResult(playerWon, reward, playerScore, opponentScore);
         matchEndState.setEnabled(true);
 
         String playerId = profile.getPlayerId();
         Thread thread = new Thread(() -> {
+            // Prefer the host's own relayed authoritative result (see NetHost.sendRankResult /
+            // endRankedHostMatch) - it's the actual Lambda response, not a guess. Only fall back
+            // to the guess-based diff below if the relay never arrives (the host's report call
+            // failed entirely, or the connection dropped right after match-end).
+            RankState relayed = waitForRelayedRankResult(netClient);
+            if (relayed != null) {
+                matchEndState.reportRankResult(relayed);
+                return;
+            }
+
             RankState fetched = null;
             try {
                 // enterJoinedMatch's own prefetch thread may genuinely not have finished yet -
@@ -341,6 +422,29 @@ public class PaddleShockApp extends SimpleApplication {
         }, "rank-fetch");
         thread.setDaemon(true);
         thread.start();
+    }
+
+    /** Polls for the host's relayed {@code TYPE_RANK_RESULT} for a few seconds, or gives up and
+     *  returns {@code null} (the caller then falls back to the guess-based diff). Runs on the
+     *  calling background thread, never the render thread. */
+    private RankState waitForRelayedRankResult(NetClient netClient) {
+        if (netClient == null) {
+            return null;
+        }
+        for (int i = 0; i < 15; i++) { // ~3s at 200ms
+            NetProtocol.RankResultMessage msg = netClient.pollRelayedRankResult();
+            if (msg != null) {
+                return RankState.fromRelay(msg.tier(), msg.division(), msg.lp(), msg.wins(), msg.losses(),
+                        msg.lpChange(), msg.promoted(), msg.demoted(), msg.promoSeriesResult());
+            }
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return null;
+            }
+        }
+        return null;
     }
 
     /** Blocks (on the calling background thread - never the render thread) up to ~2s for
