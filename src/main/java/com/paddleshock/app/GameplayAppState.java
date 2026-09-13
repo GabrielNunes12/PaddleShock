@@ -169,8 +169,21 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     }
 
     private void setUpCamera(SimpleApplication simpleApp) {
-        simpleApp.getCamera().setLocation(new Vector3f(0, 7f, -11f));
-        simpleApp.getCamera().lookAt(new Vector3f(0, 0, -1f), Vector3f.UNIT_Y);
+        if (mode == Mode.JOINER) {
+            // World coordinates are authored entirely from the host's point of view (see
+            // applySnapshotToScene): the joiner's own paddle always renders at
+            // PADDLE_OPPONENT_Z, the host's at PADDLE_PLAYER_Z. Using the same fixed camera
+            // as the host/single-player would put the joiner behind the HOST's paddle,
+            // watching their own paddle from across the table - mirror the camera to the
+            // opposite side instead, so every player always sees the match from behind their
+            // own paddle. The mouse/gamepad input mapping below is derived from the camera's
+            // actual orientation, so it self-corrects for the mirror with no further changes.
+            simpleApp.getCamera().setLocation(new Vector3f(0, 7f, 11f));
+            simpleApp.getCamera().lookAt(new Vector3f(0, 0, 1f), Vector3f.UNIT_Y);
+        } else {
+            simpleApp.getCamera().setLocation(new Vector3f(0, 7f, -11f));
+            simpleApp.getCamera().lookAt(new Vector3f(0, 0, -1f), Vector3f.UNIT_Y);
+        }
 
         // Map mouse movement to table-plane directions using the camera's actual
         // orientation, rather than assuming screen-right is world +X: the camera
