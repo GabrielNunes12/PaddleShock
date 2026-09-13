@@ -15,7 +15,6 @@ public class PlayerProfile {
     private Set<String> ownedPaddleIds = new HashSet<>(Set.of("paddle_classic"));
     private Set<String> ownedTableIds = new HashSet<>(Set.of("table_classic"));
     private Set<String> ownedBallIds = new HashSet<>(Set.of("ball_classic"));
-    private Set<String> ownedLevelIds = new HashSet<>(Set.of("level_classic"));
     private Set<String> ownedPowerUpIds = new HashSet<>();
 
     private String equippedPaddleId = "paddle_classic";
@@ -35,6 +34,10 @@ public class PlayerProfile {
     }
 
     public boolean owns(String category, String id) {
+        // Levels are free for everyone, regardless of save history - never gated like paddle/table/ball.
+        if ("level".equals(category)) {
+            return true;
+        }
         return ownedSetFor(category).contains(id);
     }
 
@@ -71,12 +74,12 @@ public class PlayerProfile {
         };
     }
 
+    /** Not called for "level" - owns() always returns true for it before reaching here. */
     private Set<String> ownedSetFor(String category) {
         return switch (category) {
             case "paddle" -> ownedPaddleIds;
             case "table" -> ownedTableIds;
             case "ball" -> ownedBallIds;
-            case "level" -> ownedLevelIds;
             default -> throw new IllegalArgumentException("Unknown category: " + category);
         };
     }

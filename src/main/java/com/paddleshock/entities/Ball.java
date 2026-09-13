@@ -21,13 +21,18 @@ public class Ball {
     private final float radius;
     private final float baseSpeed;
     private final float restitutionMultiplier;
+    private final float gravityMultiplier;
+    private final float windAccelX;
     private float verticalVelocity;
 
     public Ball(AssetManager assetManager, ColorRGBA color, TextureSet textureSet, BallModel ballModel,
-            float speedMultiplier, float sizeMultiplier, float restitutionMultiplier) {
+            float speedMultiplier, float sizeMultiplier, float restitutionMultiplier,
+            float gravityMultiplier, float windAccelX) {
         this.radius = GameConstants.BALL_RADIUS * sizeMultiplier;
         this.baseSpeed = GameConstants.BALL_BASE_SPEED * speedMultiplier;
         this.restitutionMultiplier = restitutionMultiplier;
+        this.gravityMultiplier = gravityMultiplier;
+        this.windAccelX = windAccelX;
 
         Spatial model = ballModel.getPath() != null
                 ? assetManager.loadModel(ballModel.getPath())
@@ -71,7 +76,7 @@ public class Ball {
     public void update(float tpf) {
         Vector3f position = node.getLocalTranslation();
 
-        verticalVelocity -= GameConstants.BALL_GRAVITY * tpf;
+        verticalVelocity -= GameConstants.BALL_GRAVITY * gravityMultiplier * tpf;
         float newY = position.y + verticalVelocity * tpf;
         if (newY <= radius && verticalVelocity < 0) {
             newY = radius;
@@ -80,6 +85,8 @@ public class Ball {
                 verticalVelocity = 0f;
             }
         }
+
+        velocity.x += windAccelX * tpf;
 
         Vector3f horizontal = velocity.mult(tpf);
         node.setLocalTranslation(position.x + horizontal.x, newY, position.z + horizontal.z);

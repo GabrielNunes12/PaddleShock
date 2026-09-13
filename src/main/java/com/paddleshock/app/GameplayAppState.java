@@ -159,9 +159,12 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                 TextureSet.PLASTIC, GameConstants.PADDLE_OPPONENT_Z, 1f, 1f);
         gameNode.attachChild(opponentPaddle.getNode());
 
+        // The level's own bounce energy stacks with the table's, so e.g. a bouncy table in the
+        // high-energy Neon arena hops noticeably higher than the same table anywhere else.
+        float combinedRestitution = tableDef.getRestitutionMultiplier() * level.getBounceMultiplier();
         ball = new Ball(getApplication().getAssetManager(), ballDef.getColor(), ballDef.getTextureSet(),
                 ballDef.getBallModel(), ballDef.getSpeedMultiplier(), ballDef.getSizeMultiplier(),
-                tableDef.getRestitutionMultiplier());
+                combinedRestitution, level.getGravityMultiplier(), level.getWindAccelX());
         gameNode.attachChild(ball.getNode());
 
         powerUpManager = new PowerUpManager(playerPaddle, opponentPaddle);
