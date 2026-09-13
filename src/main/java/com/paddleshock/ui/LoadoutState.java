@@ -42,7 +42,7 @@ public class LoadoutState extends BaseAppState {
     private Label paddleLabel;
     private Label tableLabel;
     private Label ballLabel;
-    private Label levelLabel;
+    private Button[] levelButtons;
     private final Label[] powerUpLabels = new Label[3];
 
     @Override
@@ -83,7 +83,33 @@ public class LoadoutState extends BaseAppState {
         paddleLabel = addTile(equipRow, "PADDLE");
         tableLabel = addTile(equipRow, "TABLE");
         ballLabel = addTile(equipRow, "BALL");
-        levelLabel = addTile(equipRow, "LEVEL");
+
+        // Levels are free and picked right here - no store trip needed, unlike the gear above.
+        Label levelTitle = panel.addChild(new Label("LEVEL"));
+        levelTitle.setFontSize(12);
+        levelTitle.setColor(Theme.TEXT_DIM);
+        levelTitle.setInsets(new Insets3f(14, 0, 6, 0));
+
+        Container levelRow = panel.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
+        levelRow.setInsets(new Insets3f(0, 0, 8, 0));
+        levelButtons = new Button[Catalog.LEVELS.size()];
+        for (int i = 0; i < Catalog.LEVELS.size(); i++) {
+            LevelDefinition levelDef = Catalog.LEVELS.get(i);
+            Button levelButton = levelRow.addChild(new Button(levelDef.getDisplayName().toUpperCase()));
+            levelButton.setInsets(new Insets3f(4, 6, 4, 6));
+            levelButton.setFontSize(13);
+            levelButton.setPreferredSize(new Vector3f(160, 40, 0));
+            levelButton.addClickCommands(source -> {
+                if (modalOpen) {
+                    return;
+                }
+                app.getAudioManager().playSfx("button_click.ogg");
+                app.getProfile().equip("level", levelDef.getId());
+                app.saveProfile();
+                refreshLevelButtons(app.getProfile());
+            });
+            levelButtons[i] = levelButton;
+        }
 
         Label powerUpTitle = panel.addChild(new Label("POWER-UPS"));
         powerUpTitle.setFontSize(12);
@@ -174,7 +200,7 @@ public class LoadoutState extends BaseAppState {
         paddleLabel.setText(nameOf(Catalog.findPaddle(profile.getEquippedId("paddle")), PaddleDefinition::getDisplayName));
         tableLabel.setText(nameOf(Catalog.findTable(profile.getEquippedId("table")), TableDefinition::getDisplayName));
         ballLabel.setText(nameOf(Catalog.findBall(profile.getEquippedId("ball")), BallDefinition::getDisplayName));
-        levelLabel.setText(nameOf(Catalog.findLevel(profile.getEquippedId("level")), LevelDefinition::getDisplayName));
+        refreshLevelButtons(profile);
 
         List<String> loadout = profile.getLoadout();
         for (int i = 0; i < powerUpLabels.length; i++) {
@@ -192,6 +218,15 @@ public class LoadoutState extends BaseAppState {
 
     private <T> String nameOf(Optional<T> item, Function<T, String> nameFn) {
         return item.map(nameFn).map(String::toUpperCase).orElse("NONE");
+    }
+
+    private void refreshLevelButtons(PlayerProfile profile) {
+        String equippedId = profile.getEquippedId("level");
+        for (int i = 0; i < levelButtons.length; i++) {
+            boolean equipped = Catalog.LEVELS.get(i).getId().equals(equippedId);
+            levelButtons[i].setBackground(new QuadBackgroundComponent(equipped ? Theme.GREEN : Theme.PANEL_HOVER));
+            levelButtons[i].setColor(equipped ? Theme.ON_ACCENT : Theme.TEXT);
+        }
     }
 
     @Override

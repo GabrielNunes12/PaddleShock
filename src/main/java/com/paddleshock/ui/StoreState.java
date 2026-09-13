@@ -17,7 +17,6 @@ import com.simsilica.lemur.component.SpringGridLayout;
 import com.paddleshock.app.PaddleShockApp;
 import com.paddleshock.data.BallDefinition;
 import com.paddleshock.data.Catalog;
-import com.paddleshock.data.LevelDefinition;
 import com.paddleshock.data.PaddleDefinition;
 import com.paddleshock.data.PlayerProfile;
 import com.paddleshock.data.PowerUpDefinition;
@@ -114,7 +113,6 @@ public class StoreState extends BaseAppState {
         addTab(tabs, app, "PADDLES", "paddle");
         addTab(tabs, app, "TABLES", "table");
         addTab(tabs, app, "BALLS", "ball");
-        addTab(tabs, app, "LEVELS", "level");
         addTab(tabs, app, "POWER-UPS", "powerup");
 
         Container cardsRow = panel.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
@@ -168,7 +166,6 @@ public class StoreState extends BaseAppState {
         addTab(tabs, app, "PADDLES", "paddle");
         addTab(tabs, app, "TABLES", "table");
         addTab(tabs, app, "BALLS", "ball");
-        addTab(tabs, app, "LEVELS", "level");
         addTab(tabs, app, "POWER-UPS", "powerup");
         Vector3f tabsSize = tabs.getPreferredSize();
         tabs.setLocalTranslation((screenW - tabsSize.x) / 2f, screenH - (HEADER_HEIGHT - tabsSize.y) / 2f, 2);
@@ -230,12 +227,6 @@ public class StoreState extends BaseAppState {
                     String stats = "SPEED " + percent(item.getSpeedMultiplier()) + "   SIZE " + percent(item.getSizeMultiplier());
                     addCard(cardsRow, app, profile, "ball", item.getId(), item.getDisplayName(),
                             item.getPrice(), item.getColor(), stats);
-                }
-            }
-            case "level" -> {
-                for (LevelDefinition item : Catalog.LEVELS) {
-                    addCard(cardsRow, app, profile, "level", item.getId(), item.getDisplayName(),
-                            item.getPrice(), item.getBackdropColor(), item.getTagline());
                 }
             }
             case "powerup" -> {
