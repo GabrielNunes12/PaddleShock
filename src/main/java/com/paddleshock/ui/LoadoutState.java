@@ -25,6 +25,7 @@ import com.paddleshock.data.PaddleDefinition;
 import com.paddleshock.data.PlayerProfile;
 import com.paddleshock.data.PowerUpDefinition;
 import com.paddleshock.data.TableDefinition;
+import com.paddleshock.settings.AiDifficulty;
 
 /**
  * Shown before every match (fresh start or rematch): confirms/lets the player change their
@@ -44,6 +45,7 @@ public class LoadoutState extends BaseAppState {
     private Label ballLabel;
     private Button[] levelButtons;
     private final Label[] powerUpLabels = new Label[3];
+    private Label aiDifficultyLabel;
 
     @Override
     protected void initialize(Application application) {
@@ -110,6 +112,43 @@ public class LoadoutState extends BaseAppState {
             });
             levelButtons[i] = levelButton;
         }
+
+        Label aiTitle = panel.addChild(new Label("AI DIFFICULTY"));
+        aiTitle.setFontSize(12);
+        aiTitle.setColor(Theme.TEXT_DIM);
+        aiTitle.setInsets(new Insets3f(14, 0, 6, 0));
+
+        Container aiRow = panel.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
+        aiRow.setInsets(new Insets3f(0, 0, 8, 0));
+        Button aiMinus = aiRow.addChild(new Button("-"));
+        aiMinus.setBackground(new QuadBackgroundComponent(Theme.PANEL_HOVER));
+        aiMinus.setColor(Theme.TEXT);
+        aiMinus.setPreferredSize(new Vector3f(40, 40, 0));
+        aiMinus.addClickCommands(source -> {
+            if (modalOpen) {
+                return;
+            }
+            app.getAudioManager().playSfx("button_click.ogg");
+            cycleAiDifficulty(app, -1);
+        });
+
+        aiDifficultyLabel = aiRow.addChild(new Label(""));
+        aiDifficultyLabel.setFontSize(14);
+        aiDifficultyLabel.setColor(Theme.TEXT);
+        aiDifficultyLabel.setPreferredSize(new Vector3f(140, 40, 0));
+        aiDifficultyLabel.setTextHAlignment(com.simsilica.lemur.HAlignment.Center);
+
+        Button aiPlus = aiRow.addChild(new Button("+"));
+        aiPlus.setBackground(new QuadBackgroundComponent(Theme.PANEL_HOVER));
+        aiPlus.setColor(Theme.TEXT);
+        aiPlus.setPreferredSize(new Vector3f(40, 40, 0));
+        aiPlus.addClickCommands(source -> {
+            if (modalOpen) {
+                return;
+            }
+            app.getAudioManager().playSfx("button_click.ogg");
+            cycleAiDifficulty(app, 1);
+        });
 
         Label powerUpTitle = panel.addChild(new Label("POWER-UPS"));
         powerUpTitle.setFontSize(12);
@@ -196,6 +235,7 @@ public class LoadoutState extends BaseAppState {
 
     private void refreshLabels(PlayerProfile profile) {
         currencyLabel.setText(profile.getCurrency() + " credits");
+        aiDifficultyLabel.setText(((PaddleShockApp) getApplication()).getGameSettings().getAiDifficulty().getDisplayName());
 
         paddleLabel.setText(nameOf(Catalog.findPaddle(profile.getEquippedId("paddle")), PaddleDefinition::getDisplayName));
         tableLabel.setText(nameOf(Catalog.findTable(profile.getEquippedId("table")), TableDefinition::getDisplayName));
@@ -214,6 +254,15 @@ public class LoadoutState extends BaseAppState {
                 powerUpLabels[i].setColor(Theme.TEXT);
             }
         }
+    }
+
+    private void cycleAiDifficulty(PaddleShockApp app, int direction) {
+        AiDifficulty[] values = AiDifficulty.values();
+        com.paddleshock.settings.GameSettings settings = app.getGameSettings();
+        int nextIndex = Math.floorMod(settings.getAiDifficulty().ordinal() + direction, values.length);
+        settings.setAiDifficulty(values[nextIndex]);
+        app.saveGameSettings();
+        aiDifficultyLabel.setText(settings.getAiDifficulty().getDisplayName());
     }
 
     private <T> String nameOf(Optional<T> item, Function<T, String> nameFn) {

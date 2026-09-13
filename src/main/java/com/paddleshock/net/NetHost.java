@@ -46,7 +46,13 @@ public class NetHost implements AutoCloseable {
     private volatile boolean rematchAcceptedByJoiner = false;
     private volatile boolean rematchDeclinedByJoiner = false;
 
-    public NetHost(int port, String localPlayerId) throws SocketException {
+    /** Whether this host chose to play this match ranked - the host's own choice, made in
+     *  {@code MultiplayerState} before hosting, and communicated to the joiner via the WELCOME
+     *  handshake (see {@link NetProtocol}) since the host's choice is authoritative. */
+    private final boolean ranked;
+
+    public NetHost(int port, String localPlayerId, boolean ranked) throws SocketException {
+        this.ranked = ranked;
         socket = new DatagramSocket(port);
         this.localPlayerId = localPlayerId;
         // STUN discovery does its own blocking socket.receive() calls, so it must finish (and
@@ -121,7 +127,7 @@ public class NetHost implements AutoCloseable {
                 if (!playerId.isEmpty()) {
                     joinerPlayerId = playerId;
                 }
-                sendRaw(from, NetProtocol.encodeHandshake(NetProtocol.TYPE_WELCOME));
+                sendRaw(from, NetProtocol.encodeWelcome(ranked));
             } else {
                 sendRaw(from, NetProtocol.encodeHandshake(NetProtocol.TYPE_REJECT));
             }
@@ -139,6 +145,11 @@ public class NetHost implements AutoCloseable {
     /** Whether a joiner has completed the handshake yet. */
     public boolean hasJoiner() {
         return joinerAddress != null;
+    }
+
+    /** Whether this host chose to play this match ranked (see {@link #ranked}). */
+    public boolean isRanked() {
+        return ranked;
     }
 
     /** The joiner's ranked-ladder player id (see {@code RankClient}), or {@code ""} if they

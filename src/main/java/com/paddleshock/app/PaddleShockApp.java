@@ -51,6 +51,7 @@ public class PaddleShockApp extends SimpleApplication {
     private MatchEndState matchEndState;
     private LoadoutState loadoutState;
     private MultiplayerState multiplayerState;
+    private com.paddleshock.ui.HowToPlayState howToPlayState;
     private GameplayAppState gameplayState;
 
     @Override
@@ -85,6 +86,7 @@ public class PaddleShockApp extends SimpleApplication {
         matchEndState = new MatchEndState();
         loadoutState = new LoadoutState();
         multiplayerState = new MultiplayerState();
+        howToPlayState = new com.paddleshock.ui.HowToPlayState();
 
         stateManager.attach(splashState);
         stateManager.attach(mainMenuState);
@@ -94,6 +96,7 @@ public class PaddleShockApp extends SimpleApplication {
         stateManager.attach(matchEndState);
         stateManager.attach(loadoutState);
         stateManager.attach(multiplayerState);
+        stateManager.attach(howToPlayState);
 
         mainMenuState.setEnabled(false);
         pauseState.setEnabled(false);
@@ -102,6 +105,7 @@ public class PaddleShockApp extends SimpleApplication {
         matchEndState.setEnabled(false);
         loadoutState.setEnabled(false);
         multiplayerState.setEnabled(false);
+        howToPlayState.setEnabled(false);
     }
 
     @Override
@@ -151,8 +155,20 @@ public class PaddleShockApp extends SimpleApplication {
         matchEndState.setEnabled(false);
         loadoutState.setEnabled(false);
         multiplayerState.setEnabled(false);
+        howToPlayState.setEnabled(false);
         mainMenuState.setEnabled(true);
         audioManager.playMenuMusic();
+    }
+
+    /** Shows the "HOW TO PLAY" screen: automatically once, right after the splash screen, for any
+     *  save that hasn't seen it yet (see {@link com.paddleshock.data.PlayerProfile#hasSeenTutorial()}),
+     *  and any time afterward from the main menu's own button. Viewing it (via its own GOT IT
+     *  button) marks the profile as seen and saves it before running {@code backAction}. */
+    public void showHowToPlay(Runnable backAction) {
+        howToPlayState.setBackAction(backAction);
+        splashState.setEnabled(false);
+        mainMenuState.setEnabled(false);
+        howToPlayState.setEnabled(true);
     }
 
     /** Shows the HOST/JOIN LAN multiplayer screen (wired up from the main menu's MULTIPLAYER button). */
@@ -185,8 +201,8 @@ public class PaddleShockApp extends SimpleApplication {
      *  listen-server match and returns it; the caller ({@link MultiplayerState}) shows the
      *  local IP/port and waits for a joiner before actually entering the match via
      *  {@link #enterHostedMatch(NetHost)}. */
-    public NetHost startHostMatch(int port) throws SocketException {
-        return new NetHost(port, profile.getPlayerId());
+    public NetHost startHostMatch(int port, boolean ranked) throws SocketException {
+        return new NetHost(port, profile.getPlayerId(), ranked);
     }
 
     /** Connects to a LAN host at {@code hostAddress}:{@code port} and returns the client; the
@@ -209,7 +225,7 @@ public class PaddleShockApp extends SimpleApplication {
         if (gameplayState != null) {
             stateManager.detach(gameplayState);
         }
-        gameplayState = new GameplayAppState(netHost);
+        gameplayState = new GameplayAppState(netHost, netHost.isRanked());
         stateManager.attach(gameplayState);
         audioManager.playRandomMatchMusic();
     }
@@ -221,15 +237,21 @@ public class PaddleShockApp extends SimpleApplication {
         if (gameplayState != null) {
             stateManager.detach(gameplayState);
         }
-        gameplayState = new GameplayAppState(netClient);
+        boolean ranked = netClient.isRanked();
+        gameplayState = new GameplayAppState(netClient, ranked);
         stateManager.attach(gameplayState);
         audioManager.playRandomMatchMusic();
 
+        preMatchRank = null;
+        if (!ranked) {
+            // Unranked match (the host chose UNRANKED) - no ladder call needed, endMatch handles
+            // match-end the same way single-player does.
+            return;
+        }
         // Snapshot this player's rank now, before the match: the joiner has no way to learn its
         // own LP delta from the host's report the way endRankedHostMatch does directly (that
         // response is never relayed back over the game's own protocol) - endRankedJoinerMatch
         // computes the delta itself by diffing against this baseline instead.
-        preMatchRank = null;
         String playerId = profile.getPlayerId();
         Thread thread = new Thread(() -> {
             try {
@@ -330,10 +352,10 @@ public class PaddleShockApp extends SimpleApplication {
      *  host reports a forfeit win for itself (only if this was actually a ranked match - i.e. the
      *  joiner connected with a player id at all) and shows a real "opponent disconnected" notice
      *  rather than a plain win screen. */
-    public void endRankedHostMatchByForfeit(int playerScore, int opponentScore, NetHost netHost) {
+    public void endRankedHostMatchByForfeit(int playerScore, int opponentScore, NetHost netHost, boolean wasRanked) {
         int reward = endMatchCommon(true, playerScore, opponentScore);
         String joinerPlayerId = netHost == null ? "" : netHost.getJoinerPlayerId();
-        boolean ranked = joinerPlayerId != null && !joinerPlayerId.isEmpty();
+        boolean ranked = wasRanked && joinerPlayerId != null && !joinerPlayerId.isEmpty();
 
         if (ranked) {
             matchEndState.setRankedResult(true, reward, playerScore, opponentScore);

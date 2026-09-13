@@ -65,6 +65,7 @@ public class MainMenuState extends BaseAppState {
         addMenuButton(menu, "MULTIPLAYER", Theme.PANEL_HOVER, Theme.TEXT, app::showMultiplayer);
         addMenuButton(menu, "STORE", Theme.PANEL_HOVER, Theme.TEXT, app::showStore);
         addMenuButton(menu, "SETTINGS", Theme.PANEL_HOVER, Theme.TEXT, () -> app.showOptions(app::showMainMenu));
+        addMenuButton(menu, "HOW TO PLAY", Theme.PANEL_HOVER, Theme.TEXT, () -> app.showHowToPlay(app::showMainMenu));
         addMenuButton(menu, "QUIT", Theme.PANEL_HOVER, Theme.TEXT, app::stop);
 
         Vector3f menuSize = menu.getPreferredSize();
