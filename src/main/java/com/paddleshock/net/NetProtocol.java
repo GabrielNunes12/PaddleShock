@@ -20,7 +20,11 @@ import java.io.IOException;
  *       packets reuse this same type byte with no payload at all ({@link #encodeHandshake}) -
  *       harmless, since those only ever travel host-to-joiner and the joiner already ignores any
  *       inbound {@code TYPE_HELLO} as unrecognized (it only reacts to WELCOME/REJECT/SNAPSHOT).</li>
- *   <li>{@link #TYPE_WELCOME} - host to joiner: connection accepted, just the type byte.</li>
+ *   <li>{@link #TYPE_WELCOME} - host to joiner: connection accepted, the type byte plus a single "ranked" byte (1 = ranked ladder match,
+     *       0 = the host chose UNRANKED in {@code MultiplayerState}). The host's choice is
+     *       authoritative - this is how the joiner learns which match-end path to use
+     *       ({@code endMatch} vs {@code endRankedJoinerMatch}). A payload-less WELCOME (older
+     *       host, or malformed) decodes as ranked, matching the original always-ranked behavior.</li>
  *   <li>{@link #TYPE_REJECT} - host to joiner: already has a peer, just the type byte.</li>
  *   <li>{@link #TYPE_INPUT} - joiner to host, sent once per client frame: the joiner's own
  *       paddle deltaX/deltaZ for this frame, plus the catalog id of a power-up activated this
@@ -53,6 +57,18 @@ public final class NetProtocol {
 
     public static byte messageType(byte[] data) {
         return data.length == 0 ? 0 : data[0];
+    }
+
+    // ---- WELCOME (host -> joiner) ----
+
+    public static byte[] encodeWelcome(boolean ranked) {
+        return new byte[] {TYPE_WELCOME, (byte) (ranked ? 1 : 0)};
+    }
+
+    /** {@code true} for a ranked match, including a payload-less WELCOME (older host, or a
+     *  malformed/truncated packet) - see the class doc for why that's the safe default. */
+    public static boolean decodeWelcomeRanked(byte[] data) {
+        return data.length <= 1 || data[1] != 0;
     }
 
     // ---- HELLO (joiner -> host) ----

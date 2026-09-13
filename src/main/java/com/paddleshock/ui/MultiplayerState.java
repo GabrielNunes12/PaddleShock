@@ -55,6 +55,13 @@ public class MultiplayerState extends BaseAppState {
     private TextField addressField;
     private String joinError;
 
+    // Host-side only: the host's own choice of whether this match counts toward the ranked
+    // ladder, made before hosting starts. Authoritative - communicated to the joiner via the
+    // WELCOME handshake (see NetProtocol/NetHost/NetClient) so both sides agree on the same
+    // match-end path without a separate negotiation. Persists across a CANCEL/re-host within this
+    // screen visit, but resets to ranked (false) whenever the screen is freshly entered.
+    private boolean unranked = false;
+
     // Host-side: AWS lobby code registration, run off the render thread. lobbyGeneration guards
     // against a stale background result (from a cancelled/replaced hosting attempt) overwriting
     // a newer one - see beginHosting().
@@ -131,6 +138,22 @@ public class MultiplayerState extends BaseAppState {
         sub.setColor(Theme.TEXT_DIM);
         sub.setInsets(new Insets3f(0, 0, 18, 0));
 
+        Button unrankedToggle = panel.addChild(new Button(unrankedToggleLabel()));
+        styleButton(unrankedToggle, unranked ? Theme.GREEN : Theme.PANEL_HOVER, unranked ? Theme.ON_ACCENT : Theme.TEXT, 14);
+        unrankedToggle.setInsets(new Insets3f(0, 0, 4, 0));
+        unrankedToggle.addClickCommands(source -> {
+            app.getAudioManager().playSfx("button_click.ogg");
+            unranked = !unranked;
+            rebuild();
+        });
+
+        Label unrankedHint = panel.addChild(new Label(unranked
+                ? "This match will NOT affect your ranked LP."
+                : "This match counts toward your ranked ladder."));
+        unrankedHint.setFontSize(11);
+        unrankedHint.setColor(Theme.TEXT_DIM);
+        unrankedHint.setInsets(new Insets3f(0, 0, 12, 0));
+
         Button hostButton = panel.addChild(new Button("HOST MATCH"));
         styleButton(hostButton, Theme.ORANGE, Theme.ON_ACCENT, 18);
         hostButton.addClickCommands(source -> {
@@ -157,14 +180,19 @@ public class MultiplayerState extends BaseAppState {
         });
     }
 
+    private String unrankedToggleLabel() {
+        return unranked ? "UNRANKED (tap for ranked)" : "RANKED (tap for unranked)";
+    }
+
     private void beginHosting(PaddleShockApp app) {
+        boolean ranked = !unranked;
         try {
-            netHost = app.startHostMatch(GameConstants.MULTIPLAYER_DEFAULT_PORT);
+            netHost = app.startHostMatch(GameConstants.MULTIPLAYER_DEFAULT_PORT, ranked);
         } catch (SocketException e) {
             // Default port already in use (e.g. a previous instance still shutting down) -
             // fall back to an OS-assigned free port rather than dead-ending the flow.
             try {
-                netHost = app.startHostMatch(0);
+                netHost = app.startHostMatch(0, ranked);
             } catch (SocketException e2) {
                 joinError = "Could not open a UDP port: " + e2.getMessage();
                 view = View.CHOICE;
@@ -219,10 +247,18 @@ public class MultiplayerState extends BaseAppState {
     }
 
     private void buildHosting(PaddleShockApp app, Container panel) {
-        Label title = panel.addChild(new Label("HOSTING"));
+        boolean hostingUnranked = netHost != null && !netHost.isRanked();
+        Label title = panel.addChild(new Label(hostingUnranked ? "HOSTING - UNRANKED" : "HOSTING"));
         title.setFontSize(26);
-        title.setColor(Theme.ORANGE);
+        title.setColor(hostingUnranked ? Theme.TEXT_DIM : Theme.ORANGE);
         title.setInsets(new Insets3f(0, 0, 4, 0));
+
+        if (hostingUnranked) {
+            Label unrankedBadge = panel.addChild(new Label("Unranked - this match will not affect either player's LP."));
+            unrankedBadge.setFontSize(13);
+            unrankedBadge.setColor(Theme.GREEN);
+            unrankedBadge.setInsets(new Insets3f(0, 0, 8, 0));
+        }
 
         Label addressLabel = panel.addChild(new Label(getLocalIpAddress() + " : " + netHost.getPort()));
         addressLabel.setFontSize(22);
@@ -555,6 +591,7 @@ public class MultiplayerState extends BaseAppState {
     protected void onEnable() {
         view = View.CHOICE;
         joinError = null;
+        unranked = false;
         rebuild();
         ((SimpleApplication) getApplication()).getGuiNode().attachChild(uiRoot);
         getApplication().getInputManager().setCursorVisible(true);

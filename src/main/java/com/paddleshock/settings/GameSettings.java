@@ -10,6 +10,7 @@ public class GameSettings {
     private VideoQuality videoQuality = VideoQuality.MEDIUM;
     private boolean fullscreen = false;
     private Resolution resolution = Resolution.R_1280x720;
+    private AiDifficulty aiDifficulty = AiDifficulty.NORMAL;
 
     public float getMouseSensitivity() {
         return mouseSensitivity;
@@ -65,6 +66,14 @@ public class GameSettings {
 
     public void setResolution(Resolution resolution) {
         this.resolution = resolution;
+    }
+
+    public AiDifficulty getAiDifficulty() {
+        return aiDifficulty == null ? AiDifficulty.NORMAL : aiDifficulty;
+    }
+
+    public void setAiDifficulty(AiDifficulty aiDifficulty) {
+        this.aiDifficulty = aiDifficulty == null ? AiDifficulty.NORMAL : aiDifficulty;
     }
 
     private static float clamp(float value, float min, float max) {

@@ -121,7 +121,15 @@ public class SplashState extends BaseAppState implements ActionListener {
             return;
         }
         advancing = true;
-        ((PaddleShockApp) getApplication()).showMainMenu();
+        PaddleShockApp app = (PaddleShockApp) getApplication();
+        if (app.getProfile().hasSeenTutorial()) {
+            app.showMainMenu();
+        } else {
+            // First launch (or a save that predates the tutorial flag) - show it once before the
+            // main menu instead of dropping the player straight into a 5-button menu with zero
+            // explanation of controls/power-ups.
+            app.showHowToPlay(app::showMainMenu);
+        }
     }
 
     @Override

@@ -18,6 +18,13 @@ public class PlayerProfile {
     // and deserialize it as null; getPlayerId() generates and persists one lazily in that case.
     private String playerId;
 
+    // First-launch onboarding: false until the player has viewed the HOW TO PLAY screen once
+    // (either automatically on first launch, or by opening it from the main menu) - see
+    // HowToPlayState/PaddleShockApp#showHowToPlay. Old saves predate this field and deserialize it
+    // as false too, so an existing player sees it once as well - a one-time no-op inconvenience,
+    // not worth a separate "is this actually a brand-new save" check.
+    private boolean hasSeenTutorial = false;
+
     private Set<String> ownedPaddleIds = new HashSet<>(Set.of("paddle_classic"));
     private Set<String> ownedTableIds = new HashSet<>(Set.of("table_classic"));
     private Set<String> ownedBallIds = new HashSet<>(Set.of("ball_classic"));
@@ -43,6 +50,14 @@ public class PlayerProfile {
             playerId = UUID.randomUUID().toString();
         }
         return playerId;
+    }
+
+    public boolean hasSeenTutorial() {
+        return hasSeenTutorial;
+    }
+
+    public void setHasSeenTutorial(boolean hasSeenTutorial) {
+        this.hasSeenTutorial = hasSeenTutorial;
     }
 
     public void addCurrency(int amount) {

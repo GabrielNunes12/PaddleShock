@@ -65,9 +65,6 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     private static final String ACTION_PAUSE = "PS_Pause";
     private static final String[] POWERUP_ACTIONS = {"PS_PowerUp1", "PS_PowerUp2", "PS_PowerUp3"};
     private static final int[] POWERUP_KEYS = {KeyInput.KEY_1, KeyInput.KEY_2, KeyInput.KEY_3};
-    private static final float AI_MAX_SPEED = 6.5f;
-    private static final float AI_POWERUP_MIN_INTERVAL = 3f;
-    private static final float AI_POWERUP_MAX_INTERVAL = 6f;
     private static final float POWERUP_BOX_SIZE = 64f;
     private static final float POWERUP_BOX_GAP = 12f;
     private static final ColorRGBA POWERUP_BOX_COOLDOWN_COLOR = new ColorRGBA(0.180f, 0.196f, 0.235f, 1f);
@@ -89,7 +86,12 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     private final BitmapText[] powerUpIconTexts = new BitmapText[3];
     private final BitmapText[] powerUpCooldownTexts = new BitmapText[3];
     private final BitmapText[] powerUpNameTexts = new BitmapText[3];
-    private float aiPowerUpTimer = AI_POWERUP_MIN_INTERVAL;
+    /** Only meaningful in {@link Mode#SINGLE_PLAYER} - resolved from the player's chosen
+     *  {@link com.paddleshock.settings.AiDifficulty} in {@link #initialize}. */
+    private float aiMaxSpeed;
+    private float aiPowerUpMinInterval;
+    private float aiPowerUpMaxInterval;
+    private float aiPowerUpTimer;
 
     /** Set by the key-1/2/3 handler, consumed (and cleared) on the very next {@link #update}, so it
      *  reaches {@link MatchSimulation#tick} as part of the same tick-shaped input the future remote
@@ -104,6 +106,13 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     private final Mode mode;
     private final NetHost netHost;
     private final NetClient netClient;
+
+    /** Whether a multiplayer match should route its end through the ranked ladder (LP report/
+     *  fetch + rank display) rather than the plain {@code endMatch}. Meaningless in
+     *  {@link Mode#SINGLE_PLAYER}, which always uses the plain path. Set from the host's own
+     *  UNRANKED choice in {@code MultiplayerState}, communicated to a joiner via the WELCOME
+     *  handshake (see {@link NetProtocol}). */
+    private final boolean ranked;
 
     /** Consumed (and cleared) on the very next {@link #update}, same buffering as
      *  {@link #pendingPlayerPowerUpSlot} - used only in {@link Mode#JOINER}, where the local
@@ -122,25 +131,28 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
 
     /** The existing, unchanged single-player-vs-AI match. */
     public GameplayAppState() {
-        this(Mode.SINGLE_PLAYER, null, null);
+        this(Mode.SINGLE_PLAYER, null, null, false);
     }
 
     /** A listen-server host match: runs {@link MatchSimulation} locally and broadcasts snapshots
-     *  to the joiner connected via {@code netHost}. */
-    public GameplayAppState(NetHost netHost) {
-        this(Mode.HOST, netHost, null);
+     *  to the joiner connected via {@code netHost}. {@code ranked} is the host's own UNRANKED
+     *  choice from {@code MultiplayerState} ({@link NetHost#isRanked()}). */
+    public GameplayAppState(NetHost netHost, boolean ranked) {
+        this(Mode.HOST, netHost, null, ranked);
     }
 
     /** A joiner match: sends local input to, and renders snapshots received from, the host
-     *  connected via {@code netClient}. Runs no {@link MatchSimulation} of its own. */
-    public GameplayAppState(NetClient netClient) {
-        this(Mode.JOINER, null, netClient);
+     *  connected via {@code netClient}. Runs no {@link MatchSimulation} of its own. {@code ranked}
+     *  reflects the host's choice, learned via the WELCOME handshake ({@link NetClient#isRanked()}). */
+    public GameplayAppState(NetClient netClient, boolean ranked) {
+        this(Mode.JOINER, null, netClient, ranked);
     }
 
-    private GameplayAppState(Mode mode, NetHost netHost, NetClient netClient) {
+    private GameplayAppState(Mode mode, NetHost netHost, NetClient netClient, boolean ranked) {
         this.mode = mode;
         this.netHost = netHost;
         this.netClient = netClient;
+        this.ranked = ranked;
     }
 
     @Override
@@ -149,6 +161,12 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         SimpleApplication simpleApp = (SimpleApplication) application;
         level = Catalog.findLevel(app.getProfile().getEquippedId("level")).orElse(Catalog.LEVELS.get(0));
         simpleApp.getViewPort().setBackgroundColor(level.getSkyColor());
+
+        com.paddleshock.settings.AiDifficulty aiDifficulty = app.getGameSettings().getAiDifficulty();
+        aiMaxSpeed = aiDifficulty.getMaxSpeed();
+        aiPowerUpMinInterval = aiDifficulty.getPowerUpMinInterval();
+        aiPowerUpMaxInterval = aiDifficulty.getPowerUpMaxInterval();
+        aiPowerUpTimer = aiPowerUpMinInterval;
 
         setUpCamera(simpleApp);
         setUpLights();
@@ -596,7 +614,11 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             if (snapshot.isMatchOver()) {
                 // From the joiner's own point of view: "you" are the joiner, so isHostWon()
                 // (a host-perspective flag) is negated to get whether the local viewer won.
-                app.endRankedJoinerMatch(!snapshot.isHostWon(), joinerDisplayScore, hostDisplayScore);
+                if (ranked) {
+                    app.endRankedJoinerMatch(!snapshot.isHostWon(), joinerDisplayScore, hostDisplayScore);
+                } else {
+                    app.endMatch(!snapshot.isHostWon(), joinerDisplayScore, hostDisplayScore);
+                }
             }
         }
     }
@@ -648,7 +670,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
      *  shape a networked opponent will eventually be fed through instead. */
     private PaddleInput computeOpponentAiInput(float tpf) {
         float toBall = matchSimulation.getBall().getPosition().x - matchSimulation.getOpponentPaddle().getPosition().x;
-        float maxStep = AI_MAX_SPEED * tpf;
+        float maxStep = aiMaxSpeed * tpf;
         float step = Math.max(-maxStep, Math.min(maxStep, toBall));
 
         PowerUpDefinition chosen = pickAiPowerUp(tpf);
@@ -662,8 +684,8 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         if (aiPowerUpTimer > 0f) {
             return null;
         }
-        aiPowerUpTimer = AI_POWERUP_MIN_INTERVAL
-                + (float) (Math.random() * (AI_POWERUP_MAX_INTERVAL - AI_POWERUP_MIN_INTERVAL));
+        aiPowerUpTimer = aiPowerUpMinInterval
+                + (float) (Math.random() * (aiPowerUpMaxInterval - aiPowerUpMinInterval));
 
         List<PowerUpDefinition> ready = new ArrayList<>();
         for (PowerUpDefinition def : powerUpLoadout) {
@@ -692,7 +714,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             updateScoreText();
             app.getAudioManager().playSfx("score.ogg");
             if (result.isMatchOver()) {
-                if (mode == Mode.HOST) {
+                if (mode == Mode.HOST && ranked) {
                     app.endRankedHostMatch(result.isPlayerWon(), matchSimulation.getPlayerScore(),
                             matchSimulation.getOpponentScore(), netHost.getJoinerPlayerId());
                 } else {

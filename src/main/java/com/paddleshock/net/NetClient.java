@@ -26,6 +26,9 @@ public class NetClient implements AutoCloseable {
     private final String localPlayerId;
     private volatile boolean connected = false;
     private volatile boolean rejected = false;
+    // Defaults true (ranked) to match the game's original always-ranked behavior until an actual
+    // WELCOME arrives - see NetProtocol.decodeWelcomeRanked.
+    private volatile boolean ranked = true;
     private final AtomicReference<NetProtocol.SnapshotMessage> latestSnapshot = new AtomicReference<>();
 
     public NetClient(String hostAddress, int port, String localPlayerId) throws IOException {
@@ -110,7 +113,10 @@ public class NetClient implements AutoCloseable {
         }
         try {
             switch (NetProtocol.messageType(data)) {
-                case NetProtocol.TYPE_WELCOME -> connected = true;
+                case NetProtocol.TYPE_WELCOME -> {
+                    ranked = NetProtocol.decodeWelcomeRanked(data);
+                    connected = true;
+                }
                 case NetProtocol.TYPE_REJECT -> rejected = true;
                 case NetProtocol.TYPE_SNAPSHOT -> latestSnapshot.set(NetProtocol.decodeSnapshot(data));
                 default -> {
@@ -138,6 +144,12 @@ public class NetClient implements AutoCloseable {
     /** True once the host has replied REJECT (already has a peer). */
     public boolean isRejected() {
         return rejected;
+    }
+
+    /** Whether the host chose to play this match ranked - only meaningful once {@link #isConnected()};
+     *  defaults to {@code true} beforehand. */
+    public boolean isRanked() {
+        return ranked;
     }
 
     /** Sends this frame's local input to the host. {@code powerUpId} is the catalog id of a
