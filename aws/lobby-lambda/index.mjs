@@ -281,6 +281,27 @@ async function handleReportMatchResult(body) {
     });
 }
 
+// Exported purely so the ranked-ladder LP math can be unit-tested in isolation (see
+// ranked-ladder.test.mjs) without touching DynamoDB - these functions never call the AWS SDK.
+export {
+    TIERS,
+    BASE_LP_WIN,
+    STREAK_BONUS_PER_WIN,
+    MAX_LP_WIN,
+    BASE_LP_LOSS,
+    STREAK_PENALTY_PER_LOSS,
+    MAX_LP_LOSS,
+    PROMO_LOSS_CUSHION_LP,
+    defaultRank,
+    isMaxRank,
+    lpForWinStreak,
+    lpForLossStreak,
+    promoteOneStep,
+    demoteOneStep,
+    applySeasonResetIfNeeded,
+    applyMatchResult,
+};
+
 export const handler = async (event) => {
     let body;
     try {
