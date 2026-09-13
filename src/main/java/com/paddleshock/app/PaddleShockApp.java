@@ -22,6 +22,7 @@ import com.paddleshock.net.RankClient;
 import com.paddleshock.net.RankState;
 import com.paddleshock.settings.GameSettings;
 import com.paddleshock.steam.SteamManager;
+import com.paddleshock.ui.LeaderboardState;
 import com.paddleshock.ui.LoadoutState;
 import com.paddleshock.ui.MainMenuState;
 import com.paddleshock.ui.MatchEndState;
@@ -50,6 +51,7 @@ public class PaddleShockApp extends SimpleApplication {
     private MatchEndState matchEndState;
     private LoadoutState loadoutState;
     private MultiplayerState multiplayerState;
+    private LeaderboardState leaderboardState;
     private GameplayAppState gameplayState;
 
     @Override
@@ -84,6 +86,7 @@ public class PaddleShockApp extends SimpleApplication {
         matchEndState = new MatchEndState();
         loadoutState = new LoadoutState();
         multiplayerState = new MultiplayerState();
+        leaderboardState = new LeaderboardState();
 
         stateManager.attach(splashState);
         stateManager.attach(mainMenuState);
@@ -93,6 +96,7 @@ public class PaddleShockApp extends SimpleApplication {
         stateManager.attach(matchEndState);
         stateManager.attach(loadoutState);
         stateManager.attach(multiplayerState);
+        stateManager.attach(leaderboardState);
 
         mainMenuState.setEnabled(false);
         pauseState.setEnabled(false);
@@ -101,6 +105,7 @@ public class PaddleShockApp extends SimpleApplication {
         matchEndState.setEnabled(false);
         loadoutState.setEnabled(false);
         multiplayerState.setEnabled(false);
+        leaderboardState.setEnabled(false);
     }
 
     @Override
@@ -150,6 +155,7 @@ public class PaddleShockApp extends SimpleApplication {
         matchEndState.setEnabled(false);
         loadoutState.setEnabled(false);
         multiplayerState.setEnabled(false);
+        leaderboardState.setEnabled(false);
         mainMenuState.setEnabled(true);
         audioManager.playMenuMusic();
     }
@@ -158,6 +164,12 @@ public class PaddleShockApp extends SimpleApplication {
     public void showMultiplayer() {
         mainMenuState.setEnabled(false);
         multiplayerState.setEnabled(true);
+    }
+
+    /** Shows the ranked ladder standings screen (wired up from the main menu's LEADERBOARD button). */
+    public void showLeaderboard() {
+        mainMenuState.setEnabled(false);
+        leaderboardState.setEnabled(true);
     }
 
     /** Shown before every match (fresh or rematch) to confirm/change loadout and buy from a store modal. */

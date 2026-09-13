@@ -57,13 +57,19 @@ public final class MatchSimulation {
 
         PowerUpDefinition playerPowerUp = playerInput.getActivatedPowerUp();
         if (playerPowerUp != null) {
-            result.setPlayerPowerUpActivated(
-                    powerUpManager.activatePlayerPowerUp(playerPowerUp.getType(), playerPowerUp.getCooldownSeconds()));
+            boolean activated = powerUpManager.activatePlayerPowerUp(playerPowerUp.getType(), playerPowerUp.getCooldownSeconds());
+            result.setPlayerPowerUpActivated(activated);
+            if (activated) {
+                result.setPlayerActivatedType(playerPowerUp.getType());
+            }
         }
         PowerUpDefinition opponentPowerUp = opponentInput.getActivatedPowerUp();
         if (opponentPowerUp != null) {
-            result.setOpponentPowerUpActivated(
-                    powerUpManager.activateAiPowerUp(opponentPowerUp.getType(), opponentPowerUp.getCooldownSeconds()));
+            boolean activated = powerUpManager.activateAiPowerUp(opponentPowerUp.getType(), opponentPowerUp.getCooldownSeconds());
+            result.setOpponentPowerUpActivated(activated);
+            if (activated) {
+                result.setOpponentActivatedType(opponentPowerUp.getType());
+            }
         }
 
         ball.update(tpf);
