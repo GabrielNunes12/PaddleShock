@@ -43,11 +43,37 @@ public final class Catalog {
             new PowerUpDefinition("powerup_slow_opponent", "Slow Opponent", 120, PowerUpType.SLOW_OPPONENT, 20f),
             new PowerUpDefinition("powerup_tiny_paddle", "Tiny Paddle", 120, PowerUpType.SHRINK_OPPONENT, 20f));
 
+    /** Arenas: purely atmospheric (sky/lighting/ground/backdrop), independent of the table's own bounce stat. */
+    public static final List<LevelDefinition> LEVELS = List.of(
+            new LevelDefinition("level_classic", "Classic Court", 0,
+                    ColorRGBA.Black, ColorRGBA.White, ColorRGBA.White,
+                    new ColorRGBA(0.30f, 0.32f, 0.36f, 1f), TextureSet.CONCRETE,
+                    new ColorRGBA(0.102f, 0.114f, 0.141f, 1f), "THE ORIGINAL"),
+            new LevelDefinition("level_neon", "Neon Arcade", 200,
+                    new ColorRGBA(0.05f, 0.02f, 0.08f, 1f), new ColorRGBA(0.6f, 0.85f, 1f, 1f),
+                    new ColorRGBA(0.75f, 0.3f, 0.9f, 1f),
+                    new ColorRGBA(0.15f, 0.08f, 0.22f, 1f), TextureSet.ASPHALT,
+                    new ColorRGBA(0.35f, 0.1f, 0.5f, 1f), "NEON GLOW"),
+            new LevelDefinition("level_sunset", "Sunset Beach", 200,
+                    new ColorRGBA(0.85f, 0.5f, 0.32f, 1f), new ColorRGBA(1f, 0.82f, 0.55f, 1f),
+                    new ColorRGBA(0.95f, 0.6f, 0.55f, 1f),
+                    new ColorRGBA(0.82f, 0.68f, 0.45f, 1f), TextureSet.CONCRETE,
+                    new ColorRGBA(0.9f, 0.45f, 0.4f, 1f), "GOLDEN HOUR"),
+            new LevelDefinition("level_space", "Space Station", 200,
+                    new ColorRGBA(0.01f, 0.01f, 0.035f, 1f), new ColorRGBA(0.7f, 0.82f, 1f, 1f),
+                    new ColorRGBA(0.28f, 0.34f, 0.5f, 1f),
+                    new ColorRGBA(0.5f, 0.55f, 0.62f, 1f), TextureSet.METAL,
+                    new ColorRGBA(0.04f, 0.05f, 0.1f, 1f), "ZERO GRAVITY"));
+
     private Catalog() {
     }
 
     public static Optional<PowerUpDefinition> findPowerUp(String id) {
         return POWERUPS.stream().filter(p -> p.getId().equals(id)).findFirst();
+    }
+
+    public static Optional<LevelDefinition> findLevel(String id) {
+        return LEVELS.stream().filter(l -> l.getId().equals(id)).findFirst();
     }
 
     public static Optional<PaddleDefinition> findPaddle(String id) {

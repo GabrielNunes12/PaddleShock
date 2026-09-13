@@ -31,10 +31,12 @@ import java.util.List;
 import com.paddleshock.GameConstants;
 import com.paddleshock.data.BallDefinition;
 import com.paddleshock.data.Catalog;
+import com.paddleshock.data.LevelDefinition;
 import com.paddleshock.data.PaddleDefinition;
 import com.paddleshock.data.PlayerProfile;
 import com.paddleshock.data.PowerUpDefinition;
 import com.paddleshock.data.TableDefinition;
+import com.paddleshock.entities.Arena;
 import com.paddleshock.entities.Ball;
 import com.paddleshock.entities.Paddle;
 import com.paddleshock.entities.Table;
@@ -60,6 +62,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     private final Node hudNode = new Node("gameplayHud");
 
     private PaddleShockApp app;
+    private LevelDefinition level;
     private Table table;
     private Paddle playerPaddle;
     private Paddle opponentPaddle;
@@ -85,6 +88,8 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     protected void initialize(Application application) {
         this.app = (PaddleShockApp) application;
         SimpleApplication simpleApp = (SimpleApplication) application;
+        level = Catalog.findLevel(app.getProfile().getEquippedId("level")).orElse(Catalog.LEVELS.get(0));
+        simpleApp.getViewPort().setBackgroundColor(level.getSkyColor());
 
         setUpCamera(simpleApp);
         setUpLights();
@@ -120,11 +125,11 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
 
         DirectionalLight sun = new DirectionalLight();
         sun.setDirection(new Vector3f(-0.5f, -1f, -0.5f).normalizeLocal());
-        sun.setColor(ColorRGBA.White.mult(1.1f * brightness));
+        sun.setColor(level.getSunTint().mult(1.1f * brightness));
         gameNode.addLight(sun);
 
         AmbientLight ambient = new AmbientLight();
-        ambient.setColor(ColorRGBA.White.mult(0.6f * brightness));
+        ambient.setColor(level.getAmbientTint().mult(0.6f * brightness));
         gameNode.addLight(ambient);
     }
 
@@ -137,6 +142,10 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                 .orElse(Catalog.TABLES.get(0));
         BallDefinition ballDef = Catalog.findBall(profile.getEquippedId("ball"))
                 .orElse(Catalog.BALLS.get(0));
+
+        Arena arena = new Arena(getApplication().getAssetManager(), level.getGroundColor(),
+                level.getGroundTexture(), level.getBackdropColor());
+        gameNode.attachChild(arena.getNode());
 
         table = new Table(getApplication().getAssetManager(), tableDef.getSurfaceColor(),
                 tableDef.getTextureSet(), tableDef.getRestitutionMultiplier());
@@ -450,6 +459,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             simpleApp.getInputManager().deleteMapping(action);
         }
         simpleApp.getInputManager().removeListener(this);
+        simpleApp.getViewPort().setBackgroundColor(ColorRGBA.Black);
     }
 
     @Override

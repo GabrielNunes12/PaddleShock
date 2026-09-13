@@ -15,11 +15,13 @@ public class PlayerProfile {
     private Set<String> ownedPaddleIds = new HashSet<>(Set.of("paddle_classic"));
     private Set<String> ownedTableIds = new HashSet<>(Set.of("table_classic"));
     private Set<String> ownedBallIds = new HashSet<>(Set.of("ball_classic"));
+    private Set<String> ownedLevelIds = new HashSet<>(Set.of("level_classic"));
     private Set<String> ownedPowerUpIds = new HashSet<>();
 
     private String equippedPaddleId = "paddle_classic";
     private String equippedTableId = "table_classic";
     private String equippedBallId = "ball_classic";
+    private String equippedLevelId = "level_classic";
 
     /** Up to 3 owned power-up ids, one per key slot (1/2/3); a slot is empty when null. */
     private List<String> powerUpLoadout = new ArrayList<>(List.of("", "", ""));
@@ -54,6 +56,7 @@ public class PlayerProfile {
             case "paddle" -> equippedPaddleId = id;
             case "table" -> equippedTableId = id;
             case "ball" -> equippedBallId = id;
+            case "level" -> equippedLevelId = id;
             default -> throw new IllegalArgumentException("Unknown category: " + category);
         }
     }
@@ -63,6 +66,7 @@ public class PlayerProfile {
             case "paddle" -> equippedPaddleId;
             case "table" -> equippedTableId;
             case "ball" -> equippedBallId;
+            case "level" -> equippedLevelId;
             default -> throw new IllegalArgumentException("Unknown category: " + category);
         };
     }
@@ -72,6 +76,7 @@ public class PlayerProfile {
             case "paddle" -> ownedPaddleIds;
             case "table" -> ownedTableIds;
             case "ball" -> ownedBallIds;
+            case "level" -> ownedLevelIds;
             default -> throw new IllegalArgumentException("Unknown category: " + category);
         };
     }

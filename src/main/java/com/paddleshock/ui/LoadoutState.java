@@ -20,6 +20,7 @@ import com.simsilica.lemur.component.SpringGridLayout;
 import com.paddleshock.app.PaddleShockApp;
 import com.paddleshock.data.BallDefinition;
 import com.paddleshock.data.Catalog;
+import com.paddleshock.data.LevelDefinition;
 import com.paddleshock.data.PaddleDefinition;
 import com.paddleshock.data.PlayerProfile;
 import com.paddleshock.data.PowerUpDefinition;
@@ -41,6 +42,7 @@ public class LoadoutState extends BaseAppState {
     private Label paddleLabel;
     private Label tableLabel;
     private Label ballLabel;
+    private Label levelLabel;
     private final Label[] powerUpLabels = new Label[3];
 
     @Override
@@ -81,6 +83,7 @@ public class LoadoutState extends BaseAppState {
         paddleLabel = addTile(equipRow, "PADDLE");
         tableLabel = addTile(equipRow, "TABLE");
         ballLabel = addTile(equipRow, "BALL");
+        levelLabel = addTile(equipRow, "LEVEL");
 
         Label powerUpTitle = panel.addChild(new Label("POWER-UPS"));
         powerUpTitle.setFontSize(12);
@@ -171,6 +174,7 @@ public class LoadoutState extends BaseAppState {
         paddleLabel.setText(nameOf(Catalog.findPaddle(profile.getEquippedId("paddle")), PaddleDefinition::getDisplayName));
         tableLabel.setText(nameOf(Catalog.findTable(profile.getEquippedId("table")), TableDefinition::getDisplayName));
         ballLabel.setText(nameOf(Catalog.findBall(profile.getEquippedId("ball")), BallDefinition::getDisplayName));
+        levelLabel.setText(nameOf(Catalog.findLevel(profile.getEquippedId("level")), LevelDefinition::getDisplayName));
 
         List<String> loadout = profile.getLoadout();
         for (int i = 0; i < powerUpLabels.length; i++) {
