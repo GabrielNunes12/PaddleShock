@@ -102,7 +102,7 @@ public class Arena {
         Material planetMaterial = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
         planetMaterial.setColor("Color", new ColorRGBA(0.85f, 0.45f, 0.25f, 1f));
         planet.setMaterial(planetMaterial);
-        planet.setLocalTranslation(7f, 2f, 11f);
+        planet.setLocalTranslation(9f, -2f, 11f);
         node.attachChild(planet);
     }
 
