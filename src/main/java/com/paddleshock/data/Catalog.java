@@ -40,7 +40,8 @@ public final class Catalog {
     public static final List<PowerUpDefinition> POWERUPS = List.of(
             new PowerUpDefinition("powerup_paddle_grow", "Paddle Grow", 120, PowerUpType.PADDLE_GROW, 20f),
             new PowerUpDefinition("powerup_speed_boost", "Speed Boost", 120, PowerUpType.SPEED_BOOST, 20f),
-            new PowerUpDefinition("powerup_slow_opponent", "Slow Opponent", 120, PowerUpType.SLOW_OPPONENT, 20f));
+            new PowerUpDefinition("powerup_slow_opponent", "Slow Opponent", 120, PowerUpType.SLOW_OPPONENT, 20f),
+            new PowerUpDefinition("powerup_tiny_paddle", "Tiny Paddle", 120, PowerUpType.SHRINK_OPPONENT, 20f));
 
     private Catalog() {
     }

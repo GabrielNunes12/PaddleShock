@@ -66,11 +66,8 @@ public class PowerUpManager {
 
         Map<PowerUpType, Float> selfEffects = isPlayer ? playerPaddleEffects : opponentPaddleEffects;
         Map<PowerUpType, Float> foeEffects = isPlayer ? opponentPaddleEffects : playerPaddleEffects;
-        if (type == PowerUpType.SLOW_OPPONENT) {
-            foeEffects.put(type, type.getDuration());
-        } else {
-            selfEffects.put(type, type.getDuration());
-        }
+        Map<PowerUpType, Float> targetEffects = type.isDebuff() ? foeEffects : selfEffects;
+        targetEffects.put(type, type.getDuration());
         return true;
     }
 
@@ -83,14 +80,15 @@ public class PowerUpManager {
         effects.entrySet().removeIf(entry -> entry.getValue() <= 0f);
     }
 
+    /** Multiplies together every active effect's own {@link PaddleModifier}, so a new power-up
+     *  type never needs a matching branch here - just a modifier on its enum constant. */
     private void applyCombinedBuffs(Paddle paddle, Map<PowerUpType, Float> effects) {
-        float radius = effects.containsKey(PowerUpType.PADDLE_GROW) ? 1.6f : 1f;
+        float radius = 1f;
         float speed = 1f;
-        if (effects.containsKey(PowerUpType.SPEED_BOOST)) {
-            speed *= 1.8f;
-        }
-        if (effects.containsKey(PowerUpType.SLOW_OPPONENT)) {
-            speed *= 0.5f;
+        for (PowerUpType type : effects.keySet()) {
+            PaddleModifier modifier = type.getModifier();
+            radius *= modifier.radiusFactor();
+            speed *= modifier.speedFactor();
         }
         paddle.setRadiusBuff(radius);
         paddle.setSpeedBuff(speed);
