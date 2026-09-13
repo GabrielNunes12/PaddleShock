@@ -1,0 +1,11 @@
+{
+  "name": "paddleshock-lobby-lambda",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Rendezvous-only matchmaking broker for PaddleShock LAN-over-internet play. See README.md.",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.700.0",
+    "@aws-sdk/lib-dynamodb": "^3.700.0"
+  }
+}
