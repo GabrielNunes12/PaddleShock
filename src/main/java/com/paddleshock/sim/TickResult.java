@@ -1,5 +1,7 @@
 package com.paddleshock.sim;
 
+import com.paddleshock.powerups.PowerUpType;
+
 /**
  * Everything observable that happened during one {@link MatchSimulation#tick} call, for the
  * caller to translate into SFX/HUD/scene-graph side effects. Pure data - no jME types.
@@ -13,6 +15,8 @@ public final class TickResult {
     private boolean opponentPaddleHit;
     private boolean playerPowerUpActivated;
     private boolean opponentPowerUpActivated;
+    private PowerUpType playerActivatedType;
+    private PowerUpType opponentActivatedType;
     private Scorer scorer = Scorer.NONE;
     private boolean matchOver;
     private boolean playerWon;
@@ -60,6 +64,26 @@ public final class TickResult {
 
     void setOpponentPowerUpActivated(boolean opponentPowerUpActivated) {
         this.opponentPowerUpActivated = opponentPowerUpActivated;
+    }
+
+    /** Which power-up the player successfully activated this tick, or {@code null} if
+     *  {@link #isPlayerPowerUpActivated()} is false. Lets HUD feedback name the actual effect
+     *  (buff vs. debuff) instead of relying on its swatch color alone. */
+    public PowerUpType getPlayerActivatedType() {
+        return playerActivatedType;
+    }
+
+    void setPlayerActivatedType(PowerUpType playerActivatedType) {
+        this.playerActivatedType = playerActivatedType;
+    }
+
+    /** Same as {@link #getPlayerActivatedType()}, for the opponent side. */
+    public PowerUpType getOpponentActivatedType() {
+        return opponentActivatedType;
+    }
+
+    void setOpponentActivatedType(PowerUpType opponentActivatedType) {
+        this.opponentActivatedType = opponentActivatedType;
     }
 
     /** Whether any power-up successfully activated this tick (convenience for a single SFX trigger). */

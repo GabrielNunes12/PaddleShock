@@ -6,10 +6,16 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+
+import com.paddleshock.rank.RankTier;
 
 /**
  * Client for the ranked ladder actions on the same AWS Lambda backend as {@link LobbyClient} (see
@@ -60,6 +66,75 @@ public final class RankClient {
             body.addProperty("code", lobbyCode);
         }
         return GSON.fromJson(post(body), MatchReportResult.class);
+    }
+
+    /** Fetches the top {@code limit} entries on the ranked ladder, best-to-worst (the server sorts
+     *  by tier desc, then division asc/better, then LP desc). Blocking network call - run off the
+     *  render thread. */
+    public static List<LeaderboardEntry> getLeaderboard(int limit) throws IOException {
+        JsonObject body = new JsonObject();
+        body.addProperty("action", "getLeaderboard");
+        body.addProperty("limit", limit);
+        JsonObject response = post(body);
+
+        List<LeaderboardEntry> entries = new ArrayList<>();
+        JsonArray array = response.has("entries") ? response.getAsJsonArray("entries") : new JsonArray();
+        for (JsonElement element : array) {
+            entries.add(GSON.fromJson(element, LeaderboardEntry.class));
+        }
+        return entries;
+    }
+
+    /** One row of the {@code getLeaderboard} response. There is no player display-name/username
+     *  system anywhere in this codebase (profiles are keyed purely by a generated UUID - see
+     *  {@link com.paddleshock.data.PlayerProfile#getPlayerId()}), so entries are shown by a
+     *  shortened form of that id rather than blocking this screen on a feature that doesn't exist
+     *  yet - a real display-name system is a natural follow-up. */
+    public static final class LeaderboardEntry {
+        private String playerId;
+        private String tier;
+        private int division;
+        private int lp;
+        private int wins;
+        private int losses;
+
+        public String getPlayerId() {
+            return playerId;
+        }
+
+        public RankTier getTier() {
+            return RankTier.valueOf(tier);
+        }
+
+        public int getDivision() {
+            return division;
+        }
+
+        public int getLp() {
+            return lp;
+        }
+
+        public int getWins() {
+            return wins;
+        }
+
+        public int getLosses() {
+            return losses;
+        }
+
+        /** Shortened, anonymized stand-in for a real display name: "Player-" plus the first 8
+         *  characters of the player's UUID. */
+        public String shortId() {
+            String id = playerId == null ? "" : playerId.replace("-", "");
+            return "Player-" + (id.length() >= 8 ? id.substring(0, 8) : id).toUpperCase();
+        }
+
+        /** "Player-XXXXXXXX - Silver II - 65 LP (12W-8L)" style summary row, matching
+         *  {@link RankState#formatLabel()}'s style. */
+        public String formatLabel() {
+            return shortId() + " - " + getTier().getDisplayName() + " " + RankTier.divisionToRoman(division)
+                    + " - " + lp + " LP (" + wins + "W-" + losses + "L)";
+        }
     }
 
     public static final class MatchReportResult {

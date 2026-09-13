@@ -45,6 +45,7 @@ import com.paddleshock.input.PlayerInput;
 import com.paddleshock.net.NetClient;
 import com.paddleshock.net.NetHost;
 import com.paddleshock.net.NetProtocol;
+import com.paddleshock.powerups.PowerUpType;
 import com.paddleshock.sim.MatchSimulation;
 import com.paddleshock.sim.PaddleInput;
 import com.paddleshock.sim.TickResult;
@@ -92,6 +93,14 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     private float aiPowerUpMinInterval;
     private float aiPowerUpMaxInterval;
     private float aiPowerUpTimer;
+
+    // Colorblind-accessible power-up activation feedback: a transient centered text banner naming
+    // both WHO activated it and whether it's a BUFF or a DEBUFF in words, not just the power-up's
+    // swatch color - see showPowerUpBanner(). Previously the only feedback for an activation
+    // (including an incoming debuff landing on the local player) was a sound effect.
+    private static final float POWERUP_BANNER_SECONDS = 2.2f;
+    private BitmapText powerUpBannerText;
+    private float powerUpBannerTimer;
 
     /** Set by the key-1/2/3 handler, consumed (and cleared) on the very next {@link #update}, so it
      *  reaches {@link MatchSimulation#tick} as part of the same tick-shaped input the future remote
@@ -360,6 +369,13 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         hudNode.attachChild(scoreText);
         updateScoreText();
 
+        powerUpBannerText = new BitmapText(font);
+        powerUpBannerText.setSize(20);
+        powerUpBannerText.setLocalTranslation(0, simpleApp.getCamera().getHeight() - 110, 2);
+        powerUpBannerText.setCullHint(Spatial.CullHint.Always);
+        hudNode.attachChild(powerUpBannerText);
+        powerUpBannerTimer = 0f;
+
         float boxTopY = simpleApp.getCamera().getHeight() - 64;
         for (int i = 0; i < powerUpLoadout.length; i++) {
             PowerUpDefinition def = powerUpLoadout[i];
@@ -515,6 +531,38 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             case HOST -> updateHost(tpf);
             case JOINER -> updateJoiner(tpf);
         }
+        updatePowerUpBanner(tpf);
+    }
+
+    /** Shows a centered, timed HUD banner naming who activated a power-up and whether it's a BUFF
+     *  or a DEBUFF in plain text - the only feedback for an activation was previously a sound
+     *  effect plus the power-up's own swatch color, which a red-green colorblind player can't
+     *  reliably tell apart (Slow Opponent's red/orange vs. Paddle Grow's green, for example).
+     *  Overwrites any banner already showing, so the most recent activation always wins. */
+    private void showPowerUpBanner(boolean activatedByLocalViewer, PowerUpType type) {
+        if (powerUpBannerText == null || type == null) {
+            return;
+        }
+        String who = activatedByLocalViewer ? "YOU" : "OPPONENT";
+        String kind = type.isDebuff() ? "DEBUFF" : "BUFF";
+        String text = "[" + kind + "] " + who + ": " + type.getLabel().toUpperCase();
+        powerUpBannerText.setText(text);
+        powerUpBannerText.setColor(type.getColor());
+        float screenW = ((SimpleApplication) getApplication()).getCamera().getWidth();
+        powerUpBannerText.setLocalTranslation(
+                (screenW - powerUpBannerText.getLineWidth()) / 2f, powerUpBannerText.getLocalTranslation().y, 2);
+        powerUpBannerText.setCullHint(Spatial.CullHint.Never);
+        powerUpBannerTimer = POWERUP_BANNER_SECONDS;
+    }
+
+    private void updatePowerUpBanner(float tpf) {
+        if (powerUpBannerTimer <= 0f || powerUpBannerText == null) {
+            return;
+        }
+        powerUpBannerTimer -= tpf;
+        if (powerUpBannerTimer <= 0f) {
+            powerUpBannerText.setCullHint(Spatial.CullHint.Always);
+        }
     }
 
     private void updateSinglePlayer(float tpf) {
@@ -572,13 +620,27 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             }
         }
 
+        // "player"/"opponent" in a HOST-mode TickResult mean host/joiner respectively (see
+        // updateHost's tick() argument order) - translate that into the actor-side the joiner's
+        // own HUD needs to tell "you activated this" from "the host activated this" (see
+        // NetProtocol.SnapshotMessage.getActivatedPowerUpType()).
+        int powerUpActorSide = NetProtocol.SnapshotMessage.ACTOR_NONE;
+        int powerUpTypeOrdinal = -1;
+        if (result.isPlayerPowerUpActivated()) {
+            powerUpActorSide = NetProtocol.SnapshotMessage.ACTOR_HOST;
+            powerUpTypeOrdinal = result.getPlayerActivatedType().ordinal();
+        } else if (result.isOpponentPowerUpActivated()) {
+            powerUpActorSide = NetProtocol.SnapshotMessage.ACTOR_JOINER;
+            powerUpTypeOrdinal = result.getOpponentActivatedType().ordinal();
+        }
+
         return new NetProtocol.SnapshotMessage(
                 ballPos.x, ballPos.y, ballPos.z,
                 ballVel.x, ballVel.z, matchSimulation.getBall().getVerticalVelocity(),
                 hostPaddlePos.x, hostPaddlePos.z,
                 joinerPaddlePos.x, joinerPaddlePos.z,
                 matchSimulation.getPlayerScore(), matchSimulation.getOpponentScore(),
-                flags);
+                flags, powerUpActorSide, powerUpTypeOrdinal);
     }
 
     /** The host stops applying stale input and hangs the match forever if a joiner's process dies
@@ -648,6 +710,13 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             }
             if (snapshot.isPowerUpActivated()) {
                 app.getAudioManager().playSfx("powerup_activate.ogg");
+                PowerUpType activatedType = snapshot.getActivatedPowerUpType();
+                if (activatedType != null) {
+                    // From the joiner's own point of view "you" are the joiner (mirroring the
+                    // isHostWon() negation just below), so ACTOR_JOINER means the local viewer.
+                    boolean byLocalViewer = snapshot.powerUpActorSide() == NetProtocol.SnapshotMessage.ACTOR_JOINER;
+                    showPowerUpBanner(byLocalViewer, activatedType);
+                }
             }
             updateScoreText();
             if (snapshot.isMatchOver()) {
@@ -748,6 +817,14 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         }
         if (result.isAnyPowerUpActivated()) {
             app.getAudioManager().playSfx("powerup_activate.ogg");
+            // In SINGLE_PLAYER and HOST modes "player" always means the local viewer (in HOST mode
+            // that's the host themselves - see updateHost's tick() argument order), so these map
+            // straight onto showPowerUpBanner's "activated by the local viewer" flag.
+            if (result.isPlayerPowerUpActivated()) {
+                showPowerUpBanner(true, result.getPlayerActivatedType());
+            } else if (result.isOpponentPowerUpActivated()) {
+                showPowerUpBanner(false, result.getOpponentActivatedType());
+            }
         }
         if (result.getScorer() != TickResult.Scorer.NONE) {
             updateScoreText();

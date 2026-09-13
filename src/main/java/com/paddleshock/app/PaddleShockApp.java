@@ -23,6 +23,7 @@ import com.paddleshock.net.RankClient;
 import com.paddleshock.net.RankState;
 import com.paddleshock.settings.GameSettings;
 import com.paddleshock.steam.SteamManager;
+import com.paddleshock.ui.LeaderboardState;
 import com.paddleshock.ui.LoadoutState;
 import com.paddleshock.ui.MainMenuState;
 import com.paddleshock.ui.MatchEndState;
@@ -52,6 +53,7 @@ public class PaddleShockApp extends SimpleApplication {
     private LoadoutState loadoutState;
     private MultiplayerState multiplayerState;
     private com.paddleshock.ui.HowToPlayState howToPlayState;
+    private LeaderboardState leaderboardState;
     private GameplayAppState gameplayState;
 
     @Override
@@ -87,6 +89,7 @@ public class PaddleShockApp extends SimpleApplication {
         loadoutState = new LoadoutState();
         multiplayerState = new MultiplayerState();
         howToPlayState = new com.paddleshock.ui.HowToPlayState();
+        leaderboardState = new LeaderboardState();
 
         stateManager.attach(splashState);
         stateManager.attach(mainMenuState);
@@ -97,6 +100,7 @@ public class PaddleShockApp extends SimpleApplication {
         stateManager.attach(loadoutState);
         stateManager.attach(multiplayerState);
         stateManager.attach(howToPlayState);
+        stateManager.attach(leaderboardState);
 
         mainMenuState.setEnabled(false);
         pauseState.setEnabled(false);
@@ -106,6 +110,7 @@ public class PaddleShockApp extends SimpleApplication {
         loadoutState.setEnabled(false);
         multiplayerState.setEnabled(false);
         howToPlayState.setEnabled(false);
+        leaderboardState.setEnabled(false);
     }
 
     @Override
@@ -156,6 +161,7 @@ public class PaddleShockApp extends SimpleApplication {
         loadoutState.setEnabled(false);
         multiplayerState.setEnabled(false);
         howToPlayState.setEnabled(false);
+        leaderboardState.setEnabled(false);
         mainMenuState.setEnabled(true);
         audioManager.playMenuMusic();
     }
@@ -175,6 +181,12 @@ public class PaddleShockApp extends SimpleApplication {
     public void showMultiplayer() {
         mainMenuState.setEnabled(false);
         multiplayerState.setEnabled(true);
+    }
+
+    /** Shows the ranked ladder standings screen (wired up from the main menu's LEADERBOARD button). */
+    public void showLeaderboard() {
+        mainMenuState.setEnabled(false);
+        leaderboardState.setEnabled(true);
     }
 
     /** Shown before every match (fresh or rematch) to confirm/change loadout and buy from a store modal. */

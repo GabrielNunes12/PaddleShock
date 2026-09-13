@@ -6,6 +6,8 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 
+import com.paddleshock.powerups.PowerUpType;
+
 /**
  * The Phase-1 LAN wire protocol: a minimal hand-rolled binary format over plain UDP
  * ({@link java.net.DatagramSocket}/{@link java.net.DatagramPacket}). No delivery/ordering
@@ -152,7 +154,13 @@ public final class NetProtocol {
             float hostPaddleX, float hostPaddleZ,
             float joinerPaddleX, float joinerPaddleZ,
             int hostScore, int joinerScore,
-            int flags) {
+            int flags,
+            int powerUpActorSide, int powerUpTypeOrdinal) {
+
+        /** {@link #powerUpActorSide} values: who activated the power-up this tick (if any). */
+        public static final int ACTOR_NONE = 0;
+        public static final int ACTOR_HOST = 1;
+        public static final int ACTOR_JOINER = 2;
 
         public boolean isWallBounce() {
             return (flags & FLAG_WALL_BOUNCE) != 0;
@@ -168,6 +176,13 @@ public final class NetProtocol {
 
         public boolean isPowerUpActivated() {
             return (flags & FLAG_POWERUP_ACTIVATED) != 0;
+        }
+
+        /** Which power-up activated this tick (see {@link #isPowerUpActivated()}), or {@code null}
+         *  if none did - lets the joiner's HUD name the actual effect (buff vs. debuff) instead of
+         *  relying on the sound cue and its swatch color alone. */
+        public PowerUpType getActivatedPowerUpType() {
+            return powerUpTypeOrdinal < 0 ? null : PowerUpType.values()[powerUpTypeOrdinal];
         }
 
         public boolean isMatchOver() {
@@ -197,6 +212,8 @@ public final class NetProtocol {
             out.writeInt(snap.hostScore());
             out.writeInt(snap.joinerScore());
             out.writeByte(snap.flags());
+            out.writeByte(snap.powerUpActorSide());
+            out.writeByte(snap.powerUpTypeOrdinal());
             return bytes.toByteArray();
         } catch (IOException e) {
             throw new IllegalStateException("Failed to encode snapshot packet", e);
@@ -219,8 +236,18 @@ public final class NetProtocol {
         int hostScore = in.readInt();
         int joinerScore = in.readInt();
         int flags = in.readByte() & 0xFF;
+        // Older peers never sent these trailing bytes; default to "no power-up activator info"
+        // instead of throwing, so a mismatched build still degrades gracefully (no banner/type,
+        // same as before this field existed) rather than dropping every snapshot.
+        int powerUpActorSide = SnapshotMessage.ACTOR_NONE;
+        int powerUpTypeOrdinal = -1;
+        if (in.available() >= 2) {
+            powerUpActorSide = in.readByte();
+            powerUpTypeOrdinal = in.readByte();
+        }
         return new SnapshotMessage(ballX, ballY, ballZ, ballVelX, ballVelZ, ballVerticalVel,
-                hostPaddleX, hostPaddleZ, joinerPaddleX, joinerPaddleZ, hostScore, joinerScore, flags);
+                hostPaddleX, hostPaddleZ, joinerPaddleX, joinerPaddleZ, hostScore, joinerScore, flags,
+                powerUpActorSide, powerUpTypeOrdinal);
     }
 
     // ---- RANK_RESULT (host -> joiner) ----

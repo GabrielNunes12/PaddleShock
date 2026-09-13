@@ -118,7 +118,8 @@ class NetProtocolTest {
                 0.5f, -6.5f,
                 -0.5f, 6.5f,
                 7, 9,
-                flags);
+                flags,
+                NetProtocol.SnapshotMessage.ACTOR_HOST, 2);
 
         byte[] packet = NetProtocol.encodeSnapshot(original);
         assertEquals(NetProtocol.TYPE_SNAPSHOT, NetProtocol.messageType(packet));
@@ -137,6 +138,8 @@ class NetProtocolTest {
         assertEquals(original.hostScore(), decoded.hostScore());
         assertEquals(original.joinerScore(), decoded.joinerScore());
         assertEquals(original.flags(), decoded.flags());
+        assertEquals(original.powerUpActorSide(), decoded.powerUpActorSide());
+        assertEquals(original.powerUpTypeOrdinal(), decoded.powerUpTypeOrdinal());
 
         assertTrue(decoded.isWallBounce());
         assertTrue(decoded.isHostPaddleHit());
@@ -149,7 +152,8 @@ class NetProtocolTest {
     @Test
     void snapshotWithNoFlagsRoundTripsAllFalse() throws IOException {
         NetProtocol.SnapshotMessage original = new NetProtocol.SnapshotMessage(
-                0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0, 0, 0);
+                0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0, 0, 0,
+                NetProtocol.SnapshotMessage.ACTOR_NONE, 0);
 
         NetProtocol.SnapshotMessage decoded = NetProtocol.decodeSnapshot(NetProtocol.encodeSnapshot(original));
 
@@ -164,7 +168,8 @@ class NetProtocolTest {
     @Test
     void decodeSnapshotThrowsOnTruncatedPacket() {
         NetProtocol.SnapshotMessage original = new NetProtocol.SnapshotMessage(
-                1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f, 9f, 10f, 11, 12, 0);
+                1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f, 9f, 10f, 11, 12, 0,
+                NetProtocol.SnapshotMessage.ACTOR_NONE, 0);
         byte[] packet = NetProtocol.encodeSnapshot(original);
         byte[] truncated = new byte[10]; // well short of the full fixed-width snapshot payload
 
