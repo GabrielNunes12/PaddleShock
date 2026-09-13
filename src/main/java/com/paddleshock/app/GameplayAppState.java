@@ -395,9 +395,19 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     @Override
     public void update(float tpf) {
         float[] mouseDelta = playerInput.consumeDelta();
-        float scale = GameConstants.MOUSE_SENSITIVITY * app.getGameSettings().getMouseSensitivity();
-        float worldDeltaX = (screenRightWorld.x * mouseDelta[0] + screenUpWorld.x * mouseDelta[1]) * scale;
-        float worldDeltaZ = (screenRightWorld.z * mouseDelta[0] + screenUpWorld.z * mouseDelta[1]) * scale;
+        float[] gamepadStick = playerInput.consumeGamepadInput();
+        boolean gamepadActive = gamepadStick[0] != 0f || gamepadStick[1] != 0f;
+        float worldDeltaX;
+        float worldDeltaZ;
+        if (gamepadActive) {
+            float gamepadScale = GameConstants.GAMEPAD_MOVE_SPEED * tpf;
+            worldDeltaX = (screenRightWorld.x * gamepadStick[0] + screenUpWorld.x * gamepadStick[1]) * gamepadScale;
+            worldDeltaZ = (screenRightWorld.z * gamepadStick[0] + screenUpWorld.z * gamepadStick[1]) * gamepadScale;
+        } else {
+            float scale = GameConstants.MOUSE_SENSITIVITY * app.getGameSettings().getMouseSensitivity();
+            worldDeltaX = (screenRightWorld.x * mouseDelta[0] + screenUpWorld.x * mouseDelta[1]) * scale;
+            worldDeltaZ = (screenRightWorld.z * mouseDelta[0] + screenUpWorld.z * mouseDelta[1]) * scale;
+        }
         playerPaddle.moveDelta(worldDeltaX, worldDeltaZ);
         updateOpponentAi(tpf);
 
