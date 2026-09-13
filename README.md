@@ -39,7 +39,12 @@ Features in this pass:
 - Java 21
 - jMonkeyEngine 3.6
 - Gradle
-- Steamworks (via `steamworks4j`) — planned, not yet integrated
+- Steamworks (via `steamworks4j`) — wired up defensively: `SteamManager` (see
+  `src/main/java/com/paddleshock/steam/SteamManager.java`) tries to init Steam and falls back to
+  offline mode on any failure (Steam not running, wrong/missing App ID, native libs missing), so
+  the game always runs fine without Steam. `steam_appid.txt` at the repo root currently holds
+  Valve's public test App ID (`480`) for dev — **swap it for the real App ID before any
+  Steam release build.**
 
 ## Save data security
 
