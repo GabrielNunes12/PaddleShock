@@ -76,24 +76,32 @@ Single POST endpoint, JSON body, `action` field selects behavior:
   confirm normalization), resolved via the Lambda to the correct host address, and the joiner
   reached "Connecting...". The actual UDP handshake did not complete in this test - see below,
   this is expected, not a Phase C defect.
-- **Not yet built (Phase D)**: `NetHost` becoming an active puncher (sending toward the joiner's
-  public address as soon as it learns it, instead of only ever reacting to an inbound HELLO) -
-  required for the connection to actually complete across most real NATs. Phase C only built the
-  address-exchange plumbing; it doesn't make the UDP path itself traversable yet.
+- **Done (Phase D)**: `NetHost.pollAndPunchUntilJoined(String lobbyCode)` polls the Lambda's
+  `poll` action (built in Phase A, unused until now) every 1.5s for up to 30s until a joiner's
+  public address appears, then sends toward it every 300ms for up to 8s - reacting to an inbound
+  HELLO alone was never enough, since a joiner's first HELLOs can be dropped by the HOST's own
+  NAT before the host has sent anything outbound to the joiner. Runs on the same background
+  thread that already does lobby registration, continuing after the code is shown so it doesn't
+  block the UI. `MultiplayerState` now also resends `NetClient`'s HELLO every 0.3s instead of
+  only once at construction, so the joiner is still retrying when the host's punch eventually
+  opens a path. Regression-tested: the full LAN (IP:port) host/join flow still works end to end
+  with the background punch thread running concurrently, and produced no exceptions.
+  **Not independently live-verified for real cross-NAT traversal** - see below.
 
-### Why the live test's connection didn't complete
+### A same-machine test can't validate NAT traversal
 
-Both test instances ran on the same machine/network. The joiner's HELLO packets were correctly
-addressed to the host's real public `ip:port` (confirmed via a manual Lambda poll - the joiner's
-registered address matched), but never arrived at the host (`hasJoiner()` stayed false). This
-matches sending a packet to your own public IP and depending on your router to route it back in
-("NAT hairpinning") - not all consumer routers support it, independent of anything this code
-does. It's exactly the gap Phase D's active punching is meant to close (punching from both sides
-at once opens paths hairpinning alone can't) - true cross-network validation needs two genuinely
-different networks (Phase E), not two processes on one machine.
+Both live tests so far (Phase C and D) ran two instances on one machine/network, which cannot
+prove hole-punching works: the failure mode is NAT **hairpinning** (routing a packet addressed to
+your own public IP back into your own LAN), a distinct router feature from **hole-punching**
+between two genuinely different networks - Phase D's active punching does not and cannot fix a
+router that lacks hairpin support, because in a same-machine test there's no second NAT for the
+punching to actually open. The code path for punching runs correctly (confirmed via logs: no
+exceptions, LAN flow unaffected) but its actual real-world effectiveness against a genuine
+cross-NAT scenario is unverified. Phase E (two different real networks, e.g. a phone hotspot vs.
+home wifi) is the only way to actually validate this.
 
 See the main session's design doc discussion (not committed) for the full phase breakdown
-(A: AWS infra, B: STUN client, C: lobby UI [this], D: active punching, E: cross-network QA).
+(A: AWS infra, B: STUN client, C: lobby UI, D: active punching [this], E: cross-network QA).
 
 ## Redeploying the Lambda after code changes
 

@@ -138,6 +138,65 @@ public class NetHost implements AutoCloseable {
         return LobbyClient.create(StunClient.format(publicAddress));
     }
 
+    private static final long LOBBY_POLL_TIMEOUT_MS = 30_000;
+    private static final long LOBBY_POLL_INTERVAL_MS = 1_500;
+    private static final long PUNCH_WINDOW_MS = 8_000;
+    private static final long PUNCH_INTERVAL_MS = 300;
+
+    /**
+     * Polls the AWS lobby broker (see {@code aws/README.md}) for {@code lobbyCode} until a
+     * joiner's public address shows up, then actively sends toward it for a few seconds to punch
+     * this machine's own NAT open - reacting to an inbound HELLO alone (as before Phase D) isn't
+     * enough, since the joiner's very first HELLO packets may be dropped by THIS host's NAT
+     * before it has ever sent anything outbound to the joiner's address. Both sides punching at
+     * once is what actually opens a two-way path on most home NATs.
+     *
+     * <p>Long-running (up to ~{@link #LOBBY_POLL_TIMEOUT_MS} + {@link #PUNCH_WINDOW_MS}) and
+     * blocking (HTTPS polling + timed sends) - run on its own background thread, not the render
+     * thread. Returns early and does nothing further once {@link #hasJoiner()} becomes true
+     * (e.g. a LAN joiner connected directly) or once {@link #close()} is called.
+     */
+    public void pollAndPunchUntilJoined(String lobbyCode) {
+        String joinerAddressText = null;
+        long pollDeadline = System.currentTimeMillis() + LOBBY_POLL_TIMEOUT_MS;
+        while (running && !hasJoiner() && System.currentTimeMillis() < pollDeadline) {
+            try {
+                joinerAddressText = LobbyClient.poll(lobbyCode);
+            } catch (IOException e) {
+                joinerAddressText = null; // transient - keep retrying until the deadline
+            }
+            if (joinerAddressText != null) {
+                break;
+            }
+            sleepQuietly(LOBBY_POLL_INTERVAL_MS);
+        }
+
+        if (!running || hasJoiner() || joinerAddressText == null) {
+            return;
+        }
+
+        InetSocketAddress target;
+        try {
+            target = StunClient.parseAddress(joinerAddressText);
+        } catch (IOException e) {
+            return; // lobby returned something unparseable - give up quietly, LAN path still works
+        }
+
+        long punchDeadline = System.currentTimeMillis() + PUNCH_WINDOW_MS;
+        while (running && !hasJoiner() && System.currentTimeMillis() < punchDeadline) {
+            sendRaw(target, NetProtocol.encodeHandshake(NetProtocol.TYPE_HELLO));
+            sleepQuietly(PUNCH_INTERVAL_MS);
+        }
+    }
+
+    private static void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     @Override
     public void close() {
         running = false;

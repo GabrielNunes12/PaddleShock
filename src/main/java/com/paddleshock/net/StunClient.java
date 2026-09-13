@@ -49,6 +49,22 @@ public final class StunClient {
         return address.getAddress().getHostAddress() + ":" + address.getPort();
     }
 
+    /** Parses the "ip:port" text {@link #format} produces (also what the lobby broker returns
+     *  and what the JOIN screen's text field accepts). */
+    public static InetSocketAddress parseAddress(String text) throws IOException {
+        int colon = text.lastIndexOf(':');
+        if (colon <= 0 || colon == text.length() - 1) {
+            throw new IOException("malformed address: " + text);
+        }
+        try {
+            InetAddress host = InetAddress.getByName(text.substring(0, colon));
+            int port = Integer.parseInt(text.substring(colon + 1));
+            return new InetSocketAddress(host, port);
+        } catch (NumberFormatException e) {
+            throw new IOException("malformed address: " + text);
+        }
+    }
+
     /** Tries each of {@link #DEFAULT_SERVERS} in turn until one answers, returning this socket's
      *  public ip:port as seen by that server. Returns {@code null} if every server times out
      *  (no internet, or STUN traffic is firewalled) - callers should fall back to LAN-only

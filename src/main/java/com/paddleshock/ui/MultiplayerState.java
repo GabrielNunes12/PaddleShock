@@ -67,6 +67,14 @@ public class MultiplayerState extends BaseAppState {
     private final AtomicReference<NetClient> pendingCodeClient = new AtomicReference<>();
     private final AtomicReference<String> pendingCodeError = new AtomicReference<>();
 
+    // Joiner-side: while waiting on the handshake, keep resending HELLO instead of the original
+    // single send-at-construction - needed for Phase D active punching, since the host may only
+    // just now be opening its own NAT path and an early one-shot HELLO would already be long
+    // gone by then. Reset to 0 whenever netClient is freshly assigned (see connectByAddress and
+    // the pendingCodeClient pickup in update()).
+    private static final float HELLO_RETRY_INTERVAL_SECONDS = 0.3f;
+    private float helloRetryTimer;
+
     @Override
     protected void initialize(Application application) {
         // Built fresh in rebuild() every time the screen is shown, or the view changes.
@@ -180,12 +188,18 @@ public class MultiplayerState extends BaseAppState {
             } catch (IOException e) {
                 error = e.getMessage();
             }
-            if (lobbyGeneration.get() == myGeneration) {
-                lobbyCode.set(code);
-                lobbyError.set(error);
-                lobbyPending = false;
+            if (lobbyGeneration.get() != myGeneration) {
+                return; // superseded by a newer hosting attempt (or the screen was left) - discard
             }
-            // else: superseded by a newer hosting attempt (or the screen was left) - discard
+            lobbyCode.set(code);
+            lobbyError.set(error);
+            lobbyPending = false;
+            if (code != null) {
+                // Continues on this same background thread after the code is already shown to
+                // the user - polls the lobby for a joiner and actively punches once one appears
+                // (Phase D). Long-running; NetHost.close() (cancelHosting()/onDisable()) stops it.
+                hostRef.pollAndPunchUntilJoined(code);
+            }
         }, "lobby-register");
         thread.setDaemon(true);
         thread.start();
@@ -337,6 +351,7 @@ public class MultiplayerState extends BaseAppState {
             statusLabel.setText(joinError);
             return;
         }
+        helloRetryTimer = 0f;
         joinError = null;
         statusLabel.setColor(Theme.TEXT);
         statusLabel.setText("Connecting...");
@@ -421,6 +436,7 @@ public class MultiplayerState extends BaseAppState {
             NetClient resolved = pendingCodeClient.getAndSet(null);
             if (resolved != null) {
                 netClient = resolved;
+                helloRetryTimer = 0f;
                 statusLabel.setColor(Theme.TEXT);
                 statusLabel.setText("Connecting...");
             } else {
@@ -451,6 +467,16 @@ public class MultiplayerState extends BaseAppState {
                 statusLabel.setText(joinError);
                 netClient.close();
                 netClient = null;
+            } else {
+                // Keep resending HELLO instead of the original single send-at-construction: for
+                // internet play (Phase D) the host may still be actively punching its own NAT
+                // open when the first HELLO went out, so it needs a retry to land once that
+                // finishes rather than only ever getting the one early attempt.
+                helloRetryTimer += tpf;
+                if (helloRetryTimer >= HELLO_RETRY_INTERVAL_SECONDS) {
+                    helloRetryTimer = 0f;
+                    netClient.sendHello();
+                }
             }
         }
     }

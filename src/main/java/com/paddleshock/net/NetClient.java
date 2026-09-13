@@ -73,22 +73,8 @@ public class NetClient implements AutoCloseable {
             socket.close();
             throw e;
         }
-        InetSocketAddress hostAddress = parseAddress(hostAddressText);
+        InetSocketAddress hostAddress = StunClient.parseAddress(hostAddressText);
         return new NetClient(socket, publicAddress, hostAddress);
-    }
-
-    private static InetSocketAddress parseAddress(String text) throws IOException {
-        int colon = text.lastIndexOf(':');
-        if (colon <= 0 || colon == text.length() - 1) {
-            throw new IOException("lobby service returned a malformed address: " + text);
-        }
-        try {
-            InetAddress host = InetAddress.getByName(text.substring(0, colon));
-            int port = Integer.parseInt(text.substring(colon + 1));
-            return new InetSocketAddress(host, port);
-        } catch (NumberFormatException e) {
-            throw new IOException("lobby service returned a malformed address: " + text);
-        }
     }
 
     /** Re-sends the handshake "hello"; safe to call repeatedly while waiting for a welcome
