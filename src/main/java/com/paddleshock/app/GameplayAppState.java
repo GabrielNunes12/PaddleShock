@@ -120,6 +120,11 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
      *  render frame the same snapshot happens to still be the "latest" one. */
     private NetProtocol.SnapshotMessage lastAppliedSnapshot;
 
+    /** Guards against re-reporting a disconnect every frame between the check firing and
+     *  {@code setEnabled(false)} actually taking effect. Cleared on {@link #startNewMatch()} so a
+     *  rematch can detect a fresh disconnect. */
+    private boolean disconnectHandled = false;
+
     /** The existing, unchanged single-player-vs-AI match. */
     public GameplayAppState() {
         this(Mode.SINGLE_PLAYER, null, null);
@@ -505,6 +510,11 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     }
 
     private void updateHost(float tpf) {
+        if (netHost.hasJoiner() && netHost.isJoinerTimedOut()) {
+            handleJoinerDisconnected();
+            return;
+        }
+
         PaddleInput hostTickInput = computeLocalPaddleInput(tpf);
         PaddleInput joinerTickInput = netHost.hasJoiner() ? netHost.pollJoinerPaddleInput() : PaddleInput.none();
 
@@ -553,7 +563,35 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                 flags);
     }
 
+    /** The host stops applying stale input and hangs the match forever if a joiner's process dies
+     *  or the network drops - report a forfeit win (ranked, if this was a ranked match at all) and
+     *  hand off to a real "opponent disconnected" UI state instead. */
+    private void handleJoinerDisconnected() {
+        if (disconnectHandled) {
+            return;
+        }
+        disconnectHandled = true;
+        app.endRankedHostMatchByForfeit(matchSimulation.getPlayerScore(), matchSimulation.getOpponentScore(), netHost);
+    }
+
+    /** Symmetric to {@link #handleJoinerDisconnected} for the joiner side: a dead/unreachable host
+     *  leaves the joiner staring at a frozen last snapshot forever otherwise. No rank report is
+     *  made here - only the host reports match results (see the ranked-ladder trust model), and a
+     *  joiner has no way to verify anything the host isn't also seeing. */
+    private void handleHostDisconnected() {
+        if (disconnectHandled) {
+            return;
+        }
+        disconnectHandled = true;
+        app.handleJoinerConnectionLost(joinerDisplayScore, hostDisplayScore);
+    }
+
     private void updateJoiner(float tpf) {
+        if (netClient.isHostTimedOut()) {
+            handleHostDisconnected();
+            return;
+        }
+
         PaddleInput localTickInput = computeLocalPaddleInput(tpf);
         PowerUpDefinition activated = consumePendingJoinerPowerUp();
         String powerUpId = activated != null ? activated.getId() : "";
@@ -596,7 +634,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             if (snapshot.isMatchOver()) {
                 // From the joiner's own point of view: "you" are the joiner, so isHostWon()
                 // (a host-perspective flag) is negated to get whether the local viewer won.
-                app.endRankedJoinerMatch(!snapshot.isHostWon(), joinerDisplayScore, hostDisplayScore);
+                app.endRankedJoinerMatch(!snapshot.isHostWon(), joinerDisplayScore, hostDisplayScore, netClient);
             }
         }
     }
@@ -694,7 +732,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             if (result.isMatchOver()) {
                 if (mode == Mode.HOST) {
                     app.endRankedHostMatch(result.isPlayerWon(), matchSimulation.getPlayerScore(),
-                            matchSimulation.getOpponentScore(), netHost.getJoinerPlayerId(), netHost.getLobbyCode());
+                            matchSimulation.getOpponentScore(), netHost);
                 } else {
                     app.endMatch(result.isPlayerWon(), matchSimulation.getPlayerScore(), matchSimulation.getOpponentScore());
                 }
@@ -706,7 +744,26 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         if (matchSimulation != null) {
             matchSimulation.startNewMatch();
         }
+        // Also reset the joiner-only display state and the disconnect guard: needed for a
+        // multiplayer rematch reusing this same GameplayAppState/connection rather than a fresh
+        // single-player match, where these are already at their defaults and this is a no-op.
+        joinerDisplayScore = 0;
+        hostDisplayScore = 0;
+        lastAppliedSnapshot = null;
+        disconnectHandled = false;
         updateScoreText();
+    }
+
+    public Mode getMode() {
+        return mode;
+    }
+
+    public NetHost getNetHost() {
+        return netHost;
+    }
+
+    public NetClient getNetClient() {
+        return netClient;
     }
 
     @Override

@@ -121,12 +121,12 @@ public class MultiplayerState extends BaseAppState {
     }
 
     private void buildChoice(PaddleShockApp app, Container panel) {
-        Label title = panel.addChild(new Label("MULTIPLAYER (LAN)"));
+        Label title = panel.addChild(new Label("MULTIPLAYER"));
         title.setFontSize(26);
         title.setColor(Theme.ORANGE);
         title.setInsets(new Insets3f(0, 0, 4, 0));
 
-        Label sub = panel.addChild(new Label("Direct-connect only - no matchmaking, same network as your opponent."));
+        Label sub = panel.addChild(new Label("Same network (LAN address) or over the internet via a lobby code."));
         sub.setFontSize(12);
         sub.setColor(Theme.TEXT_DIM);
         sub.setInsets(new Insets3f(0, 0, 18, 0));

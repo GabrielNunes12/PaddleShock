@@ -89,6 +89,24 @@ public final class RankState {
         return getTier().getDisplayName() + " " + RankTier.divisionToRoman(division);
     }
 
+    /** Reconstructs a display-ready {@link RankState} from a relayed {@link NetProtocol#TYPE_RANK_RESULT}
+     *  packet - the joiner's own authoritative post-match state as the host's {@code reportMatchResult}
+     *  call actually returned it, rather than a locally-guessed diff (see {@link #withDeltaFrom}). */
+    public static RankState fromRelay(String tier, int division, int lp, int wins, int losses,
+            int lpChange, boolean promoted, boolean demoted, String promoSeriesResult) {
+        RankState state = new RankState();
+        state.tier = tier;
+        state.division = division;
+        state.lp = lp;
+        state.wins = wins;
+        state.losses = losses;
+        state.lpChange = lpChange;
+        state.promoted = promoted;
+        state.demoted = demoted;
+        state.promoSeriesResult = promoSeriesResult == null || promoSeriesResult.isEmpty() ? null : promoSeriesResult;
+        return state;
+    }
+
     /**
      * Computes a display-ready copy of this (post-match) state with {@code lpChange}/
      * {@code promoted}/{@code demoted} filled in by diffing against {@code baseline} (the same

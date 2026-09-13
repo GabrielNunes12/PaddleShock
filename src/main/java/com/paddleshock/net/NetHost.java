@@ -33,6 +33,19 @@ public class NetHost implements AutoCloseable {
     private final AtomicReference<NetProtocol.InputMessage> latestInput =
             new AtomicReference<>(NetProtocol.InputMessage.NEUTRAL);
 
+    /** Wall-clock time (millis) the last packet of any kind arrived from the joiner - the basis
+     *  for {@link #isJoinerTimedOut()}. {@code TYPE_INPUT} arrives every joiner frame once
+     *  connected, so plain silence past a few seconds means the joiner's process died or the
+     *  network dropped; there's no need for a dedicated heartbeat message type. */
+    private volatile long lastJoinerPacketAt = 0L;
+
+    /** How long without any packet from the joiner before it's considered disconnected. */
+    public static final long DISCONNECT_TIMEOUT_MS = 5_000;
+
+    private volatile boolean rematchRequestedByJoiner = false;
+    private volatile boolean rematchAcceptedByJoiner = false;
+    private volatile boolean rematchDeclinedByJoiner = false;
+
     public NetHost(int port, String localPlayerId) throws SocketException {
         socket = new DatagramSocket(port);
         this.localPlayerId = localPlayerId;
@@ -67,7 +80,22 @@ public class NetHost implements AutoCloseable {
         try {
             switch (NetProtocol.messageType(data)) {
                 case NetProtocol.TYPE_HELLO -> handleHello(from, NetProtocol.decodeHello(data));
-                case NetProtocol.TYPE_INPUT -> latestInput.set(NetProtocol.decodeInput(data));
+                case NetProtocol.TYPE_INPUT -> {
+                    latestInput.set(NetProtocol.decodeInput(data));
+                    noteJoinerPacket(from);
+                }
+                case NetProtocol.TYPE_REMATCH_REQUEST -> {
+                    rematchRequestedByJoiner = true;
+                    noteJoinerPacket(from);
+                }
+                case NetProtocol.TYPE_REMATCH_ACCEPT -> {
+                    rematchAcceptedByJoiner = true;
+                    noteJoinerPacket(from);
+                }
+                case NetProtocol.TYPE_REMATCH_DECLINE -> {
+                    rematchDeclinedByJoiner = true;
+                    noteJoinerPacket(from);
+                }
                 default -> {
                     // unknown/malformed - ignore
                 }
@@ -77,10 +105,19 @@ public class NetHost implements AutoCloseable {
         }
     }
 
+    /** Only counts packets from the joiner actually already on file (or handshaking in), matching
+     *  the same peer-address check {@link #handleHello} already applies. */
+    private void noteJoinerPacket(InetSocketAddress from) {
+        if (joinerAddress != null && joinerAddress.equals(from)) {
+            lastJoinerPacketAt = System.currentTimeMillis();
+        }
+    }
+
     private void handleHello(InetSocketAddress from, String playerId) {
         synchronized (this) {
             if (joinerAddress == null || joinerAddress.equals(from)) {
                 joinerAddress = from;
+                lastJoinerPacketAt = System.currentTimeMillis();
                 if (!playerId.isEmpty()) {
                     joinerPlayerId = playerId;
                 }
@@ -128,6 +165,74 @@ public class NetHost implements AutoCloseable {
             return;
         }
         sendRaw(to, NetProtocol.encodeSnapshot(snapshot));
+    }
+
+    /** True once a joiner has connected and then gone silent for {@link #DISCONNECT_TIMEOUT_MS} -
+     *  their process died, or the network dropped. False before any joiner ever connected (that's
+     *  just "still waiting", not a disconnect). */
+    public boolean isJoinerTimedOut() {
+        return joinerAddress != null && lastJoinerPacketAt > 0
+                && System.currentTimeMillis() - lastJoinerPacketAt > DISCONNECT_TIMEOUT_MS;
+    }
+
+    /** Proposes a rematch to the connected joiner. No-op if there's no joiner (or it already timed
+     *  out) - callers should check {@link #hasJoiner()}/{@link #isJoinerTimedOut()} first. */
+    public void sendRematchRequest() {
+        InetSocketAddress to = joinerAddress;
+        if (to != null) {
+            sendRaw(to, NetProtocol.encodeHandshake(NetProtocol.TYPE_REMATCH_REQUEST));
+        }
+    }
+
+    public void sendRematchAccept() {
+        InetSocketAddress to = joinerAddress;
+        if (to != null) {
+            sendRaw(to, NetProtocol.encodeHandshake(NetProtocol.TYPE_REMATCH_ACCEPT));
+        }
+    }
+
+    public void sendRematchDecline() {
+        InetSocketAddress to = joinerAddress;
+        if (to != null) {
+            sendRaw(to, NetProtocol.encodeHandshake(NetProtocol.TYPE_REMATCH_DECLINE));
+        }
+    }
+
+    public boolean isRematchRequestedByPeer() {
+        return rematchRequestedByJoiner;
+    }
+
+    public boolean isRematchAccepted() {
+        return rematchAcceptedByJoiner;
+    }
+
+    public boolean isRematchDeclined() {
+        return rematchDeclinedByJoiner;
+    }
+
+    /** Clears all rematch flags - call once a rematch proposal has been resolved (accepted,
+     *  declined, timed out, or a fresh match has actually started) so stale state from this round
+     *  doesn't leak into the next. */
+    public void resetRematchState() {
+        rematchRequestedByJoiner = false;
+        rematchAcceptedByJoiner = false;
+        rematchDeclinedByJoiner = false;
+    }
+
+    /** Relays the joiner's own authoritative post-match {@link RankState} (from the Lambda's
+     *  {@code reportMatchResult} response) once this host's report call has succeeded, so the
+     *  joiner can display the real result instead of guessing via {@code withDeltaFrom}. No-op if
+     *  there's no joiner connected any more (e.g. it disconnected right after match-end) - the
+     *  joiner falls back to its own guess in that case. */
+    public void sendRankResult(RankState joinerRank) {
+        InetSocketAddress to = joinerAddress;
+        if (to == null || joinerRank == null) {
+            return;
+        }
+        byte[] data = NetProtocol.encodeRankResult(joinerRank.getTier().name(), joinerRank.getDivision(),
+                joinerRank.getLp(), joinerRank.getWins(), joinerRank.getLosses(), joinerRank.getLpChange(),
+                joinerRank.wasPromoted(), joinerRank.wasDemoted(), joinerRank.getPromoSeriesResult());
+        sendRaw(to, data);
     }
 
     public int getPort() {

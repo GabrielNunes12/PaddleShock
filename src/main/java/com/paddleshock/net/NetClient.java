@@ -28,6 +28,20 @@ public class NetClient implements AutoCloseable {
     private volatile boolean connected = false;
     private volatile boolean rejected = false;
     private final AtomicReference<NetProtocol.SnapshotMessage> latestSnapshot = new AtomicReference<>();
+    private final AtomicReference<NetProtocol.RankResultMessage> relayedRankResult = new AtomicReference<>();
+
+    /** Wall-clock time (millis) the last packet of any kind arrived from the host - the basis for
+     *  {@link #isHostTimedOut()}. A {@code TYPE_SNAPSHOT} arrives every host tick once connected,
+     *  so plain silence past a few seconds means the host's process died or the network dropped;
+     *  there's no need for a dedicated heartbeat message type. */
+    private volatile long lastHostPacketAt = 0L;
+
+    /** How long without any packet from the host before it's considered disconnected. */
+    public static final long DISCONNECT_TIMEOUT_MS = 5_000;
+
+    private volatile boolean rematchRequestedByHost = false;
+    private volatile boolean rematchAcceptedByHost = false;
+    private volatile boolean rematchDeclinedByHost = false;
 
     public NetClient(String hostAddress, int port, String localPlayerId) throws IOException {
         this.hostAddress = new InetSocketAddress(InetAddress.getByName(hostAddress), port);
@@ -113,9 +127,31 @@ public class NetClient implements AutoCloseable {
         }
         try {
             switch (NetProtocol.messageType(data)) {
-                case NetProtocol.TYPE_WELCOME -> connected = true;
+                case NetProtocol.TYPE_WELCOME -> {
+                    connected = true;
+                    lastHostPacketAt = System.currentTimeMillis();
+                }
                 case NetProtocol.TYPE_REJECT -> rejected = true;
-                case NetProtocol.TYPE_SNAPSHOT -> latestSnapshot.set(NetProtocol.decodeSnapshot(data));
+                case NetProtocol.TYPE_SNAPSHOT -> {
+                    latestSnapshot.set(NetProtocol.decodeSnapshot(data));
+                    lastHostPacketAt = System.currentTimeMillis();
+                }
+                case NetProtocol.TYPE_REMATCH_REQUEST -> {
+                    rematchRequestedByHost = true;
+                    lastHostPacketAt = System.currentTimeMillis();
+                }
+                case NetProtocol.TYPE_REMATCH_ACCEPT -> {
+                    rematchAcceptedByHost = true;
+                    lastHostPacketAt = System.currentTimeMillis();
+                }
+                case NetProtocol.TYPE_REMATCH_DECLINE -> {
+                    rematchDeclinedByHost = true;
+                    lastHostPacketAt = System.currentTimeMillis();
+                }
+                case NetProtocol.TYPE_RANK_RESULT -> {
+                    relayedRankResult.set(NetProtocol.decodeRankResult(data));
+                    lastHostPacketAt = System.currentTimeMillis();
+                }
                 default -> {
                     // unknown/malformed - ignore
                 }
@@ -152,6 +188,54 @@ public class NetClient implements AutoCloseable {
     /** The most recently received authoritative snapshot, or {@code null} if none has arrived yet. */
     public NetProtocol.SnapshotMessage getLatestSnapshot() {
         return latestSnapshot.get();
+    }
+
+    /** True once the host has gone silent for {@link #DISCONNECT_TIMEOUT_MS} after having
+     *  connected - its process died, or the network dropped. False before a welcome ever arrived
+     *  (that's just "still connecting", not a disconnect). */
+    public boolean isHostTimedOut() {
+        return connected && lastHostPacketAt > 0
+                && System.currentTimeMillis() - lastHostPacketAt > DISCONNECT_TIMEOUT_MS;
+    }
+
+    /** Proposes a rematch to the host. */
+    public void sendRematchRequest() {
+        sendRaw(NetProtocol.encodeHandshake(NetProtocol.TYPE_REMATCH_REQUEST));
+    }
+
+    public void sendRematchAccept() {
+        sendRaw(NetProtocol.encodeHandshake(NetProtocol.TYPE_REMATCH_ACCEPT));
+    }
+
+    public void sendRematchDecline() {
+        sendRaw(NetProtocol.encodeHandshake(NetProtocol.TYPE_REMATCH_DECLINE));
+    }
+
+    public boolean isRematchRequestedByPeer() {
+        return rematchRequestedByHost;
+    }
+
+    public boolean isRematchAccepted() {
+        return rematchAcceptedByHost;
+    }
+
+    public boolean isRematchDeclined() {
+        return rematchDeclinedByHost;
+    }
+
+    /** Clears all rematch flags - see {@code NetHost#resetRematchState} for why. */
+    public void resetRematchState() {
+        rematchRequestedByHost = false;
+        rematchAcceptedByHost = false;
+        rematchDeclinedByHost = false;
+    }
+
+    /** Consumes (returns and clears) the host's relayed authoritative post-match rank result, or
+     *  {@code null} if none has arrived (yet, or ever - e.g. the host's own report call failed, or
+     *  the connection dropped right after match-end). Consumed exactly once so a caller polling
+     *  this every frame doesn't re-process the same relay repeatedly. */
+    public NetProtocol.RankResultMessage pollRelayedRankResult() {
+        return relayedRankResult.getAndSet(null);
     }
 
     /** This machine's public ip:port as seen from the internet (via STUN), for internet play
