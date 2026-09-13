@@ -21,6 +21,7 @@ public class Ball {
     private final float radius;
     private final float baseSpeed;
     private final float restitutionMultiplier;
+    private float verticalVelocity;
 
     public Ball(AssetManager assetManager, ColorRGBA color, TextureSet textureSet, BallModel ballModel,
             float speedMultiplier, float sizeMultiplier, float restitutionMultiplier) {
@@ -63,12 +64,36 @@ public class Ball {
                 (float) Math.sin(angle) * baseSpeed,
                 0,
                 Math.signum(directionZ) * (float) Math.cos(angle) * baseSpeed);
+        verticalVelocity = GameConstants.BALL_SERVE_POP;
         node.setLocalTranslation(0, radius, 0);
     }
 
     public void update(float tpf) {
         Vector3f position = node.getLocalTranslation();
-        node.setLocalTranslation(position.add(velocity.mult(tpf)));
+
+        verticalVelocity -= GameConstants.BALL_GRAVITY * tpf;
+        float newY = position.y + verticalVelocity * tpf;
+        if (newY <= radius && verticalVelocity < 0) {
+            newY = radius;
+            verticalVelocity = -verticalVelocity * bounceRestitution();
+            if (Math.abs(verticalVelocity) < GameConstants.BALL_BOUNCE_SETTLE_SPEED) {
+                verticalVelocity = 0f;
+            }
+        }
+
+        Vector3f horizontal = velocity.mult(tpf);
+        node.setLocalTranslation(position.x + horizontal.x, newY, position.z + horizontal.z);
+    }
+
+    /** How much vertical speed survives each table bounce; a bouncier table decays slower. */
+    private float bounceRestitution() {
+        return Math.min(GameConstants.BALL_BOUNCE_MAX_RESTITUTION,
+                GameConstants.BALL_BOUNCE_BASE_RESTITUTION * restitutionMultiplier);
+    }
+
+    /** Whether the ball is low enough for a paddle to actually reach it (it can hop over a swing). */
+    public boolean isWithinPaddleReach() {
+        return node.getLocalTranslation().y <= GameConstants.PADDLE_REACH_HEIGHT;
     }
 
     public void bounceOffSideRail() {
@@ -94,6 +119,8 @@ public class Ball {
         if (newLength > 0.0001f) {
             velocity.multLocal(speed / newLength);
         }
+
+        verticalVelocity = GameConstants.PADDLE_POP_BASE + speed * GameConstants.PADDLE_POP_SPEED_FACTOR;
     }
 
     public Vector3f getPosition() {

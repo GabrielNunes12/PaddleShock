@@ -425,8 +425,9 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         float zGap = ballPos.z - paddlePos.z;
         boolean withinReach = Math.abs(zGap) < (ball.getRadius() + GameConstants.PADDLE_HEIGHT);
         boolean withinPaddleWidth = Math.abs(ballPos.x - paddlePos.x) < paddle.getEffectiveRadius() + ball.getRadius();
+        boolean lowEnoughToHit = ball.isWithinPaddleReach();
 
-        if (withinReach && withinPaddleWidth) {
+        if (withinReach && withinPaddleWidth && lowEnoughToHit) {
             ball.bounceOffPaddle(paddle);
             app.getAudioManager().playSfx("paddle_hit.ogg");
         }

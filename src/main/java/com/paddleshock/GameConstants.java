@@ -28,6 +28,18 @@ public final class GameConstants {
     public static final float BALL_MAX_SPEED = 16f;
     public static final float BALL_SPEED_RAMP = 1.03f;
 
+    // Ball vertical bounce: gravity pulls it down, it hops off the table between paddle hits,
+    // losing a bit of height each bounce (base restitution), and gets popped back up on every
+    // paddle hit. A table's own restitutionMultiplier scales how bouncy its hops decay.
+    public static final float BALL_GRAVITY = 22f;
+    public static final float BALL_SERVE_POP = 4f;
+    public static final float BALL_BOUNCE_BASE_RESTITUTION = 0.80f;
+    public static final float BALL_BOUNCE_MAX_RESTITUTION = 0.97f;
+    public static final float BALL_BOUNCE_SETTLE_SPEED = 0.5f;
+    public static final float PADDLE_POP_BASE = 4f;
+    public static final float PADDLE_POP_SPEED_FACTOR = 0.15f;
+    public static final float PADDLE_REACH_HEIGHT = 2.0f;
+
     // Match: first to WIN_SCORE takes the match; winner earns a random credit reward.
     public static final int WIN_SCORE = 10;
     public static final int MATCH_REWARD_MIN = 10;
