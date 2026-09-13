@@ -34,6 +34,12 @@ public final class Main {
 
         app.setSettings(settings);
         app.setShowSettings(false);
+        // jME defaults this to true, which stops calling update() on every AppState (including
+        // the multiplayer host/joiner network polling) whenever the window loses OS focus - e.g.
+        // a host alt-tabbing to paste their IP into chat while waiting for a friend to connect
+        // would never see the match start, even though the handshake completed fine in the
+        // background network thread. A multiplayer game needs to keep ticking while unfocused.
+        app.setPauseOnLostFocus(false);
         app.start();
     }
 }
