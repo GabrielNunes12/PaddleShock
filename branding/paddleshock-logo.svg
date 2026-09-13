@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  PaddleShock wordmark logo.
+  Colors are copied verbatim from src/main/java/com/paddleshock/ui/Theme.java
+  (see branding/README.md for the float -> hex conversion table).
+
+  FONT NOTE: the game's real font (bundled at
+  src/main/resources/Interface/Fonts/Default.fnt) is Anton, a free bold
+  condensed display font from Google Fonts / The Anton Project Authors
+  (SIL OFL 1.1). This SVG uses a system "bold condensed sans" font stack
+  as a placeholder approximation, since Anton isn't embedded here. Swap
+  the font-family below for an embedded/linked Anton (or a converted
+  outline path of the wordmark set in Anton) for full fidelity.
+
+  Composition mirrors the in-game main-menu wordmark built in
+  MainMenuState.java: "PADDLE" in Theme.TEXT (near-white), "SHOCK" in
+  Theme.ORANGE, set on one baseline with no gap between the words,
+  centered over the dark Theme.BACKGROUND panel.
+
+  viewBox is 920x430 (2x a 460x215 Steam header capsule) purely for
+  crisp coordinate math; the artwork is vector and scales to any size.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 430" width="920" height="430">
+  <title>PaddleShock</title>
+
+  <defs>
+    <style>
+      .word {
+        font-family: 'Arial Narrow', 'Helvetica Neue Condensed', 'Roboto Condensed', sans-serif;
+        font-weight: 900;
+        font-size: 104px;
+        letter-spacing: -1px;
+      }
+    </style>
+  </defs>
+
+  <!-- Theme.BACKGROUND (#1A1D24) full-bleed panel -->
+  <rect x="0" y="0" width="920" height="430" fill="#1A1D24" />
+
+  <!-- subtle Theme.PANEL (#23262E) inset frame for depth; pure flat shapes, survives downscaling -->
+  <rect x="16" y="16" width="888" height="398" fill="none" stroke="#23262E" stroke-width="4" />
+
+  <!-- wordmark, single baseline, no gap between words (matches MainMenuState.java layout) -->
+  <text x="460" y="270" class="word" text-anchor="end" fill="#F5F6F8">PADDLE</text>
+  <text x="460" y="270" class="word" text-anchor="start" fill="#E8823A">SHOCK</text>
+
+  <!-- bold flat accent bar in Theme.ORANGE (#E8823A) under the wordmark; reads fine even at small-capsule size -->
+  <rect x="150" y="304" width="620" height="16" rx="8" fill="#E8823A" />
+</svg>

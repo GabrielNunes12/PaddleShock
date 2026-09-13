@@ -1,0 +1,66 @@
+# PaddleShock brand asset
+
+`paddleshock-logo.svg` — hand-authored vector wordmark, the first static brand
+asset in this repo. Everywhere else (main menu, etc.) the "PADDLE/SHOCK"
+lockup is built live at runtime from Lemur UI labels
+(`src/main/java/com/paddleshock/ui/MainMenuState.java`); this file exists so
+that work stops depending on a running game client.
+
+## Colors used (copied from `src/main/java/com/paddleshock/ui/Theme.java`)
+
+`Theme.java` defines colors as `ColorRGBA` floats (0-1); hex below is that
+float multiplied by 255 and rounded, matching how a browser/renderer would
+display the same value.
+
+| Theme constant | ColorRGBA floats | Hex used in SVG | Used for |
+|---|---|---|---|
+| `BACKGROUND` | 0.102, 0.114, 0.141 | `#1A1D24` | canvas background |
+| `PANEL` | 0.137, 0.149, 0.180 | `#23262E` | inset frame stroke |
+| `TEXT` | 0.961, 0.965, 0.973 | `#F5F6F8` | "PADDLE" |
+| `ORANGE` | 0.910, 0.510, 0.227 | `#E8823A` | "SHOCK" + accent bar |
+
+(`PANEL_HOVER`, `TEXT_DIM`, `BLUE`, `GREEN`, `ON_ACCENT`, `OVERLAY` exist in
+Theme.java but aren't used in this lockup.)
+
+## Font
+
+The game's real font is **Anton** (bundled as a bitmap font at
+`src/main/resources/Interface/Fonts/Default.fnt`, sourced from Google Fonts /
+The Anton Project Authors, SIL OFL 1.1 — see that folder's `CREDITS.md`).
+Anton isn't embedded in this SVG, so the wordmark currently uses a **bold
+condensed system-font stack** (`'Arial Narrow', 'Helvetica Neue Condensed',
+'Roboto Condensed', sans-serif` at `font-weight: 900`) as a placeholder
+approximation. Swapping in real Anton (embedded `@font-face` or converted to
+outline paths) would improve fidelity and is the natural next step before
+shipping this on the Steam store page.
+
+## Composition
+
+Mirrors the in-game main-menu wordmark: "PADDLE" in `TEXT` immediately
+followed by "SHOCK" in `ORANGE`, no space, one baseline. No icon/mark is
+included — a paddle-and-ball glyph was considered but skipped rather than
+risk a fussy, illegible shape at small-capsule size; this ships wordmark-only
+plus a flat orange accent bar (a solid rounded rectangle, which survives
+downscaling fine, unlike thin strokes/detail).
+
+Verified by opening the SVG directly in Chrome (`file://` URL) and taking a
+screenshot — renders correctly, text fits inside the canvas with margin to
+spare, no clipping or off-canvas coordinates.
+
+## Steam asset sizes still needed (not yet exported — export from this SVG when needed)
+
+| Asset | Size (px) |
+|---|---|
+| Header capsule | 460 × 215 |
+| Small capsule | 231 × 87 |
+| Main capsule | 616 × 353 |
+| Vertical capsule | 300 × 450 |
+| Library hero | 3840 × 1240 |
+| Library capsule | 600 × 900 |
+| Library icon | 512 × 512 |
+
+The SVG's `viewBox` is `0 0 920 430` (2× the header capsule) purely for easy
+coordinate math — it's vector and rasterizes cleanly to any of the sizes
+above. For the portrait sizes (vertical capsule, library capsule), the
+wordmark will need re-centering/scaling within the new aspect ratio rather
+than a naive stretch.
