@@ -141,4 +141,22 @@ public class Ball {
     public float getRadius() {
         return radius;
     }
+
+    /** Horizontal velocity (X/Z), for a network host to include in its snapshot. */
+    public Vector3f getVelocity() {
+        return velocity;
+    }
+
+    /** Current vertical (bounce) velocity, for a network host to include in its snapshot. */
+    public float getVerticalVelocity() {
+        return verticalVelocity;
+    }
+
+    /** Directly applies a received authoritative state from a network host snapshot; a networked
+     *  joiner client never runs its own physics, it only renders whatever the host last sent. */
+    public void setNetworkState(float x, float y, float z, float velX, float velZ, float verticalVel) {
+        node.setLocalTranslation(x, y, z);
+        velocity.set(velX, 0, velZ);
+        verticalVelocity = verticalVel;
+    }
 }

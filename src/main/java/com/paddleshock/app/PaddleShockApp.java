@@ -9,15 +9,21 @@ import com.jme3.system.AppSettings;
 import com.simsilica.lemur.GuiGlobals;
 import com.simsilica.lemur.style.BaseStyles;
 
+import java.io.IOException;
+import java.net.SocketException;
+
 import com.paddleshock.GameConstants;
 import com.paddleshock.audio.AudioManager;
 import com.paddleshock.data.PlayerProfile;
 import com.paddleshock.data.SaveManager;
+import com.paddleshock.net.NetClient;
+import com.paddleshock.net.NetHost;
 import com.paddleshock.settings.GameSettings;
 import com.paddleshock.steam.SteamManager;
 import com.paddleshock.ui.LoadoutState;
 import com.paddleshock.ui.MainMenuState;
 import com.paddleshock.ui.MatchEndState;
+import com.paddleshock.ui.MultiplayerState;
 import com.paddleshock.ui.OptionsState;
 import com.paddleshock.ui.PauseState;
 import com.paddleshock.ui.SplashState;
@@ -38,6 +44,7 @@ public class PaddleShockApp extends SimpleApplication {
     private StoreState storeState;
     private MatchEndState matchEndState;
     private LoadoutState loadoutState;
+    private MultiplayerState multiplayerState;
     private GameplayAppState gameplayState;
 
     @Override
@@ -66,6 +73,7 @@ public class PaddleShockApp extends SimpleApplication {
         storeState = new StoreState();
         matchEndState = new MatchEndState();
         loadoutState = new LoadoutState();
+        multiplayerState = new MultiplayerState();
 
         stateManager.attach(splashState);
         stateManager.attach(mainMenuState);
@@ -74,6 +82,7 @@ public class PaddleShockApp extends SimpleApplication {
         stateManager.attach(storeState);
         stateManager.attach(matchEndState);
         stateManager.attach(loadoutState);
+        stateManager.attach(multiplayerState);
 
         mainMenuState.setEnabled(false);
         pauseState.setEnabled(false);
@@ -81,6 +90,7 @@ public class PaddleShockApp extends SimpleApplication {
         storeState.setEnabled(false);
         matchEndState.setEnabled(false);
         loadoutState.setEnabled(false);
+        multiplayerState.setEnabled(false);
     }
 
     @Override
@@ -129,8 +139,15 @@ public class PaddleShockApp extends SimpleApplication {
         storeState.setEnabled(false);
         matchEndState.setEnabled(false);
         loadoutState.setEnabled(false);
+        multiplayerState.setEnabled(false);
         mainMenuState.setEnabled(true);
         audioManager.playMenuMusic();
+    }
+
+    /** Shows the HOST/JOIN LAN multiplayer screen (wired up from the main menu's MULTIPLAYER button). */
+    public void showMultiplayer() {
+        mainMenuState.setEnabled(false);
+        multiplayerState.setEnabled(true);
     }
 
     /** Shown before every match (fresh or rematch) to confirm/change loadout and buy from a store modal. */
@@ -149,6 +166,45 @@ public class PaddleShockApp extends SimpleApplication {
             stateManager.detach(gameplayState);
         }
         gameplayState = new GameplayAppState();
+        stateManager.attach(gameplayState);
+        audioManager.playRandomMatchMusic();
+    }
+
+    /** Binds a UDP socket on {@code port} (0 = let the OS pick a free port) for a LAN
+     *  listen-server match and returns it; the caller ({@link MultiplayerState}) shows the
+     *  local IP/port and waits for a joiner before actually entering the match via
+     *  {@link #enterHostedMatch(NetHost)}. */
+    public NetHost startHostMatch(int port) throws SocketException {
+        return new NetHost(port);
+    }
+
+    /** Connects to a LAN host at {@code hostAddress}:{@code port} and returns the client; the
+     *  caller ({@link MultiplayerState}) waits for the handshake to complete before actually
+     *  entering the match via {@link #enterJoinedMatch(NetClient)}. */
+    public NetClient joinMatch(String hostAddress, int port) throws IOException {
+        return new NetClient(hostAddress, port);
+    }
+
+    /** Enters the match as the listen-server host, once a joiner has connected to {@code netHost}. */
+    public void enterHostedMatch(NetHost netHost) {
+        mainMenuState.setEnabled(false);
+        multiplayerState.setEnabled(false);
+        if (gameplayState != null) {
+            stateManager.detach(gameplayState);
+        }
+        gameplayState = new GameplayAppState(netHost);
+        stateManager.attach(gameplayState);
+        audioManager.playRandomMatchMusic();
+    }
+
+    /** Enters the match as the joiner, once the handshake with {@code netClient}'s host has completed. */
+    public void enterJoinedMatch(NetClient netClient) {
+        mainMenuState.setEnabled(false);
+        multiplayerState.setEnabled(false);
+        if (gameplayState != null) {
+            stateManager.detach(gameplayState);
+        }
+        gameplayState = new GameplayAppState(netClient);
         stateManager.attach(gameplayState);
         audioManager.playRandomMatchMusic();
     }

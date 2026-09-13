@@ -21,8 +21,6 @@ import com.paddleshock.app.PaddleShockApp;
 public class MainMenuState extends BaseAppState {
 
     private final Node uiRoot = new Node("mainMenuUi");
-    private Label comingSoonLabel;
-    private float comingSoonTimer;
 
     @Override
     protected void initialize(Application application) {
@@ -31,8 +29,6 @@ public class MainMenuState extends BaseAppState {
 
     private void rebuild(PaddleShockApp app) {
         uiRoot.detachAllChildren();
-        comingSoonLabel = null;
-        comingSoonTimer = 0f;
 
         SimpleApplication simpleApp = (SimpleApplication) app;
         float screenW = simpleApp.getCamera().getWidth();
@@ -66,8 +62,7 @@ public class MainMenuState extends BaseAppState {
 
         Container menu = new Container(new SpringGridLayout(Axis.Y, Axis.X));
         addMenuButton(menu, "PLAY VS AI", Theme.ORANGE, Theme.ON_ACCENT, app::showLoadout);
-        addMenuButton(menu, "MULTIPLAYER", Theme.PANEL_HOVER, Theme.TEXT,
-                () -> showComingSoon(menu, screenW));
+        addMenuButton(menu, "MULTIPLAYER", Theme.PANEL_HOVER, Theme.TEXT, app::showMultiplayer);
         addMenuButton(menu, "STORE", Theme.PANEL_HOVER, Theme.TEXT, app::showStore);
         addMenuButton(menu, "SETTINGS", Theme.PANEL_HOVER, Theme.TEXT, () -> app.showOptions(app::showMainMenu));
         addMenuButton(menu, "QUIT", Theme.PANEL_HOVER, Theme.TEXT, app::stop);
@@ -75,19 +70,6 @@ public class MainMenuState extends BaseAppState {
         Vector3f menuSize = menu.getPreferredSize();
         menu.setLocalTranslation((screenW - menuSize.x) / 2f, screenH * 0.56f, 1);
         uiRoot.attachChild(menu);
-    }
-
-    private void showComingSoon(Container menu, float screenW) {
-        if (comingSoonLabel != null) {
-            comingSoonLabel.removeFromParent();
-        }
-        comingSoonLabel = new Label("MULTIPLAYER — COMING SOON");
-        comingSoonLabel.setFontSize(15);
-        comingSoonLabel.setColor(Theme.ORANGE);
-        Vector3f size = comingSoonLabel.getPreferredSize();
-        comingSoonLabel.setLocalTranslation((screenW - size.x) / 2f, menu.getLocalTranslation().y - menu.getPreferredSize().y - 12f, 1);
-        uiRoot.attachChild(comingSoonLabel);
-        comingSoonTimer = 1.8f;
     }
 
     private void addMenuButton(Container menu, String label, ColorRGBA bg, ColorRGBA fg, Runnable action) {
@@ -105,13 +87,7 @@ public class MainMenuState extends BaseAppState {
 
     @Override
     public void update(float tpf) {
-        if (comingSoonTimer > 0f) {
-            comingSoonTimer -= tpf;
-            if (comingSoonTimer <= 0f && comingSoonLabel != null) {
-                comingSoonLabel.removeFromParent();
-                comingSoonLabel = null;
-            }
-        }
+        // No per-frame work needed on the main menu itself.
     }
 
     @Override

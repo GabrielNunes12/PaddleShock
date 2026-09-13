@@ -46,4 +46,8 @@ public final class GameConstants {
     public static final int WIN_SCORE = 10;
     public static final int MATCH_REWARD_MIN = 10;
     public static final int MATCH_REWARD_MAX = 15;
+
+    // LAN multiplayer: the port a host offers to bind by default in the MULTIPLAYER screen (the
+    // player can still hand-edit it before hosting, since it's just a suggested free UDP port).
+    public static final int MULTIPLAYER_DEFAULT_PORT = 55123;
 }

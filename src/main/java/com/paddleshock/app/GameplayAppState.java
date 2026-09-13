@@ -42,13 +42,25 @@ import com.paddleshock.entities.Paddle;
 import com.paddleshock.entities.Table;
 import com.paddleshock.entities.TextureSet;
 import com.paddleshock.input.PlayerInput;
+import com.paddleshock.net.NetClient;
+import com.paddleshock.net.NetHost;
+import com.paddleshock.net.NetProtocol;
 import com.paddleshock.sim.MatchSimulation;
 import com.paddleshock.sim.PaddleInput;
 import com.paddleshock.sim.TickResult;
 import com.paddleshock.ui.Theme;
 
-/** A single match vs. the AI: scene setup, per-frame simulation, scoring, pause key. */
+/**
+ * A single match: scene setup, per-frame simulation, scoring, pause key. Runs in one of three
+ * {@link Mode}s - unchanged single-player-vs-AI, listen-server host (runs {@link MatchSimulation}
+ * and broadcasts snapshots to a joiner), or joiner (sends local input, renders received
+ * snapshots, runs no simulation of its own). The scene/HUD setup and local-input gathering are
+ * shared by all three; only {@link #update(float)} branches by mode.
+ */
 public class GameplayAppState extends BaseAppState implements ActionListener {
+
+    /** Which role this instance of the gameplay state is playing. */
+    public enum Mode { SINGLE_PLAYER, HOST, JOINER }
 
     private static final String ACTION_PAUSE = "PS_Pause";
     private static final String[] POWERUP_ACTIONS = {"PS_PowerUp1", "PS_PowerUp2", "PS_PowerUp3"};
@@ -89,6 +101,48 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     private final Vector3f screenRightWorld = new Vector3f();
     private final Vector3f screenUpWorld = new Vector3f();
 
+    private final Mode mode;
+    private final NetHost netHost;
+    private final NetClient netClient;
+
+    /** Consumed (and cleared) on the very next {@link #update}, same buffering as
+     *  {@link #pendingPlayerPowerUpSlot} - used only in {@link Mode#JOINER}, where the local
+     *  player's power-up activation is sent to the host rather than applied locally. */
+    private Integer pendingJoinerPowerUpSlot;
+
+    /** Scores as last reported by the host's snapshot; only used in {@link Mode#JOINER}, since a
+     *  joiner has no local {@link MatchSimulation} to read scores from directly. */
+    private int joinerDisplayScore;
+    private int hostDisplayScore;
+
+    /** Reference-compared against the latest snapshot each frame so joiner-side SFX/HUD/match-over
+     *  reactions (driven off a snapshot's flags) fire exactly once per snapshot, not once per
+     *  render frame the same snapshot happens to still be the "latest" one. */
+    private NetProtocol.SnapshotMessage lastAppliedSnapshot;
+
+    /** The existing, unchanged single-player-vs-AI match. */
+    public GameplayAppState() {
+        this(Mode.SINGLE_PLAYER, null, null);
+    }
+
+    /** A listen-server host match: runs {@link MatchSimulation} locally and broadcasts snapshots
+     *  to the joiner connected via {@code netHost}. */
+    public GameplayAppState(NetHost netHost) {
+        this(Mode.HOST, netHost, null);
+    }
+
+    /** A joiner match: sends local input to, and renders snapshots received from, the host
+     *  connected via {@code netClient}. Runs no {@link MatchSimulation} of its own. */
+    public GameplayAppState(NetClient netClient) {
+        this(Mode.JOINER, null, netClient);
+    }
+
+    private GameplayAppState(Mode mode, NetHost netHost, NetClient netClient) {
+        this.mode = mode;
+        this.netHost = netHost;
+        this.netClient = netClient;
+    }
+
     @Override
     protected void initialize(Application application) {
         this.app = (PaddleShockApp) application;
@@ -108,7 +162,10 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         simpleApp.getRootNode().attachChild(gameNode);
         simpleApp.getGuiNode().attachChild(hudNode);
 
-        matchSimulation.startNewMatch();
+        if (matchSimulation != null) {
+            matchSimulation.startNewMatch();
+        }
+        updateScoreText();
     }
 
     private void setUpCamera(SimpleApplication simpleApp) {
@@ -172,7 +229,11 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                 combinedRestitution, level.getGravityMultiplier(), level.getWindAccelX());
         gameNode.attachChild(ball.getNode());
 
-        matchSimulation = new MatchSimulation(ball, playerPaddle, opponentPaddle, table);
+        // A joiner never runs its own simulation - it only renders whatever the host's
+        // MatchSimulation reports via network snapshots.
+        if (mode != Mode.JOINER) {
+            matchSimulation = new MatchSimulation(ball, playerPaddle, opponentPaddle, table);
+        }
         resolveLoadout(profile);
 
         if ("level_classic".equals(level.getId())) {
@@ -307,8 +368,14 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     }
 
     private void updateScoreText() {
-        scoreText.setText("You " + matchSimulation.getPlayerScore() + " : "
-                + matchSimulation.getOpponentScore() + " AI  (Esc: pause)");
+        switch (mode) {
+            case SINGLE_PLAYER -> scoreText.setText("You " + matchSimulation.getPlayerScore() + " : "
+                    + matchSimulation.getOpponentScore() + " AI  (Esc: pause)");
+            case HOST -> scoreText.setText("You " + matchSimulation.getPlayerScore() + " : "
+                    + matchSimulation.getOpponentScore() + " Joiner  (Esc: pause)");
+            case JOINER -> scoreText.setText("You " + joinerDisplayScore + " : "
+                    + hostDisplayScore + " Host  (Esc: pause)");
+        }
     }
 
     /** A flat square, filled with the power-up's own color, used as its HUD slot icon. */
@@ -394,13 +461,138 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             return;
         }
         // Buffered rather than applied straight to the PowerUpManager here: activation now flows
-        // through the same tick-shaped PaddleInput the AI (and, later, a remote opponent) uses, so
-        // there's exactly one code path that turns "activate slot N" into a simulation effect.
-        pendingPlayerPowerUpSlot = slot;
+        // through the same tick-shaped PaddleInput the AI (and a remote opponent, via NetHost/
+        // NetClient) uses, so there's exactly one code path that turns "activate slot N" into a
+        // simulation effect. In JOINER mode there's no local PowerUpManager to apply it to at
+        // all - it's buffered the same way, but consumed into the outgoing network packet instead.
+        if (mode == Mode.JOINER) {
+            pendingJoinerPowerUpSlot = slot;
+        } else {
+            pendingPlayerPowerUpSlot = slot;
+        }
     }
 
     @Override
     public void update(float tpf) {
+        switch (mode) {
+            case SINGLE_PLAYER -> updateSinglePlayer(tpf);
+            case HOST -> updateHost(tpf);
+            case JOINER -> updateJoiner(tpf);
+        }
+    }
+
+    private void updateSinglePlayer(float tpf) {
+        PaddleInput playerTickInput = computeLocalPaddleInput(tpf);
+        PaddleInput opponentTickInput = computeOpponentAiInput(tpf);
+
+        TickResult result = matchSimulation.tick(tpf, playerTickInput, opponentTickInput);
+
+        applyTickResult(result);
+        updatePowerUpHud();
+    }
+
+    private void updateHost(float tpf) {
+        PaddleInput hostTickInput = computeLocalPaddleInput(tpf);
+        PaddleInput joinerTickInput = netHost.hasJoiner() ? netHost.pollJoinerPaddleInput() : PaddleInput.none();
+
+        TickResult result = matchSimulation.tick(tpf, hostTickInput, joinerTickInput);
+
+        applyTickResult(result);
+        updatePowerUpHud();
+
+        if (netHost.hasJoiner()) {
+            netHost.sendSnapshot(buildSnapshot(result));
+        }
+    }
+
+    private NetProtocol.SnapshotMessage buildSnapshot(TickResult result) {
+        Vector3f ballPos = matchSimulation.getBall().getPosition();
+        Vector3f ballVel = matchSimulation.getBall().getVelocity();
+        Vector3f hostPaddlePos = matchSimulation.getPlayerPaddle().getPosition();
+        Vector3f joinerPaddlePos = matchSimulation.getOpponentPaddle().getPosition();
+
+        int flags = 0;
+        if (result.isWallBounce()) {
+            flags |= NetProtocol.FLAG_WALL_BOUNCE;
+        }
+        if (result.isPlayerPaddleHit()) {
+            flags |= NetProtocol.FLAG_HOST_PADDLE_HIT;
+        }
+        if (result.isOpponentPaddleHit()) {
+            flags |= NetProtocol.FLAG_JOINER_PADDLE_HIT;
+        }
+        if (result.isAnyPowerUpActivated()) {
+            flags |= NetProtocol.FLAG_POWERUP_ACTIVATED;
+        }
+        if (result.isMatchOver()) {
+            flags |= NetProtocol.FLAG_MATCH_OVER;
+            if (result.isPlayerWon()) {
+                flags |= NetProtocol.FLAG_HOST_WON;
+            }
+        }
+
+        return new NetProtocol.SnapshotMessage(
+                ballPos.x, ballPos.y, ballPos.z,
+                ballVel.x, ballVel.z, matchSimulation.getBall().getVerticalVelocity(),
+                hostPaddlePos.x, hostPaddlePos.z,
+                joinerPaddlePos.x, joinerPaddlePos.z,
+                matchSimulation.getPlayerScore(), matchSimulation.getOpponentScore(),
+                flags);
+    }
+
+    private void updateJoiner(float tpf) {
+        PaddleInput localTickInput = computeLocalPaddleInput(tpf);
+        PowerUpDefinition activated = consumePendingJoinerPowerUp();
+        String powerUpId = activated != null ? activated.getId() : "";
+        netClient.sendInput(localTickInput.getDeltaX(), localTickInput.getDeltaZ(), powerUpId);
+
+        NetProtocol.SnapshotMessage snapshot = netClient.getLatestSnapshot();
+        if (snapshot != null) {
+            applySnapshotToScene(snapshot);
+        }
+    }
+
+    private void applySnapshotToScene(NetProtocol.SnapshotMessage snapshot) {
+        ball.setNetworkState(snapshot.ballX(), snapshot.ballY(), snapshot.ballZ(),
+                snapshot.ballVelX(), snapshot.ballVelZ(), snapshot.ballVerticalVel());
+        // playerPaddle/opponentPaddle here just mean "the two paddle nodes in this scene": on the
+        // joiner, playerPaddle renders the host's paddle and opponentPaddle renders the joiner's
+        // own paddle (i.e. the one this client's own mouse/gamepad input drives, authoritatively
+        // echoed back by the host) - there is no local moveDelta() call on either in this mode.
+        playerPaddle.setNetworkPosition(snapshot.hostPaddleX(), snapshot.hostPaddleZ());
+        opponentPaddle.setNetworkPosition(snapshot.joinerPaddleX(), snapshot.joinerPaddleZ());
+
+        hostDisplayScore = snapshot.hostScore();
+        joinerDisplayScore = snapshot.joinerScore();
+
+        // Reference-compared: only react to flags on a snapshot we haven't already processed, so
+        // a frame that re-reads the same "latest" snapshot (client frame faster than host tick
+        // rate) doesn't replay its SFX/score-update/match-over reaction a second time.
+        if (snapshot != lastAppliedSnapshot) {
+            lastAppliedSnapshot = snapshot;
+            if (snapshot.isWallBounce()) {
+                app.getAudioManager().playSfx("wall_bounce.ogg");
+            }
+            if (snapshot.isHostPaddleHit() || snapshot.isJoinerPaddleHit()) {
+                app.getAudioManager().playSfx("paddle_hit.ogg");
+            }
+            if (snapshot.isPowerUpActivated()) {
+                app.getAudioManager().playSfx("powerup_activate.ogg");
+            }
+            updateScoreText();
+            if (snapshot.isMatchOver()) {
+                // From the joiner's own point of view: "you" are the joiner, so isHostWon()
+                // (a host-perspective flag) is negated to get whether the local viewer won.
+                app.endMatch(!snapshot.isHostWon(), joinerDisplayScore, hostDisplayScore);
+            }
+        }
+    }
+
+    /** Local mouse/gamepad input gathered into a tick-shaped {@link PaddleInput}, exactly as
+     *  single-player has always gathered its player-side input - shared by all three modes: it's
+     *  fed straight into {@link MatchSimulation#tick} in {@link Mode#SINGLE_PLAYER}/{@link Mode#HOST},
+     *  or sent over the network in {@link Mode#JOINER}. */
+    private PaddleInput computeLocalPaddleInput(float tpf) {
         float[] mouseDelta = playerInput.consumeDelta();
         float[] gamepadStick = playerInput.consumeGamepadInput();
         boolean gamepadActive = gamepadStick[0] != 0f || gamepadStick[1] != 0f;
@@ -416,13 +608,17 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             worldDeltaZ = (screenRightWorld.z * mouseDelta[0] + screenUpWorld.z * mouseDelta[1]) * scale;
         }
 
-        PaddleInput playerTickInput = new PaddleInput(worldDeltaX, worldDeltaZ, consumePendingPlayerPowerUp());
-        PaddleInput opponentTickInput = computeOpponentAiInput(tpf);
+        PowerUpDefinition activated = mode == Mode.JOINER ? null : consumePendingPlayerPowerUp();
+        return new PaddleInput(worldDeltaX, worldDeltaZ, activated);
+    }
 
-        TickResult result = matchSimulation.tick(tpf, playerTickInput, opponentTickInput);
-
-        applyTickResult(result);
-        updatePowerUpHud();
+    private PowerUpDefinition consumePendingJoinerPowerUp() {
+        if (pendingJoinerPowerUpSlot == null) {
+            return null;
+        }
+        PowerUpDefinition def = powerUpLoadout[pendingJoinerPowerUpSlot];
+        pendingJoinerPowerUpSlot = null;
+        return def;
     }
 
     private PowerUpDefinition consumePendingPlayerPowerUp() {
@@ -489,7 +685,9 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     }
 
     public void startNewMatch() {
-        matchSimulation.startNewMatch();
+        if (matchSimulation != null) {
+            matchSimulation.startNewMatch();
+        }
         updateScoreText();
     }
 
@@ -504,6 +702,15 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         }
         simpleApp.getInputManager().removeListener(this);
         simpleApp.getViewPort().setBackgroundColor(ColorRGBA.Black);
+        // Network resources (the UDP socket + its background receive thread) belong to this
+        // match's lifetime, not the app shell's - close them whenever this state goes away,
+        // whether via a normal match end or the player quitting to the main menu mid-match.
+        if (netHost != null) {
+            netHost.close();
+        }
+        if (netClient != null) {
+            netClient.close();
+        }
     }
 
     @Override

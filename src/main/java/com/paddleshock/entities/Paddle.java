@@ -74,6 +74,15 @@ public class Paddle {
         return node.getLocalTranslation();
     }
 
+    /** Directly applies a received authoritative position from a network host snapshot; a
+     *  networked joiner client never calls {@link #moveDelta} on the paddle it doesn't own
+     *  locally, it only renders whatever position the host last reported. */
+    public void setNetworkPosition(float worldX, float worldZ) {
+        this.x = worldX;
+        this.zOffset = worldZ - homeZ;
+        updateTransform();
+    }
+
     public Node getNode() {
         return node;
     }
