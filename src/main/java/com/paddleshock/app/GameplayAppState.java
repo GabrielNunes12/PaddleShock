@@ -170,8 +170,12 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         powerUpManager = new PowerUpManager(playerPaddle, opponentPaddle);
         resolveLoadout(profile);
 
-        gameNode.attachChild(buildSideDecor());
-        gameNode.attachChild(buildTrophyDecor());
+        if ("level_classic".equals(level.getId())) {
+            gameNode.attachChild(buildSideDecor());
+            gameNode.attachChild(buildTrophyDecor());
+        } else {
+            gameNode.attachChild(buildThemedDecor());
+        }
     }
 
     /** Resolves the player's 3 store-configured power-up slots into their catalog definitions. */
@@ -198,6 +202,42 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         scaleToHeight(trophy, 1.4f);
         trophy.setLocalTranslation(-GameConstants.TABLE_HALF_WIDTH - 2f, 0f, -3f);
         return trophy;
+    }
+
+    /** Themed side decor for every non-classic level, replacing the ping-pong table/trophy pair. */
+    private Node buildThemedDecor() {
+        Node decor = new Node("themedDecor");
+        float rightX = GameConstants.TABLE_HALF_WIDTH + 2f;
+        float leftX = -GameConstants.TABLE_HALF_WIDTH - 2f;
+
+        switch (level.getId()) {
+            case "level_neon" -> {
+                decor.attachChild(loadProp("Models/Decor/arcade_machine.glb", 2.0f, rightX, -3f, FastMath.QUARTER_PI * 0.6f));
+                decor.attachChild(loadProp("Models/Decor/arcade_machine.glb", 2.0f, leftX, -3f, -FastMath.QUARTER_PI * 0.6f));
+            }
+            case "level_sunset" -> {
+                decor.attachChild(loadProp("Models/Decor/palm_tree.glb", 3.4f, rightX, -3f, 0f));
+                decor.attachChild(loadProp("Models/Decor/beach_umbrella.glb", 2.2f, leftX, -3f, 0f));
+            }
+            case "level_space" -> {
+                decor.attachChild(loadProp("Models/Decor/satellite_dish.glb", 1.8f, rightX, -3f, 0f));
+                decor.attachChild(loadProp("Models/Decor/satellite_dish.glb", 1.8f, leftX, -3f, FastMath.PI));
+            }
+            default -> {
+                // No themed decor defined; the level falls back to an empty side (shouldn't happen
+                // for any catalog level today).
+            }
+        }
+        return decor;
+    }
+
+    /** Loads a decor model, scales it to a target height, and places it beside the table. */
+    private Spatial loadProp(String modelPath, float targetHeight, float x, float z, float rotationY) {
+        Spatial model = getApplication().getAssetManager().loadModel(modelPath);
+        scaleToHeight(model, targetHeight);
+        model.rotate(0, rotationY, 0);
+        model.setLocalTranslation(x, 0f, z);
+        return model;
     }
 
     /** Scales a loaded model (whose own baked-in size varies per source file) to a target height. */
