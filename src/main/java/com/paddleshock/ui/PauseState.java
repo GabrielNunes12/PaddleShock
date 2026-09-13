@@ -65,7 +65,10 @@ public class PauseState extends BaseAppState {
         button.setColor(fg);
         button.setFontSize(16);
         button.setPreferredSize(new Vector3f(260, 44, 0));
-        button.addClickCommands(source -> action.run());
+        button.addClickCommands(source -> {
+            ((PaddleShockApp) getApplication()).getAudioManager().playSfx("button_click.ogg");
+            action.run();
+        });
     }
 
     @Override

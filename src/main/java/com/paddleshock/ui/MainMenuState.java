@@ -97,7 +97,10 @@ public class MainMenuState extends BaseAppState {
         button.setColor(fg);
         button.setFontSize(18);
         button.setPreferredSize(new Vector3f(280, 48, 0));
-        button.addClickCommands(source -> action.run());
+        button.addClickCommands(source -> {
+            ((PaddleShockApp) getApplication()).getAudioManager().playSfx("button_click.ogg");
+            action.run();
+        });
     }
 
     @Override

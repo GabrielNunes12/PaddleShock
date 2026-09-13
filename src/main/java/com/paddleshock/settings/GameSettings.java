@@ -6,6 +6,7 @@ public class GameSettings {
     private float mouseSensitivity = 1.0f;
     private float brightness = 1.0f;
     private float soundVolume = 0.8f;
+    private float musicVolume = 0.6f;
     private VideoQuality videoQuality = VideoQuality.MEDIUM;
     private boolean fullscreen = false;
     private Resolution resolution = Resolution.R_1280x720;
@@ -32,6 +33,14 @@ public class GameSettings {
 
     public void setSoundVolume(float soundVolume) {
         this.soundVolume = clamp(soundVolume, 0f, 1f);
+    }
+
+    public float getMusicVolume() {
+        return musicVolume;
+    }
+
+    public void setMusicVolume(float musicVolume) {
+        this.musicVolume = clamp(musicVolume, 0f, 1f);
     }
 
     public VideoQuality getVideoQuality() {

@@ -10,6 +10,7 @@ import com.simsilica.lemur.GuiGlobals;
 import com.simsilica.lemur.style.BaseStyles;
 
 import com.paddleshock.GameConstants;
+import com.paddleshock.audio.AudioManager;
 import com.paddleshock.data.PlayerProfile;
 import com.paddleshock.data.SaveManager;
 import com.paddleshock.settings.GameSettings;
@@ -25,6 +26,7 @@ public class PaddleShockApp extends SimpleApplication {
 
     private PlayerProfile profile;
     private GameSettings gameSettings;
+    private AudioManager audioManager;
 
     private SplashState splashState;
     private MainMenuState mainMenuState;
@@ -45,6 +47,7 @@ public class PaddleShockApp extends SimpleApplication {
 
         profile = SaveManager.loadProfile();
         gameSettings = SaveManager.loadSettings();
+        audioManager = new AudioManager(assetManager, gameSettings);
 
         GuiGlobals.initialize(this);
         BaseStyles.loadGlassStyle();
@@ -83,6 +86,10 @@ public class PaddleShockApp extends SimpleApplication {
         return gameSettings;
     }
 
+    public AudioManager getAudioManager() {
+        return audioManager;
+    }
+
     public void saveGameSettings() {
         SaveManager.saveSettings(gameSettings);
     }
@@ -98,6 +105,7 @@ public class PaddleShockApp extends SimpleApplication {
         storeState.setEnabled(false);
         matchEndState.setEnabled(false);
         mainMenuState.setEnabled(true);
+        audioManager.playMenuMusic();
     }
 
     public void startMatchVsAI() {
@@ -108,6 +116,7 @@ public class PaddleShockApp extends SimpleApplication {
         }
         gameplayState = new GameplayAppState();
         stateManager.attach(gameplayState);
+        audioManager.playRandomMatchMusic();
     }
 
     public void showPause() {
@@ -132,6 +141,8 @@ public class PaddleShockApp extends SimpleApplication {
     /** Called by the gameplay state once a side reaches the winning score; awards credits on a player win. */
     public void endMatch(boolean playerWon, int playerScore, int opponentScore) {
         gameplayState.setEnabled(false);
+        audioManager.stopMusic();
+        audioManager.playSfx(playerWon ? "match_win.ogg" : "match_defeat.ogg");
 
         int reward = 0;
         if (playerWon) {
@@ -148,6 +159,7 @@ public class PaddleShockApp extends SimpleApplication {
         mainMenuState.setEnabled(false);
         matchEndState.setEnabled(false);
         storeState.setEnabled(true);
+        audioManager.playMenuMusic();
     }
 
     public void showOptions(Runnable backAction) {

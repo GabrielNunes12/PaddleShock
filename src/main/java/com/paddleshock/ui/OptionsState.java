@@ -25,6 +25,7 @@ public class OptionsState extends BaseAppState {
     private Label mouseSensitivityLabel;
     private Label brightnessLabel;
     private Label soundVolumeLabel;
+    private Label musicVolumeLabel;
     private Label videoQualityLabel;
     private Label fullscreenLabel;
     private Label resolutionLabel;
@@ -69,6 +70,8 @@ public class OptionsState extends BaseAppState {
                 () -> adjustBrightness(app, -0.1f), () -> adjustBrightness(app, 0.1f));
         soundVolumeLabel = addStepperRow(panel, "SOUND VOLUME",
                 () -> adjustSoundVolume(app, -0.1f), () -> adjustSoundVolume(app, 0.1f));
+        musicVolumeLabel = addStepperRow(panel, "MUSIC VOLUME",
+                () -> adjustMusicVolume(app, -0.1f), () -> adjustMusicVolume(app, 0.1f));
         videoQualityLabel = addStepperRow(panel, "VIDEO QUALITY",
                 () -> cycleVideoQuality(app, -1), () -> cycleVideoQuality(app, 1));
         resolutionLabel = addStepperRow(panel, "RESOLUTION",
@@ -83,6 +86,7 @@ public class OptionsState extends BaseAppState {
         back.setFontSize(16);
         back.setPreferredSize(new Vector3f(260, 44, 0));
         back.addClickCommands(source -> {
+            playClick();
             setEnabled(false);
             backAction.run();
         });
@@ -107,7 +111,10 @@ public class OptionsState extends BaseAppState {
         minus.setBackground(new QuadBackgroundComponent(Theme.PANEL_HOVER));
         minus.setColor(Theme.TEXT);
         minus.setPreferredSize(new Vector3f(36, 30, 0));
-        minus.addClickCommands(source -> onDecrease.run());
+        minus.addClickCommands(source -> {
+            playClick();
+            onDecrease.run();
+        });
 
         Label valueLabel = row.addChild(new Label(""));
         valueLabel.setColor(Theme.TEXT);
@@ -119,9 +126,16 @@ public class OptionsState extends BaseAppState {
         plus.setBackground(new QuadBackgroundComponent(Theme.PANEL_HOVER));
         plus.setColor(Theme.TEXT);
         plus.setPreferredSize(new Vector3f(36, 30, 0));
-        plus.addClickCommands(source -> onIncrease.run());
+        plus.addClickCommands(source -> {
+            playClick();
+            onIncrease.run();
+        });
 
         return valueLabel;
+    }
+
+    private void playClick() {
+        ((PaddleShockApp) getApplication()).getAudioManager().playSfx("button_click.ogg");
     }
 
     private void adjustMouseSensitivity(PaddleShockApp app, float delta) {
@@ -142,6 +156,14 @@ public class OptionsState extends BaseAppState {
         GameSettings settings = app.getGameSettings();
         settings.setSoundVolume(settings.getSoundVolume() + delta);
         app.saveGameSettings();
+        refreshLabels(settings);
+    }
+
+    private void adjustMusicVolume(PaddleShockApp app, float delta) {
+        GameSettings settings = app.getGameSettings();
+        settings.setMusicVolume(settings.getMusicVolume() + delta);
+        app.saveGameSettings();
+        app.getAudioManager().refreshMusicVolume();
         refreshLabels(settings);
     }
 
@@ -179,6 +201,7 @@ public class OptionsState extends BaseAppState {
         mouseSensitivityLabel.setText(String.format("%.1f", settings.getMouseSensitivity()));
         brightnessLabel.setText(String.format("%.1f", settings.getBrightness()));
         soundVolumeLabel.setText(String.format("%.1f", settings.getSoundVolume()));
+        musicVolumeLabel.setText(String.format("%.1f", settings.getMusicVolume()));
         videoQualityLabel.setText(settings.getVideoQuality().name());
         resolutionLabel.setText(settings.getResolution().toString());
         fullscreenLabel.setText(settings.isFullscreen() ? "ON" : "OFF");

@@ -156,7 +156,10 @@ public class MatchEndState extends BaseAppState {
         button.setColor(fg);
         button.setFontSize(16);
         button.setPreferredSize(new Vector3f(BUTTON_WIDTH, 46, 0));
-        button.addClickCommands(source -> action.run());
+        button.addClickCommands(source -> {
+            ((PaddleShockApp) getApplication()).getAudioManager().playSfx("button_click.ogg");
+            action.run();
+        });
     }
 
     private void attachText(float x, float topY, String text, float size, ColorRGBA color) {

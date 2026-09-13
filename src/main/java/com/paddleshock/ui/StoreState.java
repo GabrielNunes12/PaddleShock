@@ -106,6 +106,7 @@ public class StoreState extends BaseAppState {
         tab.setColor(active ? Theme.ON_ACCENT : Theme.TEXT_DIM);
         tab.setFontSize(16);
         tab.addClickCommands(source -> {
+            app.getAudioManager().playSfx("button_click.ogg");
             selectedCategory = category;
             rebuild(app);
         });
@@ -203,6 +204,7 @@ public class StoreState extends BaseAppState {
                 profile.purchase(category, id, price);
             }
             app.saveProfile();
+            app.getAudioManager().playSfx("button_confirm.ogg");
             rebuild(app);
         });
     }
@@ -258,6 +260,7 @@ public class StoreState extends BaseAppState {
             buy.addClickCommands((Command<Button>) source -> {
                 profile.purchasePowerUp(item.getId(), item.getPrice());
                 app.saveProfile();
+                app.getAudioManager().playSfx("button_confirm.ogg");
                 rebuild(app);
             });
         } else {
@@ -274,6 +277,7 @@ public class StoreState extends BaseAppState {
                 slotButton.addClickCommands((Command<Button>) source -> {
                     profile.setLoadoutSlot(slotIndex, isThisSlot ? "" : item.getId());
                     app.saveProfile();
+                    app.getAudioManager().playSfx("button_click.ogg");
                     rebuild(app);
                 });
             }
@@ -292,7 +296,10 @@ public class StoreState extends BaseAppState {
         back.setColor(Theme.TEXT);
         back.setFontSize(15);
         back.setLocalTranslation(32, FOOTER_HEIGHT - 12, 2);
-        back.addClickCommands(source -> app.showMainMenu());
+        back.addClickCommands(source -> {
+            app.getAudioManager().playSfx("button_click.ogg");
+            app.showMainMenu();
+        });
         uiRoot.attachChild(back);
     }
 

@@ -333,7 +333,9 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         if (def == null) {
             return;
         }
-        powerUpManager.activatePlayerPowerUp(def.getType(), def.getCooldownSeconds());
+        if (powerUpManager.activatePlayerPowerUp(def.getType(), def.getCooldownSeconds())) {
+            app.getAudioManager().playSfx("powerup_activate.ogg");
+        }
     }
 
     @Override
@@ -379,7 +381,9 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             return;
         }
         PowerUpDefinition chosen = ready.get((int) (Math.random() * ready.size()));
-        powerUpManager.activateAiPowerUp(chosen.getType(), chosen.getCooldownSeconds());
+        if (powerUpManager.activateAiPowerUp(chosen.getType(), chosen.getCooldownSeconds())) {
+            app.getAudioManager().playSfx("powerup_activate.ogg");
+        }
     }
 
     private void handleCollisions() {
@@ -387,6 +391,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
 
         if (table.isOutsideSideRails(pos, ball.getRadius())) {
             ball.bounceOffSideRail();
+            app.getAudioManager().playSfx("wall_bounce.ogg");
         }
 
         tryPaddleBounce(playerPaddle);
@@ -395,6 +400,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         if (pos.z < -GameConstants.TABLE_HALF_LENGTH) {
             opponentScore++;
             updateScoreText();
+            app.getAudioManager().playSfx("score.ogg");
             if (opponentScore >= GameConstants.WIN_SCORE) {
                 app.endMatch(false, playerScore, opponentScore);
             } else {
@@ -403,6 +409,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         } else if (pos.z > GameConstants.TABLE_HALF_LENGTH) {
             playerScore++;
             updateScoreText();
+            app.getAudioManager().playSfx("score.ogg");
             if (playerScore >= GameConstants.WIN_SCORE) {
                 app.endMatch(true, playerScore, opponentScore);
             } else {
@@ -421,6 +428,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
 
         if (withinReach && withinPaddleWidth) {
             ball.bounceOffPaddle(paddle);
+            app.getAudioManager().playSfx("paddle_hit.ogg");
         }
     }
 
