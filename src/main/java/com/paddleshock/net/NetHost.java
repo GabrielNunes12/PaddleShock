@@ -25,12 +25,17 @@ public class NetHost implements AutoCloseable {
     private final Thread receiveThread;
     private volatile boolean running = true;
 
+    private final InetSocketAddress publicAddress;
     private volatile InetSocketAddress joinerAddress;
     private final AtomicReference<NetProtocol.InputMessage> latestInput =
             new AtomicReference<>(NetProtocol.InputMessage.NEUTRAL);
 
     public NetHost(int port) throws SocketException {
         socket = new DatagramSocket(port);
+        // STUN discovery does its own blocking socket.receive() calls, so it must finish (and
+        // its per-attempt SO_TIMEOUT must be restored) before the receive thread starts reading
+        // the same socket - otherwise the two would race for incoming packets.
+        publicAddress = StunClient.discoverPublicAddress(socket);
         receiveThread = new Thread(this::receiveLoop, "NetHost-recv");
         receiveThread.setDaemon(true);
         receiveThread.start();
@@ -114,6 +119,13 @@ public class NetHost implements AutoCloseable {
 
     public int getPort() {
         return socket.getLocalPort();
+    }
+
+    /** This machine's public ip:port as seen from the internet (via STUN), for internet play
+     *  through AWS lobby-code matchmaking. {@code null} if discovery failed (no internet, or all
+     *  STUN traffic was blocked) - callers should fall back to LAN-only direct connect. */
+    public InetSocketAddress getPublicAddress() {
+        return publicAddress;
     }
 
     @Override

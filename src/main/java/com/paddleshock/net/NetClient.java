@@ -22,6 +22,7 @@ public class NetClient implements AutoCloseable {
     private final Thread receiveThread;
     private volatile boolean running = true;
 
+    private final InetSocketAddress publicAddress;
     private volatile boolean connected = false;
     private volatile boolean rejected = false;
     private final AtomicReference<NetProtocol.SnapshotMessage> latestSnapshot = new AtomicReference<>();
@@ -29,6 +30,9 @@ public class NetClient implements AutoCloseable {
     public NetClient(String hostAddress, int port) throws IOException {
         this.hostAddress = new InetSocketAddress(InetAddress.getByName(hostAddress), port);
         socket = new DatagramSocket();
+        // Same ordering constraint as NetHost: STUN discovery's own blocking receives must
+        // finish before the background receive thread starts reading this socket.
+        publicAddress = StunClient.discoverPublicAddress(socket);
         receiveThread = new Thread(this::receiveLoop, "NetClient-recv");
         receiveThread.setDaemon(true);
         receiveThread.start();
@@ -102,6 +106,13 @@ public class NetClient implements AutoCloseable {
     /** The most recently received authoritative snapshot, or {@code null} if none has arrived yet. */
     public NetProtocol.SnapshotMessage getLatestSnapshot() {
         return latestSnapshot.get();
+    }
+
+    /** This machine's public ip:port as seen from the internet (via STUN), for internet play
+     *  through AWS lobby-code matchmaking. {@code null} if discovery failed (no internet, or all
+     *  STUN traffic was blocked) - callers should fall back to LAN-only direct connect. */
+    public InetSocketAddress getPublicAddress() {
+        return publicAddress;
     }
 
     @Override

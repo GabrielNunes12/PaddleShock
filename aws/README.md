@@ -52,13 +52,19 @@ Single POST endpoint, JSON body, `action` field selects behavior:
 - `{"action":"join","code":"ABC123","addr":"<joiner's public ip:port>"}` -> `{"hostAddr":"..."}`
 - `{"action":"poll","code":"ABC123"}` (host polls this) -> `{"joinerAddr": null | "..."}`
 
-## Not yet built (client side)
+## Client-side progress
 
-- STUN client in `NetHost`/`NetClient`'s existing `DatagramSocket` to discover each side's public
-  `ip:port` (the discovery must happen on the same socket/port used for actual game traffic).
-- Lobby-code UI in `MultiplayerState` (replacing/augmenting the current IP:port text field).
-- `NetHost` becoming an active puncher (sends toward the joiner's public addr once known) instead
-  of purely reactive - required for NAT hole-punching to actually open a path both ways.
+- **Done (Phase B)**: `StunClient` (`src/main/java/com/paddleshock/net/StunClient.java`) - a
+  minimal RFC 5389 STUN binding client. `NetHost`/`NetClient` now run discovery on their own
+  `DatagramSocket` at construction, before starting their background receive thread (required -
+  STUN discovery does its own blocking `socket.receive()` calls, so it must finish first or it'd
+  race the receive thread for incoming packets). Exposed via `getPublicAddress()` on both.
+  Live-verified against real Google STUN servers (~70ms, consistent across runs) and regression
+  -tested against the full two-instance LAN host/join flow (unaffected).
+- **Not yet built**: lobby-code UI in `MultiplayerState` (replacing/augmenting the IP:port text
+  field) to actually call the AWS Lambda and use the discovered public addresses (Phase C);
+  `NetHost` becoming an active puncher (sends toward the joiner's public addr once known) instead
+  of purely reactive - required for NAT hole-punching to actually open a path both ways (Phase D).
 
 See the main session's design doc discussion (not committed) for the full phase breakdown
 (A: AWS infra [this], B: STUN client, C: lobby UI, D: active punching, E: cross-network QA).
