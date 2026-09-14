@@ -16,6 +16,8 @@ import com.paddleshock.GameConstants;
 import com.paddleshock.audio.AudioManager;
 import com.paddleshock.data.PlayerProfile;
 import com.paddleshock.data.SaveManager;
+import com.paddleshock.diagnostics.CrashReporter;
+import com.paddleshock.diagnostics.NetLog;
 import com.paddleshock.net.NetClient;
 import com.paddleshock.net.NetHost;
 import com.paddleshock.net.NetProtocol;
@@ -66,6 +68,10 @@ public class PaddleShockApp extends SimpleApplication {
         inputManager.deleteMapping(INPUT_MAPPING_EXIT);
 
         steamManager = new SteamManager();
+
+        // See com.paddleshock.diagnostics.CrashReporter - lets a crash report note whether a
+        // match was in progress and what mode, read lazily at crash time (never eagerly).
+        CrashReporter.setContextSupplier(this::describeMatchStateForCrashReport);
 
         profile = SaveManager.loadProfile();
         // getPlayerId() lazily generates one on a save that predates it - persist that
@@ -122,6 +128,33 @@ public class PaddleShockApp extends SimpleApplication {
     public void destroy() {
         steamManager.shutdown();
         super.destroy();
+    }
+
+    /** jME's own render-thread error path (see {@code LegacyApplication.handleError}): called
+     *  instead of letting a render-thread exception propagate as an uncaught exception, so it
+     *  would otherwise bypass {@link Thread#setDefaultUncaughtExceptionHandler}. Route it through
+     *  the same local crash reporting as every other thread before falling back to jME's own
+     *  handling (logging + stopping the app). */
+    @Override
+    public void handleError(String message, Throwable throwable) {
+        CrashReporter.reportRenderThreadError(message, throwable);
+        super.handleError(message, throwable);
+    }
+
+    /** Best-effort description of current match state for {@link CrashReporter} - whether a match
+     *  is in progress and which mode (single-player/host/joiner), if cheaply available. Read
+     *  lazily at crash time, so this must never assume any particular init order has completed. */
+    private String describeMatchStateForCrashReport() {
+        GameplayAppState state = gameplayState;
+        if (state == null || !state.isEnabled()) {
+            return "no match in progress";
+        }
+        String mode = switch (state.getMode()) {
+            case SINGLE_PLAYER -> "single-player";
+            case HOST -> "host";
+            case JOINER -> "joiner";
+        };
+        return mode + " match in progress";
     }
 
     public SteamManager getSteamManager() {
@@ -271,6 +304,7 @@ public class PaddleShockApp extends SimpleApplication {
                 preMatchRank = RankClient.getRank(playerId);
             } catch (IOException e) {
                 preMatchRank = null; // endRankedJoinerMatch falls back to "no delta shown"
+                NetLog.log("rank-prefetch failed for player " + playerId, e);
             }
         }, "rank-prefetch");
         thread.setDaemon(true);
@@ -354,6 +388,7 @@ public class PaddleShockApp extends SimpleApplication {
             } catch (IOException e) {
                 // offline, or the rank service is unreachable - the match itself already
                 // completed normally, so just show "rank unavailable" rather than fail anything.
+                NetLog.log("ranked match report failed (host)", e);
             }
             matchEndState.reportRankResult(result);
         }, "rank-report");
@@ -392,6 +427,7 @@ public class PaddleShockApp extends SimpleApplication {
                 result = RankClient.reportMatchResult(matchId, hostPlayerId, joinerPlayerId, true, lobbyCode).getHost();
             } catch (IOException e) {
                 // offline, or the rank service is unreachable - the forfeit itself still stands.
+                NetLog.log("ranked forfeit report failed (host)", e);
             }
             matchEndState.reportRankResult(result);
         }, "rank-report-forfeit");
@@ -457,6 +493,7 @@ public class PaddleShockApp extends SimpleApplication {
                 matchEndState.reportRankResult(fetched.withDeltaFrom(baseline));
             } catch (IOException e) {
                 matchEndState.reportRankResult(null); // offline, or the rank service is unreachable
+                NetLog.log("ranked rank-fetch failed (joiner)", e);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 matchEndState.reportRankResult(null);

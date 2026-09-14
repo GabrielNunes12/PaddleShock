@@ -9,6 +9,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
+import com.paddleshock.diagnostics.NetLog;
+
 /**
  * The joiner side of a LAN match: connects to a host address:port, sends its own local input
  * once per frame, and applies whatever authoritative snapshot most recently arrived directly to
@@ -179,6 +181,7 @@ public class NetClient implements AutoCloseable {
             }
         } catch (IOException e) {
             // malformed packet - ignore
+            NetLog.log("NetClient received a malformed packet from the host", e);
         }
     }
 
