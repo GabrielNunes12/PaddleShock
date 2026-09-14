@@ -14,6 +14,7 @@ import java.net.SocketException;
 
 import com.paddleshock.GameConstants;
 import com.paddleshock.audio.AudioManager;
+import com.paddleshock.data.MatchHistoryEntry;
 import com.paddleshock.data.PlayerProfile;
 import com.paddleshock.data.SaveManager;
 import com.paddleshock.diagnostics.CrashReporter;
@@ -32,6 +33,7 @@ import com.paddleshock.ui.MatchEndState;
 import com.paddleshock.ui.MultiplayerState;
 import com.paddleshock.ui.OptionsState;
 import com.paddleshock.ui.PauseState;
+import com.paddleshock.ui.ProfileState;
 import com.paddleshock.ui.SplashState;
 import com.paddleshock.ui.StoreState;
 
@@ -56,6 +58,7 @@ public class PaddleShockApp extends SimpleApplication {
     private MultiplayerState multiplayerState;
     private com.paddleshock.ui.HowToPlayState howToPlayState;
     private LeaderboardState leaderboardState;
+    private ProfileState profileState;
     private GameplayAppState gameplayState;
 
     @Override
@@ -96,6 +99,7 @@ public class PaddleShockApp extends SimpleApplication {
         multiplayerState = new MultiplayerState();
         howToPlayState = new com.paddleshock.ui.HowToPlayState();
         leaderboardState = new LeaderboardState();
+        profileState = new ProfileState();
 
         stateManager.attach(splashState);
         stateManager.attach(mainMenuState);
@@ -107,6 +111,7 @@ public class PaddleShockApp extends SimpleApplication {
         stateManager.attach(multiplayerState);
         stateManager.attach(howToPlayState);
         stateManager.attach(leaderboardState);
+        stateManager.attach(profileState);
 
         mainMenuState.setEnabled(false);
         pauseState.setEnabled(false);
@@ -117,6 +122,7 @@ public class PaddleShockApp extends SimpleApplication {
         multiplayerState.setEnabled(false);
         howToPlayState.setEnabled(false);
         leaderboardState.setEnabled(false);
+        profileState.setEnabled(false);
     }
 
     @Override
@@ -195,6 +201,7 @@ public class PaddleShockApp extends SimpleApplication {
         multiplayerState.setEnabled(false);
         howToPlayState.setEnabled(false);
         leaderboardState.setEnabled(false);
+        profileState.setEnabled(false);
         mainMenuState.setEnabled(true);
         audioManager.playMenuMusic();
     }
@@ -221,6 +228,13 @@ public class PaddleShockApp extends SimpleApplication {
     public void showLeaderboard() {
         mainMenuState.setEnabled(false);
         leaderboardState.setEnabled(true);
+    }
+
+    /** Shows the player's own profile: display name, current rank, and local match history
+     *  (wired up from the main menu's PROFILE button). */
+    public void showProfile() {
+        mainMenuState.setEnabled(false);
+        profileState.setEnabled(true);
     }
 
     /** Shown before every match (fresh or rematch) to confirm/change loadout and buy from a store modal. */
@@ -346,9 +360,29 @@ public class PaddleShockApp extends SimpleApplication {
 
     /** Called by the gameplay state once a side reaches the winning score; awards credits on a player win. */
     public void endMatch(boolean playerWon, int playerScore, int opponentScore) {
+        String mode = matchModeFor(gameplayState);
         int reward = endMatchCommon(playerWon, playerScore, opponentScore);
         matchEndState.setResult(playerWon, reward, playerScore, opponentScore);
         matchEndState.setEnabled(true);
+        recordMatchHistory(mode, playerScore, opponentScore, playerWon, 0);
+    }
+
+    /** "vs AI" / "LAN Host" / "LAN Join" for a completed match's {@link GameplayAppState#getMode()} -
+     *  used to label a {@link MatchHistoryEntry}. Ranked matches are always labeled "Ranked"
+     *  instead, from the ranked-specific match-end methods below. */
+    private String matchModeFor(GameplayAppState state) {
+        return switch (state.getMode()) {
+            case SINGLE_PLAYER -> "vs AI";
+            case HOST -> "LAN Host";
+            case JOINER -> "LAN Join";
+        };
+    }
+
+    /** Appends a match to the local match history and persists the profile - see
+     *  {@code PlayerProfile#addMatchHistoryEntry}. */
+    private void recordMatchHistory(String mode, int playerScore, int opponentScore, boolean won, int lpChange) {
+        profile.addMatchHistoryEntry(new MatchHistoryEntry(System.currentTimeMillis(), mode, playerScore, opponentScore, won, lpChange));
+        saveProfile();
     }
 
     /** Same as {@link #endMatch}, but for the HOST side of a ranked multiplayer match: also
@@ -369,6 +403,7 @@ public class PaddleShockApp extends SimpleApplication {
         String joinerPlayerId = netHost == null ? "" : netHost.getJoinerPlayerId();
         if (joinerPlayerId == null || joinerPlayerId.isEmpty()) {
             matchEndState.reportRankResult(null);
+            recordMatchHistory("Ranked", playerScore, opponentScore, playerWon, 0);
             return;
         }
         String hostPlayerId = profile.getPlayerId();
@@ -391,6 +426,7 @@ public class PaddleShockApp extends SimpleApplication {
                 NetLog.log("ranked match report failed (host)", e);
             }
             matchEndState.reportRankResult(result);
+            recordMatchHistory("Ranked", playerScore, opponentScore, playerWon, result == null ? 0 : result.getLpChange());
         }, "rank-report");
         thread.setDaemon(true);
         thread.start();
@@ -414,6 +450,7 @@ public class PaddleShockApp extends SimpleApplication {
         matchEndState.setEnabled(true);
 
         if (!ranked) {
+            recordMatchHistory("LAN Host", playerScore, opponentScore, true, 0);
             return;
         }
         String hostPlayerId = profile.getPlayerId();
@@ -430,6 +467,7 @@ public class PaddleShockApp extends SimpleApplication {
                 NetLog.log("ranked forfeit report failed (host)", e);
             }
             matchEndState.reportRankResult(result);
+            recordMatchHistory("Ranked", playerScore, opponentScore, true, result == null ? 0 : result.getLpChange());
         }, "rank-report-forfeit");
         thread.setDaemon(true);
         thread.start();
@@ -463,6 +501,7 @@ public class PaddleShockApp extends SimpleApplication {
             RankState relayed = waitForRelayedRankResult(netClient);
             if (relayed != null) {
                 matchEndState.reportRankResult(relayed);
+                recordMatchHistory("Ranked", playerScore, opponentScore, playerWon, relayed.getLpChange());
                 return;
             }
 
@@ -490,13 +529,17 @@ public class PaddleShockApp extends SimpleApplication {
                 if (fetched == null) {
                     fetched = RankClient.getRank(playerId); // gave up waiting - show whatever's there
                 }
-                matchEndState.reportRankResult(fetched.withDeltaFrom(baseline));
+                RankState delta = fetched.withDeltaFrom(baseline);
+                matchEndState.reportRankResult(delta);
+                recordMatchHistory("Ranked", playerScore, opponentScore, playerWon, delta.getLpChange());
             } catch (IOException e) {
                 matchEndState.reportRankResult(null); // offline, or the rank service is unreachable
+                recordMatchHistory("Ranked", playerScore, opponentScore, playerWon, 0);
                 NetLog.log("ranked rank-fetch failed (joiner)", e);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 matchEndState.reportRankResult(null);
+                recordMatchHistory("Ranked", playerScore, opponentScore, playerWon, 0);
             }
         }, "rank-fetch");
         thread.setDaemon(true);

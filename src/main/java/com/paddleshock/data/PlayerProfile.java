@@ -11,6 +11,10 @@ public class PlayerProfile {
 
     private static final int POWERUP_SLOTS = 3;
 
+    /** Local match history is capped at this many most-recent entries (oldest dropped past it) -
+     *  see {@link #addMatchHistoryEntry(MatchHistoryEntry)}. */
+    private static final int MATCH_HISTORY_CAP = 50;
+
     /** Bump when PlayerProfile's schema changes in a way that needs migration. */
     public static final int CURRENT_VERSION = 1;
 
@@ -32,6 +36,17 @@ public class PlayerProfile {
     // as false too, so an existing player sees it once as well - a one-time no-op inconvenience,
     // not worth a separate "is this actually a brand-new save" check.
     private boolean hasSeenTutorial = false;
+
+    // Local, editable display name shown on the PROFILE screen when Steam isn't available (see
+    // SteamManager#getPersonaName). Old saves predate this field and deserialize it as null;
+    // getDisplayName() falls back to a sensible default in that case, same treatment as
+    // hasSeenTutorial above - not worth a migration step for a plain string default.
+    private String displayName = "Player";
+
+    // Most-recent-first local match history, capped at MATCH_HISTORY_CAP - see
+    // addMatchHistoryEntry(). Old saves predate this field and deserialize it as null;
+    // getMatchHistory() treats that the same as an empty list.
+    private List<MatchHistoryEntry> matchHistory = new ArrayList<>();
 
     private Set<String> ownedPaddleIds = new HashSet<>(Set.of("paddle_classic"));
     private Set<String> ownedTableIds = new HashSet<>(Set.of("table_classic"));
@@ -102,6 +117,34 @@ public class PlayerProfile {
 
     public void addCurrency(int amount) {
         currency += amount;
+    }
+
+    /** The local display name; falls back to "Player" for a fresh/old save with none set, or if
+     *  it was somehow cleared to blank. The PROFILE screen only shows/edits this when Steam is
+     *  unavailable - see {@code SteamManager#getPersonaName()}. */
+    public String getDisplayName() {
+        return (displayName == null || displayName.isBlank()) ? "Player" : displayName;
+    }
+
+    public void setDisplayName(String displayName) {
+        this.displayName = (displayName == null || displayName.isBlank()) ? "Player" : displayName.trim();
+    }
+
+    /** Most-recent-first local match history, capped at {@link #MATCH_HISTORY_CAP} entries. */
+    public List<MatchHistoryEntry> getMatchHistory() {
+        return matchHistory == null ? List.of() : List.copyOf(matchHistory);
+    }
+
+    /** Records a completed match at the front of the history, dropping the oldest entry past
+     *  {@link #MATCH_HISTORY_CAP}. */
+    public void addMatchHistoryEntry(MatchHistoryEntry entry) {
+        if (matchHistory == null) {
+            matchHistory = new ArrayList<>();
+        }
+        matchHistory.add(0, entry);
+        while (matchHistory.size() > MATCH_HISTORY_CAP) {
+            matchHistory.remove(matchHistory.size() - 1);
+        }
     }
 
     public boolean owns(String category, String id) {

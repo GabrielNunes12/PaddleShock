@@ -64,6 +64,7 @@ public class MainMenuState extends BaseAppState {
         addMenuButton(menu, "PLAY VS AI", Theme.ORANGE, Theme.ON_ACCENT, app::showLoadout);
         addMenuButton(menu, "MULTIPLAYER", Theme.PANEL_HOVER, Theme.TEXT, app::showMultiplayer);
         addMenuButton(menu, "LEADERBOARD", Theme.PANEL_HOVER, Theme.TEXT, app::showLeaderboard);
+        addMenuButton(menu, "PROFILE", Theme.PANEL_HOVER, Theme.TEXT, app::showProfile);
         addMenuButton(menu, "STORE", Theme.PANEL_HOVER, Theme.TEXT, app::showStore);
         addMenuButton(menu, "SETTINGS", Theme.PANEL_HOVER, Theme.TEXT, () -> app.showOptions(app::showMainMenu));
         addMenuButton(menu, "HOW TO PLAY", Theme.PANEL_HOVER, Theme.TEXT, () -> app.showHowToPlay(app::showMainMenu));

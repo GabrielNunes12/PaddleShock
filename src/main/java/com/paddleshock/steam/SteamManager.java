@@ -5,11 +5,14 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import com.codedisaster.steamworks.SteamAPI;
 import com.codedisaster.steamworks.SteamException;
+import com.codedisaster.steamworks.SteamFriends;
+import com.codedisaster.steamworks.SteamFriendsCallback;
 import com.codedisaster.steamworks.SteamLibraryLoader;
 
 /**
@@ -31,6 +34,7 @@ public class SteamManager {
     private static final Logger LOG = Logger.getLogger(SteamManager.class.getName());
 
     private boolean available;
+    private SteamFriends steamFriends;
 
     public SteamManager() {
         try {
@@ -47,12 +51,37 @@ public class SteamManager {
             LOG.info("Steam unavailable, running in offline mode");
         } else {
             LOG.info("Steam initialized");
+            try {
+                // All SteamFriendsCallback methods are default no-ops; nothing here (persona
+                // name/rank display) needs to react to friend presence/state changes.
+                steamFriends = new SteamFriends(new SteamFriendsCallback() {
+                });
+            } catch (Throwable t) {
+                // Shouldn't happen once SteamAPI.init() has succeeded, but getPersonaName() must
+                // never throw regardless - fall back to offline-name behavior if it does.
+                steamFriends = null;
+            }
         }
     }
 
     /** True once {@code SteamAPI.init()} has succeeded; false in offline mode. */
     public boolean isAvailable() {
         return available;
+    }
+
+    /** This player's Steam persona (display) name, if Steam is available - empty otherwise. Safe
+     *  to call regardless of {@link #isAvailable()} and never throws; callers should fall back to
+     *  a local display name (see {@code PlayerProfile#getDisplayName()}) when this is empty. */
+    public Optional<String> getPersonaName() {
+        if (!available || steamFriends == null) {
+            return Optional.empty();
+        }
+        try {
+            String name = steamFriends.getPersonaName();
+            return (name == null || name.isBlank()) ? Optional.empty() : Optional.of(name);
+        } catch (Throwable t) {
+            return Optional.empty();
+        }
     }
 
     /** Pumps Steam callbacks; safe to call every frame even when Steam is unavailable. */
@@ -72,6 +101,15 @@ public class SteamManager {
     public void shutdown() {
         if (!available) {
             return;
+        }
+        if (steamFriends != null) {
+            try {
+                steamFriends.dispose();
+            } catch (Exception e) {
+                LOG.log(Level.WARNING, "SteamFriends dispose failed", e);
+            } finally {
+                steamFriends = null;
+            }
         }
         try {
             SteamAPI.shutdown();
