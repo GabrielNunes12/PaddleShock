@@ -1,23 +1,32 @@
 # PaddleShock AWS backend (matchmaking + ranked ladder)
 
-Scope: a tiny AWS backend with two jobs. (1) Matchmaking - hands two players a short lobby code so
-they can exchange public `ip:port` and connect directly over UDP; gameplay itself stays
+Scope: a tiny AWS backend with three jobs. (1) Matchmaking - hands two players a short lobby code
+so they can exchange public `ip:port` and connect directly over UDP; gameplay itself stays
 peer-to-peer (see `src/main/java/com/paddleshock/net/`), nothing here touches game traffic. (2)
 Ranked ladder - tracks each player's Copper-through-Diamond rank server-side (see "Ranked ladder"
-below) so it isn't just a locally-editable save-file number.
+below) so it isn't just a locally-editable save-file number. (3) Tournaments - sequences a
+lightweight single-elimination bracket (see "Tournaments" below); it never touches gameplay
+networking either, it just decides who plays whom and when, with each individual bracket match
+still getting its own real lobby code from the existing `create`/`join` actions.
 
 ## What's deployed (account 920394550355, region us-east-1)
 
 - **DynamoDB table** `paddleshock-lobbies` - PK `code` (String), TTL attribute `ttl` (items
   auto-expire ~10 min after creation, so stale lobbies clean themselves up for free).
+- **DynamoDB table** `paddleshock-tournaments` (added 2026-09-14) - PK `code` (String),
+  PAY_PER_REQUEST billing, TTL attribute `ttl` (items auto-expire 6 hours after creation - see
+  "Tournaments" below).
 - **IAM role** `paddleshock-lobby-lambda-role` - trusts `lambda.amazonaws.com`, has
   `AWSLambdaBasicExecutionRole` (CloudWatch Logs) plus an inline policy scoped to
-  `PutItem`/`GetItem`/`UpdateItem`/`DeleteItem` on the `paddleshock-lobbies` and `paddleshock-ranks`
-  table ARNs (`DeleteItem` added 2026-09-13 so a lobby record can be consumed after a verified
-  match report - see "Security hardening" below).
+  `PutItem`/`GetItem`/`UpdateItem`/`DeleteItem`/`Scan` on the `paddleshock-lobbies`,
+  `paddleshock-ranks`, and `paddleshock-tournaments` table ARNs (`DeleteItem` added 2026-09-13 so a
+  lobby record can be consumed after a verified match report - see "Security hardening" below;
+  `paddleshock-tournaments` added 2026-09-14).
 - **Lambda function** `paddleshock-lobby` (Node.js 20.x, source in `lobby-lambda/index.mjs`) -
-  handles `create` / `join` / `poll` actions via a single JSON-body handler. Verified working via
-  direct `aws lambda invoke` (returns a real lobby code, writes to DynamoDB correctly).
+  handles `create` / `join` / `poll` / ranked-ladder / tournament actions via a single JSON-body
+  handler. Env vars: `TABLE_NAME=paddleshock-lobbies`, `RANKS_TABLE_NAME=paddleshock-ranks`,
+  `TOURNAMENTS_TABLE_NAME=paddleshock-tournaments` (added 2026-09-14). Verified working via direct
+  `aws lambda invoke` (returns a real lobby code, writes to DynamoDB correctly).
 - **Lambda Function URL** `https://2mjcwpgb6sesrjy36nm6qxdmpu0wbvrb.lambda-url.us-east-1.on.aws/` -
   `AuthType=NONE` (public/unauthenticated - fine, since it only ever brokers ephemeral,
   non-sensitive lobby codes and ip:port pairs) with a resource policy granting both
@@ -70,8 +79,35 @@ Single POST endpoint, JSON body, `action` field selects behavior:
   sorted best-first (tier desc, division asc/better, lp desc). Implemented as a full table scan
   (capped at 1000 items) since the ladder is hobby-scale today - revisit with a GSI if it grows.
   Carries no `playerId`, so (like `poll`) it's unaffected by the rate limiter below.
-- Any action carrying a `playerId` (or `hostPlayerId`) is subject to per-id rate limiting - a
-  `429 {"error":"too many requests, slow down"}` means back off.
+- `{"action":"createTournament","hostPlayerId":"<uuid>","maxPlayers":4|8,"displayNameHint":"<optional, nullable, cosmetic only>"}`
+  -> `{"code":"ABC123"}`. `maxPlayers` must be exactly 4 or 8 (`400` otherwise). Creates the
+  tournament with `status:"OPEN"` and the host as the sole entry in `players`.
+- `{"action":"joinTournament","code":"ABC123","playerId":"<uuid>","displayNameHint":"<optional>"}`
+  -> the full tournament document (see item shape below). If `playerId` is already a participant,
+  this is an idempotent no-op that just returns the current state. `404` if the code doesn't
+  exist/expired; `409` if the tournament isn't `OPEN` or is already full.
+- `{"action":"startTournament","code":"ABC123","hostPlayerId":"<uuid>"}` -> the full tournament
+  document, now `status:"IN_PROGRESS"` with `bracket.rounds[0]` populated. `403` if the caller
+  isn't the host; `409` if the tournament isn't `OPEN` or isn't exactly full yet (v1 requires an
+  exactly-full bracket - no byes/partial brackets). Players are shuffled before pairing.
+- `{"action":"setTournamentMatchLobbyCode","code":"ABC123","roundIndex":0,"matchIndex":0,"playerId":"<uuid>","lobbyCode":"XYZ789"}`
+  -> the full tournament document. Only the designated `p1` side of that pairing may publish a
+  lobby code (`403` otherwise) - the intended client flow is: `p1` calls the existing `create`
+  lobby action itself once ready to host that specific match, then publishes the resulting code
+  here so `p2` can poll for it via `getTournamentState`. `400` on an out-of-range
+  `roundIndex`/`matchIndex`.
+- `{"action":"reportTournamentMatchResult","code":"ABC123","roundIndex":0,"matchIndex":0,"winnerPlayerId":"<uuid>","reporterPlayerId":"<uuid>"}`
+  -> the full tournament document, with that match slot's `winner` set. `403` unless both
+  `reporterPlayerId` and `winnerPlayerId` are one of that slot's `p1`/`p2`. A retried report for a
+  slot that already has a winner is an idempotent no-op (same tolerance as `reportMatchResult`
+  above). Once every match in the round has a winner: if it was the final (single-match) round,
+  `status` becomes `COMPLETE` and `champion` is set; otherwise the next round is built and appended
+  automatically (winner of match 0 vs match 1, match 2 vs match 3, etc.).
+- `{"action":"getTournamentState","code":"ABC123"}` -> the full tournament document. `404` if
+  missing/expired. This is what clients poll for the waiting-room player list and live bracket
+  progress (same pattern as `poll` for lobbies).
+- Any action carrying a `playerId`, `hostPlayerId`, or `reporterPlayerId` is subject to per-id rate
+  limiting - a `429 {"error":"too many requests, slow down"}` means back off.
 
 ## Security hardening (2026-09-13)
 
@@ -196,6 +232,67 @@ as 4..1), 0-100 LP per division - see `RankTier`/`RankState`/`RankClient` in
   alarm during testing - the underlying math was correct the whole time).
 - **Not built**: no UI yet for browsing the ladder/leaderboard, no unranked-vs-ranked distinction
   (every multiplayer match is currently a ranked one), no demotion-protection grace games.
+
+## Tournaments (added 2026-09-14)
+
+A lightweight single-elimination bracket orchestrator layered on top of the existing lobby-code
+plumbing. It only sequences WHO plays WHOM and WHEN - it does not touch gameplay networking at all
+(that stays 100% peer-to-peer via the existing lobby-code hole-punch flow, unchanged). Each
+individual bracket match still gets its own real lobby code from the existing `create`/`join`
+actions.
+
+- **Item shape** (`paddleshock-tournaments`, PK `code`):
+  ```js
+  {
+    code: string,               // PK, same randomCode() style as lobby codes
+    hostPlayerId: string,
+    maxPlayers: number,         // 4 or 8, validated on create
+    players: [{ playerId, displayNameHint }],  // displayNameHint is optional/nullable, cosmetic only
+    status: "OPEN" | "IN_PROGRESS" | "COMPLETE",
+    bracket: null | {
+      rounds: [
+        [ { p1: playerId|null, p2: playerId|null, winner: playerId|null, lobbyCode: string|null }, ... ],
+        ...
+      ]
+    },
+    champion: playerId | null,  // set once status becomes COMPLETE
+    createdAt: epoch-seconds,
+    ttl: epoch-seconds,         // createdAt + 6 hours - generous enough for a full bracket to play out
+  }
+  ```
+- **Actions**: `createTournament` / `joinTournament` / `startTournament` /
+  `setTournamentMatchLobbyCode` / `reportTournamentMatchResult` / `getTournamentState` - see
+  "Protocol" above for exact request/response shapes.
+- **Race safety**: `joinTournament` mirrors `handleJoin`'s existing race-condition fix - a
+  conditional `UpdateCommand` (`size(players) < :max AND attribute_exists(code)`) with a short
+  retry-on-`ConditionalCheckFailedException` loop, so two near-simultaneous joins can't both
+  squeeze past the player cap.
+- **Idempotency**: `reportTournamentMatchResult` tolerates a retried report for a match slot that
+  already has a winner recorded (returns current state unchanged) - same tolerance
+  `reportMatchResult` already gives ranked match reports, for the same reason (client-side retry
+  after a timeout shouldn't double-advance the bracket).
+- **Bracket advancement**: pure and exported for testing (`buildFirstRound`, `buildNextRound`,
+  `roundIsComplete` in `index.mjs`, tested in `bracket.test.mjs`) - given a round where every match
+  has a winner, the next round pairs winners in order (match 0 vs match 1, match 2 vs match 3,
+  ...); a completed single-match final round returns `null` to signal the bracket is done instead
+  of producing a next round.
+- **Kept intentionally simple** (matching this file's existing hobby-scale conventions): no
+  transactions, no DynamoDB Streams, no step functions - `setTournamentMatchLobbyCode` and
+  `reportTournamentMatchResult` do a plain read-modify-write `PutItem` of the whole tournament
+  document (same pattern `saveRank` already uses for ranked-ladder updates), not a targeted
+  conditional update. At hobby scale, with different bracket matches typically reported minutes
+  apart by different players, this is an accepted simplification rather than a hardened
+  concurrent-write path; `joinTournament`/`startTournament` do use `ConditionExpression`-guarded
+  writes since those are the two actions genuinely likely to race (multiple players joining at
+  once, or a double-tap on "start").
+- **v1 constraint**: `startTournament` requires the tournament to be exactly full
+  (`players.length === maxPlayers`) - no byes or partial brackets yet.
+- **Live-verified** (2026-09-14): created a 4-player tournament, joined 3 more players, started it
+  (2 first-round matches generated from a shuffled player list), reported both first-round results
+  (second/final round auto-generated pairing the two winners), reported the final result
+  (`status` became `COMPLETE` with the correct `champion`), plus `setTournamentMatchLobbyCode`
+  authorization (`p1`-only, `403` for anyone else) and idempotent-report-retry behavior. All test
+  records deleted from DynamoDB afterward.
 
 ## Client-side progress
 

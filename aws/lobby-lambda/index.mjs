@@ -7,6 +7,7 @@ import { DynamoDBDocumentClient, PutCommand, UpdateCommand, GetCommand, DeleteCo
 
 const TABLE = process.env.TABLE_NAME;
 const RANKS_TABLE = process.env.RANKS_TABLE_NAME;
+const TOURNAMENTS_TABLE = process.env.TOURNAMENTS_TABLE_NAME;
 const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no ambiguous 0/O/1/I
@@ -369,6 +370,280 @@ async function handleReportMatchResult(body) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Tournaments: a lightweight single-elimination bracket orchestrator layered on top of the
+// existing lobby-code plumbing. This only sequences WHO plays WHOM and WHEN - it never touches
+// gameplay networking itself. Each individual bracket match still gets its own real lobby code
+// from the existing create/join actions; this table just tracks the bracket shape and which
+// lobby code (if any) has been published for each pairing so the p2 side can find it.
+// ---------------------------------------------------------------------------------------------
+
+const TOURNAMENT_TTL_SECONDS = 6 * 60 * 60; // 6 hours - generous enough for a full bracket to play out
+const VALID_TOURNAMENT_SIZES = [4, 8];
+
+function shuffled(array) {
+    const result = [...array];
+    for (let i = result.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [result[i], result[j]] = [result[j], result[i]];
+    }
+    return result;
+}
+
+/** Builds the first round's pairings from a (already shuffled) player list. */
+function buildFirstRound(players) {
+    const round = [];
+    for (let i = 0; i < players.length; i += 2) {
+        round.push({ p1: players[i].playerId, p2: players[i + 1].playerId, winner: null, lobbyCode: null });
+    }
+    return round;
+}
+
+/** Given a round where every match has a winner, returns either the next round's pairings (winners
+ *  of match 0 vs match 1, match 2 vs match 3, etc.) or, if this was the final (single-match) round,
+ *  null to signal the bracket is complete. Pure - exported for unit testing (see
+ *  ranked-ladder.test.mjs-style tests in bracket.test.mjs). */
+function buildNextRound(completedRound) {
+    if (completedRound.length === 1) {
+        return null; // final round just played - bracket is complete, no next round
+    }
+    const winners = completedRound.map((match) => match.winner);
+    const nextRound = [];
+    for (let i = 0; i < winners.length; i += 2) {
+        nextRound.push({ p1: winners[i], p2: winners[i + 1], winner: null, lobbyCode: null });
+    }
+    return nextRound;
+}
+
+/** True once every match slot in a round has a winner recorded. */
+function roundIsComplete(round) {
+    return round.every((match) => match.winner !== null);
+}
+
+async function loadTournament(code) {
+    const result = await client.send(new GetCommand({ TableName: TOURNAMENTS_TABLE, Key: { code } }));
+    return result.Item ?? null;
+}
+
+async function handleCreateTournament(body) {
+    const { hostPlayerId, maxPlayers } = body;
+    if (!hostPlayerId || !VALID_TOURNAMENT_SIZES.includes(maxPlayers)) {
+        return response(400, { error: "missing hostPlayerId or invalid maxPlayers (must be 4 or 8)" });
+    }
+    const now = Math.floor(Date.now() / 1000);
+    for (let attempt = 0; attempt < 5; attempt++) {
+        const code = randomCode();
+        try {
+            await client.send(new PutCommand({
+                TableName: TOURNAMENTS_TABLE,
+                Item: {
+                    code,
+                    hostPlayerId,
+                    maxPlayers,
+                    players: [{ playerId: hostPlayerId, displayNameHint: body.displayNameHint ?? null }],
+                    status: "OPEN",
+                    bracket: null,
+                    champion: null,
+                    createdAt: now,
+                    ttl: now + TOURNAMENT_TTL_SECONDS,
+                },
+                ConditionExpression: "attribute_not_exists(code)",
+            }));
+            return response(200, { code });
+        } catch (e) {
+            if (e.name !== "ConditionalCheckFailedException") {
+                throw e;
+            }
+            // code collision - loop and try a new random code
+        }
+    }
+    return response(500, { error: "could not allocate a tournament code, try again" });
+}
+
+async function handleJoinTournament(body) {
+    const { code, playerId } = body;
+    if (!code || !playerId) {
+        return response(400, { error: "missing code/playerId" });
+    }
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+        const tournament = await loadTournament(code);
+        if (!tournament) {
+            return response(404, { error: "tournament not found or expired" });
+        }
+        if (tournament.players.some((p) => p.playerId === playerId)) {
+            return response(200, tournament); // already joined - idempotent success
+        }
+        if (tournament.status !== "OPEN") {
+            return response(409, { error: "tournament is no longer open" });
+        }
+        if (tournament.players.length >= tournament.maxPlayers) {
+            return response(409, { error: "tournament is full" });
+        }
+        try {
+            // Same race-safety pattern as handleJoin: the ConditionExpression only allows the
+            // append through if the tournament still exists and still has room, closing the race
+            // where two near-simultaneous joins would both read "room available" and both append,
+            // overfilling the bracket. A losing racer retries against the freshly-read state.
+            const result = await client.send(new UpdateCommand({
+                TableName: TOURNAMENTS_TABLE,
+                Key: { code },
+                UpdateExpression: "SET players = list_append(players, :newPlayer)",
+                ConditionExpression: "size(players) < :max AND attribute_exists(code)",
+                ExpressionAttributeValues: {
+                    ":newPlayer": [{ playerId, displayNameHint: body.displayNameHint ?? null }],
+                    ":max": tournament.maxPlayers,
+                },
+                ReturnValues: "ALL_NEW",
+            }));
+            return response(200, result.Attributes);
+        } catch (e) {
+            if (e.name !== "ConditionalCheckFailedException") {
+                throw e;
+            }
+            // lost the race (someone else appended between our read and write, or it's now full)
+            // - loop, re-fetch fresh state, and re-check/retry.
+        }
+    }
+    return response(409, { error: "could not join tournament, too much contention - try again" });
+}
+
+async function handleStartTournament(body) {
+    const { code, hostPlayerId } = body;
+    if (!code || !hostPlayerId) {
+        return response(400, { error: "missing code/hostPlayerId" });
+    }
+    const tournament = await loadTournament(code);
+    if (!tournament) {
+        return response(404, { error: "tournament not found or expired" });
+    }
+    if (tournament.hostPlayerId !== hostPlayerId) {
+        return response(403, { error: "only the host can start the tournament" });
+    }
+    if (tournament.status !== "OPEN") {
+        return response(409, { error: "tournament already started or complete" });
+    }
+    if (tournament.players.length !== tournament.maxPlayers) {
+        return response(409, { error: "tournament is not full yet" });
+    }
+
+    const shuffledPlayers = shuffled(tournament.players);
+    const firstRound = buildFirstRound(shuffledPlayers);
+    try {
+        const result = await client.send(new UpdateCommand({
+            TableName: TOURNAMENTS_TABLE,
+            Key: { code },
+            UpdateExpression: "SET #status = :inProgress, bracket = :bracket, players = :players",
+            ExpressionAttributeNames: { "#status": "status" },
+            ExpressionAttributeValues: {
+                ":inProgress": "IN_PROGRESS",
+                ":bracket": { rounds: [firstRound] },
+                ":players": shuffledPlayers,
+                ":open": "OPEN",
+            },
+            ConditionExpression: "attribute_exists(code) AND #status = :open",
+            ReturnValues: "ALL_NEW",
+        }));
+        return response(200, result.Attributes);
+    } catch (e) {
+        if (e.name === "ConditionalCheckFailedException") {
+            return response(409, { error: "tournament state changed, try again" });
+        }
+        throw e;
+    }
+}
+
+function validMatchSlot(tournament, roundIndex, matchIndex) {
+    if (!tournament.bracket) {
+        return null;
+    }
+    const round = tournament.bracket.rounds[roundIndex];
+    if (!round) {
+        return null;
+    }
+    const match = round[matchIndex];
+    if (!match) {
+        return null;
+    }
+    return match;
+}
+
+async function handleSetTournamentMatchLobbyCode(body) {
+    const { code, roundIndex, matchIndex, playerId, lobbyCode } = body;
+    if (!code || typeof roundIndex !== "number" || typeof matchIndex !== "number" || !playerId || !lobbyCode) {
+        return response(400, { error: "missing code/roundIndex/matchIndex/playerId/lobbyCode" });
+    }
+    const tournament = await loadTournament(code);
+    if (!tournament) {
+        return response(404, { error: "tournament not found or expired" });
+    }
+    const match = validMatchSlot(tournament, roundIndex, matchIndex);
+    if (!match) {
+        return response(400, { error: "invalid roundIndex/matchIndex" });
+    }
+    if (match.p1 !== playerId) {
+        return response(403, { error: "only the p1 side of this match may publish a lobby code" });
+    }
+
+    tournament.bracket.rounds[roundIndex][matchIndex].lobbyCode = lobbyCode;
+    await client.send(new PutCommand({ TableName: TOURNAMENTS_TABLE, Item: tournament }));
+    return response(200, tournament);
+}
+
+async function handleReportTournamentMatchResult(body) {
+    const { code, roundIndex, matchIndex, winnerPlayerId, reporterPlayerId } = body;
+    if (!code || typeof roundIndex !== "number" || typeof matchIndex !== "number" || !winnerPlayerId || !reporterPlayerId) {
+        return response(400, { error: "missing code/roundIndex/matchIndex/winnerPlayerId/reporterPlayerId" });
+    }
+    const tournament = await loadTournament(code);
+    if (!tournament) {
+        return response(404, { error: "tournament not found or expired" });
+    }
+    const match = validMatchSlot(tournament, roundIndex, matchIndex);
+    if (!match) {
+        return response(400, { error: "invalid roundIndex/matchIndex" });
+    }
+    if (reporterPlayerId !== match.p1 && reporterPlayerId !== match.p2) {
+        return response(403, { error: "reporterPlayerId is not a participant in this match" });
+    }
+    if (winnerPlayerId !== match.p1 && winnerPlayerId !== match.p2) {
+        return response(403, { error: "winnerPlayerId is not a participant in this match" });
+    }
+
+    // Idempotency: a retried report for a slot that already has a winner is a no-op, same
+    // tolerance handleReportMatchResult already gives ranked match reports.
+    if (match.winner !== null) {
+        return response(200, tournament);
+    }
+
+    const round = tournament.bracket.rounds[roundIndex];
+    round[matchIndex].winner = winnerPlayerId;
+
+    if (roundIsComplete(round)) {
+        const nextRound = buildNextRound(round);
+        if (nextRound === null) {
+            tournament.status = "COMPLETE";
+            tournament.champion = winnerPlayerId;
+        } else {
+            tournament.bracket.rounds.push(nextRound);
+        }
+    }
+
+    await client.send(new PutCommand({ TableName: TOURNAMENTS_TABLE, Item: tournament }));
+    return response(200, tournament);
+}
+
+async function handleGetTournamentState(body) {
+    if (!body.code) {
+        return response(400, { error: "missing code" });
+    }
+    const tournament = await loadTournament(body.code);
+    if (!tournament) {
+        return response(404, { error: "tournament not found or expired" });
+    }
+    return response(200, tournament);
+}
+
+// ---------------------------------------------------------------------------------------------
 // Rate limiting: the Function URL is public/unauthenticated with no API Gateway in front of it,
 // so there is no reliable source IP to key off (that only becomes available behind API Gateway,
 // which is out of scope here - see aws/README.md). Instead this throttles per playerId (the one
@@ -402,9 +677,11 @@ async function checkRateLimit(playerId) {
 }
 
 /** The identifier to rate-limit this request by, or null if the action carries none (currently
- *  just `poll`, which is intentionally left unthrottled - see comment above). */
+ *  just `poll`/`getTournamentState`, which are intentionally left unthrottled - see comment
+ *  above). Covers the tournament actions' id fields too (hostPlayerId/playerId already handled;
+ *  reporterPlayerId is tournament-report-specific). */
 function rateLimitIdFor(body) {
-    return body.playerId || body.hostPlayerId || null;
+    return body.playerId || body.hostPlayerId || body.reporterPlayerId || null;
 }
 
 // Exported purely so the ranked-ladder LP math can be unit-tested in isolation (see
@@ -426,6 +703,9 @@ export {
     demoteOneStep,
     applySeasonResetIfNeeded,
     applyMatchResult,
+    buildFirstRound,
+    buildNextRound,
+    roundIsComplete,
 };
 
 export const handler = async (event) => {
@@ -451,6 +731,12 @@ export const handler = async (event) => {
         case "getRank": return handleGetRank(body);
         case "getLeaderboard": return handleGetLeaderboard(body);
         case "reportMatchResult": return handleReportMatchResult(body);
+        case "createTournament": return handleCreateTournament(body);
+        case "joinTournament": return handleJoinTournament(body);
+        case "startTournament": return handleStartTournament(body);
+        case "setTournamentMatchLobbyCode": return handleSetTournamentMatchLobbyCode(body);
+        case "reportTournamentMatchResult": return handleReportTournamentMatchResult(body);
+        case "getTournamentState": return handleGetTournamentState(body);
         default: return response(400, { error: "unknown action" });
     }
 };
