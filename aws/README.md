@@ -61,7 +61,13 @@ Single POST endpoint, JSON body, `action` field selects behavior:
   joiner already registered for this code (see "Security hardening"); `404` if the code doesn't
   exist/expired.
 - `{"action":"poll","code":"ABC123"}` (host polls this) -> `{"joinerAddr": null | "..."}`
-- `{"action":"getRank","playerId":"<uuid>"}` -> `{"tier","division","lp","wins","losses","promo","season"}`
+- `{"action":"getRank","playerId":"<uuid>"}` -> `{"tier","division","lp","wins","losses","promo","season",
+  "peakTier","peakDivision","peakLp","lastSeasonPeakTier","lastSeasonPeakDivision","lastSeasonPeakLp","lastSeasonNumber"}` -
+  the `peak*` fields track the best tier/division/LP reached so far THIS season; the
+  `lastSeasonPeak*`/`lastSeasonNumber` fields are a snapshot of the previous season's peak,
+  captured once at the moment of the season rollover, letting a client show "you reached Gold II
+  last season" after the reset. Old rank records predate these fields and deserialize without
+  them (`undefined`) until their next season transition establishes a peak going forward.
 - `{"action":"reportMatchResult","matchId":"<uuid>","hostPlayerId":"<uuid>","joinerPlayerId":"<uuid>","hostWon":true|false,"code":"ABC123"}`
   -> `{"host":{...rank fields...,"lpChange","promoted","demoted","promoSeriesResult"},"joiner":{...same...}}`.
   `code` is optional but strongly recommended - see "Security hardening" below for what it buys
@@ -196,6 +202,19 @@ as 4..1), 0-100 LP per division - see `RankTier`/`RankState`/`RankClient` in
   alarm during testing - the underlying math was correct the whole time).
 - **Not built**: no UI yet for browsing the ladder/leaderboard, no unranked-vs-ranked distinction
   (every multiplayer match is currently a ranked one), no demotion-protection grace games.
+- **Seasonal peak-rank reward (2026-09-14)**: a rank record now tracks `peakTier`/`peakDivision`/
+  `peakLp` - the best tier/division/LP reached so far this season, updated in `applyMatchResult`
+  after every match (a promotion-series result counts too, since it still moves tier/division/lp).
+  "Best" uses the same tier-desc/division-asc/lp-desc ordering `handleGetLeaderboard`'s sort
+  already used, now extracted into a shared `compareRankPosition`/`isBetterRankPosition` helper so
+  the two can't drift out of sync. Right before `applySeasonResetIfNeeded` performs its existing
+  reset, it snapshots the outgoing peak into `lastSeasonPeakTier`/`lastSeasonPeakDivision`/
+  `lastSeasonPeakLp`/`lastSeasonNumber` (the season number that's about to be overwritten) - old
+  records with no peak ever recorded (`peakTier` undefined) skip the snapshot, so no reward is
+  owed for a season that predates this feature. After the reset, the live peak is reset to match
+  wherever the fresh season landed. The client (`RankState`/`ProfileState`) grants a one-time
+  credits reward the first time it observes a `lastSeasonNumber` newer than the profile's
+  `lastRewardedSeason` - see the main session notes / commit for the exact reward table.
 
 ## Client-side progress
 

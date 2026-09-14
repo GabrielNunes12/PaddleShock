@@ -26,10 +26,14 @@ import com.paddleshock.powerups.PowerUpType;
  *       harmless, since those only ever travel host-to-joiner and the joiner already ignores any
  *       inbound {@code TYPE_HELLO} as unrecognized (it only reacts to WELCOME/REJECT/SNAPSHOT).</li>
  *   <li>{@link #TYPE_WELCOME} - host to joiner: connection accepted, the type byte plus a single "ranked" byte (1 = ranked ladder match,
-     *       0 = the host chose UNRANKED in {@code MultiplayerState}). The host's choice is
-     *       authoritative - this is how the joiner learns which match-end path to use
-     *       ({@code endMatch} vs {@code endRankedJoinerMatch}). A payload-less WELCOME (older
-     *       host, or malformed) decodes as ranked, matching the original always-ranked behavior.</li>
+     *       0 = the host chose UNRANKED in {@code MultiplayerState}), plus the host's own
+     *       ranked-ladder player id (mirroring how HELLO already carries the joiner's), so BOTH
+     *       sides of a match know each other's id - needed by the local rival tracker (see
+     *       {@code PlayerProfile#recordRivalResult}). The host's ranked choice is authoritative -
+     *       this is how the joiner learns which match-end path to use ({@code endMatch} vs
+     *       {@code endRankedJoinerMatch}). A payload-less WELCOME (older host, or malformed)
+     *       decodes as ranked with an empty host player id, matching the original always-ranked
+     *       behavior and degrading gracefully (no rival entry recorded) rather than throwing.</li>
  *   <li>{@link #TYPE_REJECT} - host to joiner: already has a peer, just the type byte.</li>
  *   <li>{@link #TYPE_INPUT} - joiner to host, sent once per client frame: the joiner's own
  *       paddle deltaX/deltaZ for this frame, plus the catalog id of a power-up activated this
@@ -83,14 +87,40 @@ public final class NetProtocol {
 
     // ---- WELCOME (host -> joiner) ----
 
-    public static byte[] encodeWelcome(boolean ranked) {
-        return new byte[] {TYPE_WELCOME, (byte) (ranked ? 1 : 0)};
+    public static byte[] encodeWelcome(boolean ranked, String hostPlayerId) {
+        try {
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            DataOutputStream out = new DataOutputStream(bytes);
+            out.writeByte(TYPE_WELCOME);
+            out.writeByte(ranked ? 1 : 0);
+            out.writeUTF(hostPlayerId == null ? "" : hostPlayerId);
+            return bytes.toByteArray();
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to encode welcome packet", e);
+        }
     }
 
     /** {@code true} for a ranked match, including a payload-less WELCOME (older host, or a
      *  malformed/truncated packet) - see the class doc for why that's the safe default. */
     public static boolean decodeWelcomeRanked(byte[] data) {
         return data.length <= 1 || data[1] != 0;
+    }
+
+    /** The host's ranked-ladder player id (see {@code RankClient}), or {@code ""} for a WELCOME
+     *  that doesn't carry one (an older host, or a truncated/malformed packet) - see the class
+     *  doc for why that degrades gracefully rather than throwing. */
+    public static String decodeWelcomeHostPlayerId(byte[] data) {
+        if (data.length <= 2) {
+            return "";
+        }
+        try {
+            DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
+            in.readByte(); // type
+            in.readByte(); // ranked
+            return in.readUTF();
+        } catch (IOException e) {
+            return "";
+        }
     }
 
     // ---- HELLO (joiner -> host) ----

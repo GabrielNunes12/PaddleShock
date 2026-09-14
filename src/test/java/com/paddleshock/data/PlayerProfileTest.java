@@ -68,4 +68,71 @@ class PlayerProfileTest {
         assertEquals(1, snapshot.size(), "earlier snapshot should not see a later mutation");
         assertEquals(2, profile.getMatchHistory().size());
     }
+
+    @Test
+    void rivalsStartEmptyAndLastRewardedSeasonDefaultsToUnclaimed() {
+        PlayerProfile profile = new PlayerProfile();
+        assertTrue(profile.getRivals().isEmpty());
+        assertEquals(-1, profile.getLastRewardedSeason());
+    }
+
+    @Test
+    void recordRivalResultCreatesANewEntry() {
+        PlayerProfile profile = new PlayerProfile();
+        profile.recordRivalResult("opp-1", "Nemesis", true);
+
+        var rivals = profile.getRivals();
+        assertEquals(1, rivals.size());
+        RivalRecord rival = rivals.get(0);
+        assertEquals("opp-1", rival.getOpponentPlayerId());
+        assertEquals("Nemesis", rival.getOpponentDisplayNameHint());
+        assertEquals(1, rival.getWins());
+        assertEquals(0, rival.getLosses());
+        assertEquals("1W-0L", rival.formatRecord());
+    }
+
+    @Test
+    void recordRivalResultIncrementsAnExistingEntry() {
+        PlayerProfile profile = new PlayerProfile();
+        profile.recordRivalResult("opp-1", "Nemesis", true);
+        profile.recordRivalResult("opp-1", "Nemesis", false);
+        profile.recordRivalResult("opp-1", "Nemesis", true);
+
+        var rivals = profile.getRivals();
+        assertEquals(1, rivals.size(), "same opponent id should update one entry, not create duplicates");
+        RivalRecord rival = rivals.get(0);
+        assertEquals(2, rival.getWins());
+        assertEquals(1, rival.getLosses());
+        assertEquals("2W-1L", rival.formatRecord());
+    }
+
+    @Test
+    void recordRivalResultTracksMultipleDistinctRivalsSortedByGamesPlayed() {
+        PlayerProfile profile = new PlayerProfile();
+        profile.recordRivalResult("opp-few", "Casual", true);
+        profile.recordRivalResult("opp-many", "Regular", true);
+        profile.recordRivalResult("opp-many", "Regular", true);
+        profile.recordRivalResult("opp-many", "Regular", false);
+
+        var rivals = profile.getRivals();
+        assertEquals(2, rivals.size());
+        assertEquals("opp-many", rivals.get(0).getOpponentPlayerId(), "most-played opponent should sort first");
+        assertEquals("opp-few", rivals.get(1).getOpponentPlayerId());
+    }
+
+    @Test
+    void recordRivalResultIgnoresANullOrBlankOpponentId() {
+        PlayerProfile profile = new PlayerProfile();
+        profile.recordRivalResult(null, "Ghost", true);
+        profile.recordRivalResult("  ", "Ghost", true);
+        assertTrue(profile.getRivals().isEmpty());
+    }
+
+    @Test
+    void recordRivalResultUsesShortIdFallbackWhenNoDisplayNameHintWasEverCaptured() {
+        PlayerProfile profile = new PlayerProfile();
+        profile.recordRivalResult("12345678-abcd-abcd-abcd-abcdefabcdef", null, true);
+        RivalRecord rival = profile.getRivals().get(0);
+        assertEquals("Player-12345678", rival.displayName());
+    }
 }

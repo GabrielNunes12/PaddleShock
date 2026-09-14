@@ -31,6 +31,21 @@ public final class RankState {
     private int losses;
     private Promo promo;
 
+    // Peak-rank tracking (see aws/README.md "Seasonal peak-rank reward"): the best tier/division/lp
+    // reached so far THIS season. Old server records predate these fields; Gson leaves them null/0
+    // in that case, which getters below treat as "no peak recorded" rather than crashing.
+    private String peakTier;
+    private int peakDivision;
+    private int peakLp;
+
+    // A one-time snapshot of the PREVIOUS season's peak, captured server-side once right before
+    // each season reset. lastSeasonNumber is null until this record has lived through at least one
+    // rollover since peak-tracking existed.
+    private String lastSeasonPeakTier;
+    private int lastSeasonPeakDivision;
+    private int lastSeasonPeakLp;
+    private Integer lastSeasonNumber;
+
     private Integer lpChange;
     private Boolean promoted;
     private Boolean demoted;
@@ -87,6 +102,47 @@ public final class RankState {
     /** Human-readable "TIER DIVISION" label, e.g. "Silver II", for display. */
     public String formatLabel() {
         return getTier().getDisplayName() + " " + RankTier.divisionToRoman(division);
+    }
+
+    /** The best tier reached so far this season, or {@code null} if the server never recorded a
+     *  peak for this record (predates the peak-tracking feature and hasn't played a match since). */
+    public RankTier getPeakTier() {
+        return peakTier == null ? null : RankTier.valueOf(peakTier);
+    }
+
+    public int getPeakDivision() {
+        return peakDivision;
+    }
+
+    public int getPeakLp() {
+        return peakLp;
+    }
+
+    /** The previous season's peak tier, or {@code null} if this record hasn't lived through a
+     *  season rollover since peak-tracking existed (see {@link #getLastSeasonNumber()}). */
+    public RankTier getLastSeasonPeakTier() {
+        return lastSeasonPeakTier == null ? null : RankTier.valueOf(lastSeasonPeakTier);
+    }
+
+    public int getLastSeasonPeakDivision() {
+        return lastSeasonPeakDivision;
+    }
+
+    public int getLastSeasonPeakLp() {
+        return lastSeasonPeakLp;
+    }
+
+    /** The season number the {@code lastSeasonPeak*} fields describe, or {@code null} if none has
+     *  been recorded yet. */
+    public Integer getLastSeasonNumber() {
+        return lastSeasonNumber;
+    }
+
+    /** "TIER DIVISION" label for the previous season's peak, e.g. "Gold II", or {@code null} if
+     *  there isn't one recorded yet - see {@link #getLastSeasonNumber()}. */
+    public String formatLastSeasonPeakLabel() {
+        RankTier tier = getLastSeasonPeakTier();
+        return tier == null ? null : tier.getDisplayName() + " " + RankTier.divisionToRoman(lastSeasonPeakDivision);
     }
 
     /**

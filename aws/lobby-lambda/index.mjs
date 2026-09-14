@@ -138,7 +138,44 @@ function currentSeason() {
 }
 
 function defaultRank(season) {
-    return { tier: "COPPER", division: 4, lp: 0, wins: 0, losses: 0, promo: null, streak: 0, season };
+    return {
+        tier: "COPPER", division: 4, lp: 0, wins: 0, losses: 0, promo: null, streak: 0, season,
+        // Peak tracking (see "Seasonal peak-rank reward" below): a fresh record's peak starts
+        // exactly where it starts. lastSeasonPeak*/lastSeasonNumber stay unset until the first
+        // season rollover this record lives through.
+        peakTier: "COPPER", peakDivision: 4, peakLp: 0,
+    };
+}
+
+/** Compares two tier/division/lp positions using the same "better first" ordering
+ *  `handleGetLeaderboard`'s sort uses: higher tier wins, then lower division (I beats IV), then
+ *  higher LP. Negative means `a` is better than `b`. Shared so peak-rank tracking and the
+ *  leaderboard sort can't drift out of sync with each other. */
+function compareRankPosition(a, b) {
+    const tierDiff = TIERS.indexOf(b.tier) - TIERS.indexOf(a.tier);
+    if (tierDiff !== 0) {
+        return tierDiff;
+    }
+    if (a.division !== b.division) {
+        return a.division - b.division;
+    }
+    return b.lp - a.lp;
+}
+
+function isBetterRankPosition(a, b) {
+    return compareRankPosition(a, b) < 0;
+}
+
+/** Bumps rank.peakTier/peakDivision/peakLp if the rank's current position is better than
+ *  whatever peak is currently recorded (or if there's no peak recorded yet - an old record from
+ *  before this feature existed). Mutates in place. */
+function updatePeakIfBetter(rank) {
+    const current = { tier: rank.tier, division: rank.division, lp: rank.lp };
+    if (!rank.peakTier || isBetterRankPosition(current, { tier: rank.peakTier, division: rank.peakDivision, lp: rank.peakLp })) {
+        rank.peakTier = rank.tier;
+        rank.peakDivision = rank.division;
+        rank.peakLp = rank.lp;
+    }
 }
 
 /** LP for the Nth consecutive win (N=1 is a fresh streak, right after a loss/promotion/reset). */
@@ -174,10 +211,21 @@ function demoteOneStep(rank) {
     }
 }
 
-/** Soft-resets a rank record into a fresh season if it's stale, mutating it in place. */
+/** Soft-resets a rank record into a fresh season if it's stale, mutating it in place. Before the
+ *  reset lands, snapshots the outgoing season's peak (if any was ever recorded - old records
+ *  predate the peak fields and deserialize with peakTier undefined, in which case nothing is
+ *  snapshotted and no reward is owed for that season) into the lastSeasonPeak-prefixed fields and
+ *  lastSeasonNumber, so a client can look back at what it achieved after the season rolls over.
+ *  The live peak is then reset to match wherever the fresh season's reset lands. */
 function applySeasonResetIfNeeded(rank, season) {
     if (rank.season === season) {
         return;
+    }
+    if (rank.peakTier) {
+        rank.lastSeasonPeakTier = rank.peakTier;
+        rank.lastSeasonPeakDivision = rank.peakDivision;
+        rank.lastSeasonPeakLp = rank.peakLp;
+        rank.lastSeasonNumber = rank.season; // the OUTGOING season, before it's overwritten below
     }
     if (TIERS.indexOf(rank.tier) > TIERS.indexOf("SILVER")) {
         rank.tier = "SILVER";
@@ -189,6 +237,9 @@ function applySeasonResetIfNeeded(rank, season) {
     rank.promo = null;
     rank.streak = 0;
     rank.season = season;
+    rank.peakTier = rank.tier;
+    rank.peakDivision = rank.division;
+    rank.peakLp = rank.lp;
 }
 
 /** Applies one match result to a rank record, mutating it in place. Returns a small summary of
@@ -197,6 +248,7 @@ function applySeasonResetIfNeeded(rank, season) {
 function applyMatchResult(rank, won) {
     rank.streak = rank.streak || 0; // old records predate this field
 
+    let summary;
     if (rank.promo) {
         if (won) {
             rank.promo.wins += 1;
@@ -207,42 +259,48 @@ function applyMatchResult(rank, won) {
             promoteOneStep(rank);
             rank.lp = 0;
             rank.promo = null;
-            return { lpChange: 0, promoted: true, demoted: false, promoSeriesResult: "won" };
-        }
-        if (rank.promo.losses >= 2) {
+            summary = { lpChange: 0, promoted: true, demoted: false, promoSeriesResult: "won" };
+        } else if (rank.promo.losses >= 2) {
             rank.lp = PROMO_LOSS_CUSHION_LP;
             rank.promo = null;
-            return { lpChange: 0, promoted: false, demoted: false, promoSeriesResult: "lost" };
+            summary = { lpChange: 0, promoted: false, demoted: false, promoSeriesResult: "lost" };
+        } else {
+            summary = { lpChange: 0, promoted: false, demoted: false, promoSeriesResult: "ongoing" };
         }
-        return { lpChange: 0, promoted: false, demoted: false, promoSeriesResult: "ongoing" };
-    }
-
-    if (won) {
+    } else if (won) {
         rank.streak = rank.streak > 0 ? rank.streak + 1 : 1;
         const gain = lpForWinStreak(rank.streak);
         rank.wins += 1;
         rank.lp += gain;
+        let promoSeriesResult = null;
         if (rank.lp >= 100) {
             rank.lp = 100;
             if (!isMaxRank(rank)) {
                 rank.promo = { wins: 0, losses: 0 };
-                return { lpChange: gain, promoted: false, demoted: false, promoSeriesResult: "started" };
+                promoSeriesResult = "started";
             }
         }
-        return { lpChange: gain, promoted: false, demoted: false, promoSeriesResult: null };
+        summary = { lpChange: gain, promoted: false, demoted: false, promoSeriesResult };
+    } else {
+        rank.streak = rank.streak < 0 ? rank.streak - 1 : -1;
+        const loss = lpForLossStreak(-rank.streak);
+        rank.losses += 1;
+        rank.lp -= loss;
+        if (rank.lp < 0) {
+            rank.lp = 0;
+            const wasFloor = rank.tier === "COPPER" && rank.division === 4;
+            demoteOneStep(rank);
+            summary = { lpChange: -loss, promoted: false, demoted: !wasFloor, promoSeriesResult: null };
+        } else {
+            summary = { lpChange: -loss, promoted: false, demoted: false, promoSeriesResult: null };
+        }
     }
 
-    rank.streak = rank.streak < 0 ? rank.streak - 1 : -1;
-    const loss = lpForLossStreak(-rank.streak);
-    rank.losses += 1;
-    rank.lp -= loss;
-    if (rank.lp < 0) {
-        rank.lp = 0;
-        const wasFloor = rank.tier === "COPPER" && rank.division === 4;
-        demoteOneStep(rank);
-        return { lpChange: -loss, promoted: false, demoted: !wasFloor, promoSeriesResult: null };
-    }
-    return { lpChange: -loss, promoted: false, demoted: false, promoSeriesResult: null };
+    // Peak tracking (see "Seasonal peak-rank reward"): a promotion-series result still moves
+    // tier/division/lp (or holds them), so this needs to run for every branch above, not just
+    // plain win/loss LP changes.
+    updatePeakIfBetter(rank);
+    return summary;
 }
 
 async function loadRank(playerId, season) {
@@ -286,16 +344,7 @@ async function handleGetLeaderboard(body) {
             applySeasonResetIfNeeded(rank, season); // display-only - never persisted here
             return rank;
         })
-        .sort((a, b) => {
-            const tierDiff = TIERS.indexOf(b.tier) - TIERS.indexOf(a.tier);
-            if (tierDiff !== 0) {
-                return tierDiff;
-            }
-            if (a.division !== b.division) {
-                return a.division - b.division; // lower division number = better (I beats IV)
-            }
-            return b.lp - a.lp;
-        })
+        .sort(compareRankPosition)
         .slice(0, limit)
         .map((rank) => ({
             playerId: rank.playerId,
@@ -424,6 +473,8 @@ export {
     lpForLossStreak,
     promoteOneStep,
     demoteOneStep,
+    compareRankPosition,
+    isBetterRankPosition,
     applySeasonResetIfNeeded,
     applyMatchResult,
 };

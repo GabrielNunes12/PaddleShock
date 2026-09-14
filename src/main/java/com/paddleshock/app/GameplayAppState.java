@@ -775,7 +775,9 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                 if (ranked) {
                     app.endRankedJoinerMatch(!snapshot.isHostWon(), joinerDisplayScore, hostDisplayScore, netClient);
                 } else {
-                    app.endMatch(!snapshot.isHostWon(), joinerDisplayScore, hostDisplayScore);
+                    // Unranked joiner: the host's playerId (if it sent one - see NetProtocol
+                    // TYPE_WELCOME / NetClient#getHostPlayerId) is the opponent for the rival tracker.
+                    app.endMatch(!snapshot.isHostWon(), joinerDisplayScore, hostDisplayScore, netClient.getHostPlayerId());
                 }
             }
         }
@@ -884,7 +886,12 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                     app.endRankedHostMatch(result.isPlayerWon(), matchSimulation.getPlayerScore(),
                             matchSimulation.getOpponentScore(), netHost);
                 } else {
-                    app.endMatch(result.isPlayerWon(), matchSimulation.getPlayerScore(), matchSimulation.getOpponentScore());
+                    // HOST mode here means an unranked LAN/lobby match (ranked HOST already
+                    // handled above) - the opponent's playerId is known from HELLO the same way
+                    // the ranked path knows it; SINGLE_PLAYER has no real opponent at all.
+                    String opponentPlayerId = mode == Mode.HOST ? netHost.getJoinerPlayerId() : null;
+                    app.endMatch(result.isPlayerWon(), matchSimulation.getPlayerScore(),
+                            matchSimulation.getOpponentScore(), opponentPlayerId);
                 }
             }
         }

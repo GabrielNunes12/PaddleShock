@@ -1,8 +1,11 @@
 package com.paddleshock.data;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -47,6 +50,22 @@ public class PlayerProfile {
     // addMatchHistoryEntry(). Old saves predate this field and deserialize it as null;
     // getMatchHistory() treats that the same as an empty list.
     private List<MatchHistoryEntry> matchHistory = new ArrayList<>();
+
+    // Local head-to-head tracker, keyed by opponent playerId - see recordRivalResult(). Old saves
+    // predate this field and deserialize it as null; getRivals()/recordRivalResult() treat that
+    // the same as an empty map. A Map (not a List, matching matchHistory's convention) since
+    // lookup/update by opponent id is the primary access pattern here, unlike match history's
+    // append-only most-recent-first list.
+    private Map<String, RivalRecord> rivals = new HashMap<>();
+
+    // Seasonal peak-rank reward (see aws/README.md "Seasonal peak-rank reward"): the last season
+    // number this profile was actually paid out for, so the reward is granted at most once per
+    // season. Defaults to -1 (not 0, which is itself a valid season number) so any real season
+    // number the server returns counts as "new". Old saves predate this field and deserialize it
+    // via this same initializer (never touched by Gson, same no-migration-needed treatment as
+    // hasSeenTutorial/displayName above), so an old save's first ever getRank response is always
+    // treated as unclaimed.
+    private int lastRewardedSeason = -1;
 
     private Set<String> ownedPaddleIds = new HashSet<>(Set.of("paddle_classic"));
     private Set<String> ownedTableIds = new HashSet<>(Set.of("table_classic"));
@@ -145,6 +164,48 @@ public class PlayerProfile {
         while (matchHistory.size() > MATCH_HISTORY_CAP) {
             matchHistory.remove(matchHistory.size() - 1);
         }
+    }
+
+    /** The season number the seasonal peak-rank reward was last paid out for; -1 if never claimed. */
+    public int getLastRewardedSeason() {
+        return lastRewardedSeason;
+    }
+
+    public void setLastRewardedSeason(int season) {
+        this.lastRewardedSeason = season;
+    }
+
+    /** Local head-to-head records against other players, most-played-first - see
+     *  {@link #recordRivalResult}. Never {@code null}. */
+    public List<RivalRecord> getRivals() {
+        if (rivals == null || rivals.isEmpty()) {
+            return List.of();
+        }
+        List<RivalRecord> sorted = new ArrayList<>(rivals.values());
+        sorted.sort(Comparator.comparingInt(RivalRecord::getGamesPlayed).reversed());
+        return sorted;
+    }
+
+    /** Creates or updates the local head-to-head record against {@code opponentPlayerId}, called
+     *  alongside match-history recording for any match where the real opponent's playerId is
+     *  known (ranked or unranked, LAN or internet - see the match-end paths in
+     *  {@code PaddleShockApp}). {@code opponentDisplayNameHint} may be {@code null}/blank if no
+     *  better hint than the id itself is available; a non-blank hint always overwrites a stale one
+     *  so a later match can improve on an earlier fallback. No-ops if {@code opponentPlayerId} is
+     *  {@code null}/blank (no real opponent to attribute this to). */
+    public void recordRivalResult(String opponentPlayerId, String opponentDisplayNameHint, boolean won) {
+        if (opponentPlayerId == null || opponentPlayerId.isBlank()) {
+            return;
+        }
+        if (rivals == null) {
+            rivals = new HashMap<>();
+        }
+        RivalRecord record = rivals.computeIfAbsent(opponentPlayerId,
+                id -> new RivalRecord(id, opponentDisplayNameHint));
+        if (opponentDisplayNameHint != null && !opponentDisplayNameHint.isBlank()) {
+            record.setOpponentDisplayNameHint(opponentDisplayNameHint);
+        }
+        record.recordResult(won, System.currentTimeMillis());
     }
 
     public boolean owns(String category, String id) {
