@@ -89,6 +89,26 @@ public final class RankState {
         return getTier().getDisplayName() + " " + RankTier.divisionToRoman(division);
     }
 
+    /**
+     * "TIER DIVISION" label for the tier/division a single win away during an active promotion
+     * series - the next-better division within this tier, or division IV of the next tier up
+     * when already at division I. Used for pre-match "win to advance to X" framing; meaningful
+     * only when {@link #isInPromoSeries()}. {@code null} if already at the ceiling (Diamond I) -
+     * there's nowhere higher to name.
+     */
+    public String nextPromoLabel() {
+        RankTier tier = getTier();
+        if (division > 1) {
+            return tier.getDisplayName() + " " + RankTier.divisionToRoman(division - 1);
+        }
+        RankTier[] tiers = RankTier.values();
+        int nextOrdinal = tier.ordinal() + 1;
+        if (nextOrdinal >= tiers.length) {
+            return null;
+        }
+        return tiers[nextOrdinal].getDisplayName() + " " + RankTier.divisionToRoman(4);
+    }
+
     /** Reconstructs a display-ready {@link RankState} from a relayed {@link NetProtocol#TYPE_RANK_RESULT}
      *  packet - the joiner's own authoritative post-match state as the host's {@code reportMatchResult}
      *  call actually returned it, rather than a locally-guessed diff (see {@link #withDeltaFrom}). */

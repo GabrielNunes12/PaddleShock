@@ -82,6 +82,14 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     private final PlayerInput playerInput = new PlayerInput();
     private MatchSimulation matchSimulation;
     private final PowerUpDefinition[] powerUpLoadout = new PowerUpDefinition[3];
+
+    /** The AI opponent's own fixed power-up kit ({@link Mode#SINGLE_PLAYER} only) - deliberately
+     *  NOT the player's own {@link #powerUpLoadout}, so a player who buys/equips more power-ups
+     *  doesn't hand the AI a stronger kit too. A small, hardcoded pair; timing/frequency of when
+     *  the AI fires them is still governed entirely by {@link com.paddleshock.settings.AiDifficulty}
+     *  via {@link #aiPowerUpMinInterval}/{@link #aiPowerUpMaxInterval}. */
+    private static final String[] AI_POWERUP_IDS = {"powerup_speed_boost", "powerup_slow_opponent"};
+    private final PowerUpDefinition[] aiPowerUpLoadout = new PowerUpDefinition[AI_POWERUP_IDS.length];
     private final Geometry[] powerUpBoxes = new Geometry[3];
     private final BitmapText[] powerUpKeyTexts = new BitmapText[3];
     private final BitmapText[] powerUpIconTexts = new BitmapText[3];
@@ -295,6 +303,11 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         for (int i = 0; i < powerUpLoadout.length; i++) {
             String id = loadout.get(i);
             powerUpLoadout[i] = id.isEmpty() ? null : Catalog.findPowerUp(id).orElse(null);
+        }
+        if (mode == Mode.SINGLE_PLAYER) {
+            for (int i = 0; i < AI_POWERUP_IDS.length; i++) {
+                aiPowerUpLoadout[i] = Catalog.findPowerUp(AI_POWERUP_IDS[i]).orElse(null);
+            }
         }
     }
 
@@ -785,8 +798,8 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         return new PaddleInput(step, 0, chosen);
     }
 
-    /** The AI mirrors the player's own loadout (there's no separate AI/ranked kit yet) and fires
-     *  a random ready one every few seconds, so bought power-ups don't just favor the player. */
+    /** The AI picks from its own fixed {@link #aiPowerUpLoadout} - independent of whatever the
+     *  player has equipped - and fires a random ready one every few seconds. */
     private PowerUpDefinition pickAiPowerUp(float tpf) {
         aiPowerUpTimer -= tpf;
         if (aiPowerUpTimer > 0f) {
@@ -796,7 +809,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                 + (float) (Math.random() * (aiPowerUpMaxInterval - aiPowerUpMinInterval));
 
         List<PowerUpDefinition> ready = new ArrayList<>();
-        for (PowerUpDefinition def : powerUpLoadout) {
+        for (PowerUpDefinition def : aiPowerUpLoadout) {
             if (def != null && matchSimulation.getPowerUpManager().isAiReady(def.getType())) {
                 ready.add(def);
             }
