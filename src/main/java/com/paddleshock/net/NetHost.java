@@ -156,7 +156,7 @@ public class NetHost implements AutoCloseable {
                     joinerPlayerId = playerId;
                 }
                 joinerAllowedPowerUpIds = resolveAllowedPowerUpIds(hello.loadout());
-                sendRaw(from, NetProtocol.encodeWelcome(ranked));
+                sendRaw(from, NetProtocol.encodeWelcome(ranked, localPlayerId));
             } else {
                 sendRaw(from, NetProtocol.encodeHandshake(NetProtocol.TYPE_REJECT));
             }

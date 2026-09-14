@@ -38,6 +38,10 @@ public class NetClient implements AutoCloseable {
     // Defaults true (ranked) to match the game's original always-ranked behavior until an actual
     // WELCOME arrives - see NetProtocol.decodeWelcomeRanked.
     private volatile boolean ranked = true;
+    /** The host's ranked-ladder player id, learned from WELCOME (see {@code NetHost#localPlayerId}
+     *  and {@link NetProtocol#decodeWelcomeHostPlayerId}) - {@code ""} until connected, or for an
+     *  older host that didn't send one. Used by the local rival tracker. */
+    private volatile String hostPlayerId = "";
     private final AtomicReference<NetProtocol.SnapshotMessage> latestSnapshot = new AtomicReference<>();
     private final AtomicReference<NetProtocol.RankResultMessage> relayedRankResult = new AtomicReference<>();
 
@@ -150,6 +154,7 @@ public class NetClient implements AutoCloseable {
             switch (NetProtocol.messageType(data)) {
                 case NetProtocol.TYPE_WELCOME -> {
                     ranked = NetProtocol.decodeWelcomeRanked(data);
+                    hostPlayerId = NetProtocol.decodeWelcomeHostPlayerId(data);
                     connected = true;
                     lastHostPacketAt = System.currentTimeMillis();
                 }
@@ -207,6 +212,13 @@ public class NetClient implements AutoCloseable {
      *  defaults to {@code true} beforehand. */
     public boolean isRanked() {
         return ranked;
+    }
+
+    /** The host's ranked-ladder player id (see {@code RankClient}), or {@code ""} before
+     *  {@link #isConnected()} or if the host didn't send one (an older host). Used by the local
+     *  rival tracker to record a result against this opponent. */
+    public String getHostPlayerId() {
+        return hostPlayerId;
     }
 
     /** Sends this frame's local input to the host. {@code powerUpId} is the catalog id of a

@@ -12,6 +12,8 @@ import {
     lpForLossStreak,
     promoteOneStep,
     demoteOneStep,
+    compareRankPosition,
+    isBetterRankPosition,
     applySeasonResetIfNeeded,
     applyMatchResult,
 } from "./index.mjs";
@@ -272,5 +274,137 @@ describe("applyMatchResult", () => {
 
     test("TIERS ladder is ordered Copper through Diamond", () => {
         assert.deepEqual(TIERS, ["COPPER", "BRONZE", "SILVER", "GOLD", "PLATINUM", "DIAMOND"]);
+    });
+});
+
+describe("compareRankPosition / isBetterRankPosition", () => {
+    test("higher tier is better regardless of division/lp", () => {
+        const gold = { tier: "GOLD", division: 4, lp: 0 };
+        const silver = { tier: "SILVER", division: 1, lp: 99 };
+        assert.equal(isBetterRankPosition(gold, silver), true);
+        assert.equal(isBetterRankPosition(silver, gold), false);
+    });
+
+    test("within a tier, lower division number is better", () => {
+        const divOne = { tier: "GOLD", division: 1, lp: 0 };
+        const divFour = { tier: "GOLD", division: 4, lp: 99 };
+        assert.equal(isBetterRankPosition(divOne, divFour), true);
+    });
+
+    test("within tier/division, higher lp is better", () => {
+        const higher = { tier: "GOLD", division: 2, lp: 80 };
+        const lower = { tier: "GOLD", division: 2, lp: 20 };
+        assert.equal(isBetterRankPosition(higher, lower), true);
+        assert.equal(compareRankPosition(higher, higher), 0);
+    });
+});
+
+describe("peak-rank tracking (applyMatchResult)", () => {
+    test("a fresh rank's peak starts at its starting position", () => {
+        const rank = defaultRank(1);
+        assert.equal(rank.peakTier, "COPPER");
+        assert.equal(rank.peakDivision, 4);
+        assert.equal(rank.peakLp, 0);
+    });
+
+    test("peak advances across several wins", () => {
+        const rank = defaultRank(1);
+        applyMatchResult(rank, true); // lp 16
+        assert.equal(rank.peakTier, "COPPER");
+        assert.equal(rank.peakDivision, 4);
+        assert.equal(rank.peakLp, 16);
+
+        applyMatchResult(rank, true); // lp 36, streak 2
+        assert.equal(rank.peakLp, 36);
+    });
+
+    test("peak advances through a promotion", () => {
+        const rank = { ...defaultRank(1), tier: "GOLD", division: 2, lp: 100, promo: { wins: 1, losses: 0 } };
+        applyMatchResult(rank, true); // wins the series -> GOLD I, lp 0
+        assert.equal(rank.tier, "GOLD");
+        assert.equal(rank.division, 1);
+        assert.equal(rank.peakTier, "GOLD");
+        assert.equal(rank.peakDivision, 1);
+        assert.equal(rank.peakLp, 0);
+    });
+
+    test("peak does NOT decrease on a loss", () => {
+        const rank = defaultRank(1);
+        applyMatchResult(rank, true);
+        applyMatchResult(rank, true);
+        const peakBefore = { tier: rank.peakTier, division: rank.peakDivision, lp: rank.peakLp };
+        applyMatchResult(rank, false); // rank.lp drops, but peak should hold
+        assert.equal(rank.peakTier, peakBefore.tier);
+        assert.equal(rank.peakDivision, peakBefore.division);
+        assert.equal(rank.peakLp, peakBefore.lp);
+    });
+
+    test("peak does NOT decrease across a demotion", () => {
+        const rank = { ...defaultRank(1), tier: "GOLD", division: 3, lp: 5, streak: 0, peakTier: "GOLD", peakDivision: 3, peakLp: 90 };
+        applyMatchResult(rank, false); // demotes to GOLD IV, lp 0
+        assert.equal(rank.tier, "GOLD");
+        assert.equal(rank.division, 4);
+        // peak must remain the pre-demotion best, not regress to the new (worse) position
+        assert.equal(rank.peakTier, "GOLD");
+        assert.equal(rank.peakDivision, 3);
+        assert.equal(rank.peakLp, 90);
+    });
+
+    test("old records with no peak fields (undefined) don't crash and adopt current position", () => {
+        const rank = { tier: "SILVER", division: 3, lp: 40, wins: 0, losses: 0, promo: null, streak: 0, season: 1 };
+        assert.equal(rank.peakTier, undefined);
+        applyMatchResult(rank, true);
+        assert.equal(rank.peakTier, "SILVER");
+        assert.ok(typeof rank.peakDivision === "number");
+        assert.ok(typeof rank.peakLp === "number");
+    });
+});
+
+describe("season rollover snapshots the outgoing peak (applySeasonResetIfNeeded)", () => {
+    test("captures outgoing peak into lastSeasonPeak*/lastSeasonNumber, live peak resets to new season's landing spot", () => {
+        const rank = { ...defaultRank(5), tier: "PLATINUM", division: 2, lp: 60, peakTier: "PLATINUM", peakDivision: 1, peakLp: 80 };
+        applySeasonResetIfNeeded(rank, 6);
+
+        assert.equal(rank.lastSeasonPeakTier, "PLATINUM");
+        assert.equal(rank.lastSeasonPeakDivision, 1);
+        assert.equal(rank.lastSeasonPeakLp, 80);
+        assert.equal(rank.lastSeasonNumber, 5); // the OUTGOING season
+
+        // Tier is above Silver, so the reset compresses down to Silver II / 50 LP - the live peak
+        // must reset to match that landing spot, not carry over the old season's peak.
+        assert.equal(rank.tier, "SILVER");
+        assert.equal(rank.division, 2);
+        assert.equal(rank.lp, 50);
+        assert.equal(rank.peakTier, "SILVER");
+        assert.equal(rank.peakDivision, 2);
+        assert.equal(rank.peakLp, 50);
+    });
+
+    test("a record with no peak ever recorded snapshots nothing (old record, no reward owed)", () => {
+        const rank = { tier: "GOLD", division: 2, lp: 40, wins: 0, losses: 0, promo: null, streak: 0, season: 5 };
+        applySeasonResetIfNeeded(rank, 6);
+        assert.equal(rank.lastSeasonPeakTier, undefined);
+        assert.equal(rank.lastSeasonNumber, undefined);
+        // live peak is still established fresh at the new landing spot going forward
+        assert.equal(rank.peakTier, rank.tier);
+        assert.equal(rank.peakDivision, rank.division);
+        assert.equal(rank.peakLp, rank.lp);
+    });
+
+    test("a second consecutive season rollover re-snapshots using the most recent peak", () => {
+        const rank = { ...defaultRank(5), tier: "BRONZE", division: 2, lp: 30, peakTier: "BRONZE", peakDivision: 1, peakLp: 70 };
+        applySeasonResetIfNeeded(rank, 6);
+        assert.equal(rank.lastSeasonPeakTier, "BRONZE");
+        assert.equal(rank.lastSeasonNumber, 5);
+
+        // Simulate some play in season 6 reaching a new peak, then roll to season 7.
+        rank.peakTier = "SILVER";
+        rank.peakDivision = 3;
+        rank.peakLp = 10;
+        applySeasonResetIfNeeded(rank, 7);
+        assert.equal(rank.lastSeasonPeakTier, "SILVER");
+        assert.equal(rank.lastSeasonPeakDivision, 3);
+        assert.equal(rank.lastSeasonPeakLp, 10);
+        assert.equal(rank.lastSeasonNumber, 6);
     });
 });

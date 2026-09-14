@@ -28,8 +28,10 @@ import com.simsilica.lemur.component.SpringGridLayout;
 
 import com.paddleshock.app.PaddleShockApp;
 import com.paddleshock.data.MatchHistoryEntry;
+import com.paddleshock.data.RivalRecord;
 import com.paddleshock.net.RankClient;
 import com.paddleshock.net.RankState;
+import com.paddleshock.rank.RankTier;
 
 /**
  * Player profile screen: display name (Steam persona if available, else a locally editable
@@ -56,6 +58,14 @@ public class ProfileState extends BaseAppState {
     private static final float LEFT_CARD_WIDTH = 310f;
     private static final float RIGHT_CARD_WIDTH = 440f;
 
+    /** Top N rivals shown on screen, most-played-first - see {@code PlayerProfile#getRivals()}. */
+    private static final int RIVALS_DISPLAY_LIMIT = 5;
+
+    /** Seasonal peak-rank reward credits, indexed by {@link RankTier#ordinal()} - see
+     *  aws/README.md "Seasonal peak-rank reward". Copper (index 0) is intentionally 0: no
+     *  meaningful peak was reached. */
+    private static final int[] SEASON_REWARD_CREDITS_BY_TIER = {0, 20, 40, 60, 80, 120};
+
     private enum RankView { LOADING, LOADED, ERROR }
 
     private final Node uiRoot = new Node("profileUi");
@@ -67,6 +77,11 @@ public class ProfileState extends BaseAppState {
     private final AtomicReference<RankState> fetchResult = new AtomicReference<>();
     private final AtomicBoolean fetchPending = new AtomicBoolean(false);
     private volatile boolean fetchFailed = false;
+
+    // Set once, at most, per rank fetch that reveals a newly-rolled-over season peak worth
+    // rewarding (see maybeGrantSeasonReward) - null otherwise. Consumed by buildRank() to show a
+    // brief on-screen notice; never blocks or delays the fetch/screen.
+    private volatile String seasonRewardNotice;
 
     // Set only when Steam is unavailable and the local-name TextField is actually on screen -
     // see buildIdentity()/commitNameEdit().
@@ -81,6 +96,7 @@ public class ProfileState extends BaseAppState {
         rankView = RankView.LOADING;
         fetchResult.set(null);
         fetchFailed = false;
+        seasonRewardNotice = null;
         fetchPending.set(true);
         int myGeneration = fetchGeneration.incrementAndGet();
         String playerId = app.getProfile().getPlayerId();
@@ -98,10 +114,35 @@ public class ProfileState extends BaseAppState {
             }
             fetchResult.set(rank);
             fetchFailed = failed;
+            if (rank != null) {
+                maybeGrantSeasonReward(app, rank);
+            }
             fetchPending.set(false);
         }, "profile-rank-fetch");
         thread.setDaemon(true);
         thread.start();
+    }
+
+    /** Grants the one-time seasonal peak-rank reward the first time this fetch observes a
+     *  {@code lastSeasonNumber} newer than what the profile has already been paid out for - see
+     *  aws/README.md "Seasonal peak-rank reward". Purely local bookkeeping (no extra network call),
+     *  so it never adds latency to the fetch it piggybacks on; runs on the same background thread
+     *  the rank fetch already used, never the render thread. */
+    private void maybeGrantSeasonReward(PaddleShockApp app, RankState rank) {
+        Integer lastSeasonNumber = rank.getLastSeasonNumber();
+        RankTier peakTier = rank.getLastSeasonPeakTier();
+        if (lastSeasonNumber == null || peakTier == null) {
+            return;
+        }
+        if (lastSeasonNumber <= app.getProfile().getLastRewardedSeason()) {
+            return; // already claimed (or nothing to claim yet)
+        }
+        int credits = SEASON_REWARD_CREDITS_BY_TIER[peakTier.ordinal()];
+        app.getProfile().addCurrency(credits);
+        app.getProfile().setLastRewardedSeason(lastSeasonNumber);
+        app.saveProfile();
+        seasonRewardNotice = "Season reward: +" + credits + " credits for reaching "
+                + rank.formatLastSeasonPeakLabel() + " last season!";
     }
 
     @Override
@@ -145,6 +186,7 @@ public class ProfileState extends BaseAppState {
 
         Container rightCard = addCard(columns, 0);
         buildHistory(app, rightCard);
+        buildRivals(app, rightCard);
         fixCardWidth(rightCard, RIGHT_CARD_WIDTH);
 
         Button back = panel.addChild(new Button("BACK"));
@@ -302,6 +344,54 @@ public class ProfileState extends BaseAppState {
                 rank.getLp() + " LP  -  " + rank.getWins() + "W-" + rank.getLosses() + "L"));
         detailLabel.setFontSize(13);
         detailLabel.setColor(Theme.TEXT_DIM);
+
+        if (seasonRewardNotice != null) {
+            Label reward = card.addChild(new Label(seasonRewardNotice));
+            reward.setFontSize(12);
+            reward.setColor(Theme.GREEN);
+            reward.setInsets(new Insets3f(8, 0, 0, 0));
+        }
+    }
+
+    private void buildRivals(PaddleShockApp app, Container card) {
+        Label rivalsTitle = card.addChild(new Label("RIVALS"));
+        rivalsTitle.setFontSize(12);
+        rivalsTitle.setColor(Theme.TEXT_DIM);
+        rivalsTitle.setInsets(new Insets3f(14, 0, 10, 0));
+
+        List<RivalRecord> rivals = app.getProfile().getRivals();
+        if (rivals.isEmpty()) {
+            Label empty = card.addChild(new Label("No rivals yet - play a multiplayer match!"));
+            empty.setFontSize(14);
+            empty.setColor(Theme.TEXT_DIM);
+            empty.setTextHAlignment(HAlignment.Center);
+            empty.setPreferredSize(new Vector3f(RIGHT_CARD_WIDTH - 36, 40, 0));
+            return;
+        }
+
+        Container rows = card.addChild(new Container(new SpringGridLayout(Axis.Y, Axis.X)));
+        int shown = Math.min(rivals.size(), RIVALS_DISPLAY_LIMIT);
+        for (int i = 0; i < shown; i++) {
+            addRivalRow(rows, rivals.get(i));
+        }
+    }
+
+    /** One compact row: the opponent's display-name hint (or a shortened-id fallback - see
+     *  {@link RivalRecord#displayName()}) and a "3W-1L" style record. */
+    private void addRivalRow(Container rows, RivalRecord rival) {
+        Container row = rows.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
+        row.setInsets(new Insets3f(3, 0, 3, 0));
+
+        Label nameLabel = row.addChild(new Label(rival.displayName()));
+        nameLabel.setFontSize(13);
+        nameLabel.setColor(Theme.TEXT);
+        nameLabel.setPreferredSize(new Vector3f(RIGHT_CARD_WIDTH - 36 - 90, nameLabel.getPreferredSize().y, 0));
+
+        Label recordLabel = row.addChild(new Label(rival.formatRecord()));
+        recordLabel.setFontSize(13);
+        recordLabel.setColor(Theme.TEXT_DIM);
+        recordLabel.setTextHAlignment(HAlignment.Right);
+        recordLabel.setPreferredSize(new Vector3f(80, recordLabel.getPreferredSize().y, 0));
     }
 
     private void buildHistory(PaddleShockApp app, Container card) {

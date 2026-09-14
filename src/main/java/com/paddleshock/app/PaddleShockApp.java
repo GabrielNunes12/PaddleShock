@@ -358,13 +358,17 @@ public class PaddleShockApp extends SimpleApplication {
         mainMenuState.setEnabled(true);
     }
 
-    /** Called by the gameplay state once a side reaches the winning score; awards credits on a player win. */
-    public void endMatch(boolean playerWon, int playerScore, int opponentScore) {
+    /** Called by the gameplay state once a side reaches the winning score; awards credits on a
+     *  player win. {@code opponentPlayerId} is the real opponent's ranked-ladder id for an
+     *  unranked LAN/lobby match (known via HELLO on the host side, WELCOME on the joiner side -
+     *  see {@code NetHost#getJoinerPlayerId}/{@code NetClient#getHostPlayerId}), used to update the
+     *  local rival tracker; {@code null} for single-player, which has no real opponent. */
+    public void endMatch(boolean playerWon, int playerScore, int opponentScore, String opponentPlayerId) {
         String mode = matchModeFor(gameplayState);
         int reward = endMatchCommon(playerWon, playerScore, opponentScore);
         matchEndState.setResult(playerWon, reward, playerScore, opponentScore);
         matchEndState.setEnabled(true);
-        recordMatchHistory(mode, playerScore, opponentScore, playerWon, 0);
+        recordMatchHistory(mode, playerScore, opponentScore, playerWon, 0, opponentPlayerId);
     }
 
     /** "vs AI" / "LAN Host" / "LAN Join" for a completed match's {@link GameplayAppState#getMode()} -
@@ -378,10 +382,18 @@ public class PaddleShockApp extends SimpleApplication {
         };
     }
 
-    /** Appends a match to the local match history and persists the profile - see
-     *  {@code PlayerProfile#addMatchHistoryEntry}. */
-    private void recordMatchHistory(String mode, int playerScore, int opponentScore, boolean won, int lpChange) {
+    /** Appends a match to the local match history, updates the local rival tracker if the real
+     *  opponent's playerId is known ({@code opponentPlayerId} null/blank for single-player, which
+     *  skips the rival update entirely), and persists the profile once for both - see
+     *  {@code PlayerProfile#addMatchHistoryEntry}/{@code PlayerProfile#recordRivalResult}. No
+     *  display-name hint is threaded through here (there's no cross-network display-name system
+     *  yet), so a rival always falls back to the shortened-id display until one is added. */
+    private void recordMatchHistory(String mode, int playerScore, int opponentScore, boolean won, int lpChange,
+            String opponentPlayerId) {
         profile.addMatchHistoryEntry(new MatchHistoryEntry(System.currentTimeMillis(), mode, playerScore, opponentScore, won, lpChange));
+        if (opponentPlayerId != null && !opponentPlayerId.isBlank()) {
+            profile.recordRivalResult(opponentPlayerId, null, won);
+        }
         saveProfile();
     }
 
@@ -403,7 +415,7 @@ public class PaddleShockApp extends SimpleApplication {
         String joinerPlayerId = netHost == null ? "" : netHost.getJoinerPlayerId();
         if (joinerPlayerId == null || joinerPlayerId.isEmpty()) {
             matchEndState.reportRankResult(null);
-            recordMatchHistory("Ranked", playerScore, opponentScore, playerWon, 0);
+            recordMatchHistory("Ranked", playerScore, opponentScore, playerWon, 0, null);
             return;
         }
         String hostPlayerId = profile.getPlayerId();
@@ -426,7 +438,8 @@ public class PaddleShockApp extends SimpleApplication {
                 NetLog.log("ranked match report failed (host)", e);
             }
             matchEndState.reportRankResult(result);
-            recordMatchHistory("Ranked", playerScore, opponentScore, playerWon, result == null ? 0 : result.getLpChange());
+            recordMatchHistory("Ranked", playerScore, opponentScore, playerWon,
+                    result == null ? 0 : result.getLpChange(), joinerPlayerId);
         }, "rank-report");
         thread.setDaemon(true);
         thread.start();
@@ -450,7 +463,9 @@ public class PaddleShockApp extends SimpleApplication {
         matchEndState.setEnabled(true);
 
         if (!ranked) {
-            recordMatchHistory("LAN Host", playerScore, opponentScore, true, 0);
+            // Still an unranked LAN/lobby match with a known opponent (the joiner sent an id in
+            // HELLO, just wasn't playing ranked) - record it against the rival tracker too.
+            recordMatchHistory("LAN Host", playerScore, opponentScore, true, 0, joinerPlayerId);
             return;
         }
         String hostPlayerId = profile.getPlayerId();
@@ -467,7 +482,8 @@ public class PaddleShockApp extends SimpleApplication {
                 NetLog.log("ranked forfeit report failed (host)", e);
             }
             matchEndState.reportRankResult(result);
-            recordMatchHistory("Ranked", playerScore, opponentScore, true, result == null ? 0 : result.getLpChange());
+            recordMatchHistory("Ranked", playerScore, opponentScore, true,
+                    result == null ? 0 : result.getLpChange(), joinerPlayerId);
         }, "rank-report-forfeit");
         thread.setDaemon(true);
         thread.start();
@@ -493,6 +509,10 @@ public class PaddleShockApp extends SimpleApplication {
         matchEndState.setEnabled(true);
 
         String playerId = profile.getPlayerId();
+        // The host's ranked-ladder playerId, learned from WELCOME (see NetProtocol.TYPE_WELCOME /
+        // NetClient#getHostPlayerId) - "" for an older host that didn't send one, in which case
+        // recordMatchHistory simply skips the rival update.
+        String hostOpponentPlayerId = netClient == null ? null : netClient.getHostPlayerId();
         Thread thread = new Thread(() -> {
             // Prefer the host's own relayed authoritative result (see NetHost.sendRankResult /
             // endRankedHostMatch) - it's the actual Lambda response, not a guess. Only fall back
@@ -501,7 +521,7 @@ public class PaddleShockApp extends SimpleApplication {
             RankState relayed = waitForRelayedRankResult(netClient);
             if (relayed != null) {
                 matchEndState.reportRankResult(relayed);
-                recordMatchHistory("Ranked", playerScore, opponentScore, playerWon, relayed.getLpChange());
+                recordMatchHistory("Ranked", playerScore, opponentScore, playerWon, relayed.getLpChange(), hostOpponentPlayerId);
                 return;
             }
 
@@ -531,15 +551,15 @@ public class PaddleShockApp extends SimpleApplication {
                 }
                 RankState delta = fetched.withDeltaFrom(baseline);
                 matchEndState.reportRankResult(delta);
-                recordMatchHistory("Ranked", playerScore, opponentScore, playerWon, delta.getLpChange());
+                recordMatchHistory("Ranked", playerScore, opponentScore, playerWon, delta.getLpChange(), hostOpponentPlayerId);
             } catch (IOException e) {
                 matchEndState.reportRankResult(null); // offline, or the rank service is unreachable
-                recordMatchHistory("Ranked", playerScore, opponentScore, playerWon, 0);
+                recordMatchHistory("Ranked", playerScore, opponentScore, playerWon, 0, hostOpponentPlayerId);
                 NetLog.log("ranked rank-fetch failed (joiner)", e);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 matchEndState.reportRankResult(null);
-                recordMatchHistory("Ranked", playerScore, opponentScore, playerWon, 0);
+                recordMatchHistory("Ranked", playerScore, opponentScore, playerWon, 0, hostOpponentPlayerId);
             }
         }, "rank-fetch");
         thread.setDaemon(true);
