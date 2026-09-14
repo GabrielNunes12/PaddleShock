@@ -228,36 +228,26 @@ public class MultiplayerState extends BaseAppState {
         });
     }
 
-    /** Small pill-shaped toggle-switch visual: a colored track (green when "on"/unranked, dim
-     *  when "off"/ranked) with a small square "knob" (Lemur has no easy circle without a custom
-     *  texture, so a square stands in - see the redesign notes) that slides to the opposite edge
-     *  depending on state. Reuses the same Button + click command as the old toggle button, so the
-     *  {@code unranked} field and its effect on hosting are unchanged - only the look is new. */
+    /** Small pill-shaped toggle-switch visual: a single Button whose background/text flips
+     *  between the two states, the same Button-driven pattern every other control on this screen
+     *  already uses reliably (a separate sliding "knob" panel attached as a raw scene-graph child
+     *  of the Button turned out not to composite visibly - Lemur's GuiControl-managed layout
+     *  apparently doesn't extend to non-managed children the way a plain Node's would, and wasn't
+     *  worth chasing further for a cosmetic flourish). Reuses the same click command as the old
+     *  toggle button, so the {@code unranked} field and its effect on hosting are unchanged. */
     private Button buildToggleSwitch(PaddleShockApp app) {
-        float trackW = 44f, trackH = 22f, knobSize = 16f, pad = 3f;
-
-        Button toggle = new Button("");
-        toggle.setBackground(new QuadBackgroundComponent(unranked ? Theme.GREEN : Theme.PANEL_HOVER));
-        toggle.setPreferredSize(new Vector3f(trackW, trackH, 0));
+        Button toggle = new Button(unranked ? "OFF" : "ON");
+        toggle.setBackground(new QuadBackgroundComponent(unranked ? Theme.PANEL_HOVER : Theme.GREEN));
+        toggle.setColor(unranked ? Theme.TEXT_DIM : Theme.ON_ACCENT);
+        toggle.setFontSize(13);
+        toggle.setTextHAlignment(com.simsilica.lemur.HAlignment.Center);
+        toggle.setPreferredSize(new Vector3f(56f, 26f, 0));
         toggle.setInsets(new Insets3f(0, 0, 0, 0));
         toggle.addClickCommands(source -> {
             app.getAudioManager().playSfx("button_click.ogg");
             unranked = !unranked;
             rebuild();
         });
-
-        Panel knob = new Panel();
-        knob.setBackground(new QuadBackgroundComponent(Theme.TEXT));
-        knob.setPreferredSize(new Vector3f(knobSize, knobSize, 0));
-        // A Panel's own local space has its top edge at y=0, extending DOWN into negative y (see
-        // QuadBackgroundComponent#reshape) - not the top-left-positive-down convention used when
-        // a parent layout positions a *child* panel. So the knob's y here is negative, vertically
-        // centered within the track's height.
-        float knobX = unranked ? (trackW - pad - knobSize) : pad;
-        float knobY = -(trackH - knobSize) / 2f;
-        knob.setLocalTranslation(knobX, knobY, 1);
-        toggle.attachChild(knob);
-
         return toggle;
     }
 

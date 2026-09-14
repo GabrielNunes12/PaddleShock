@@ -78,6 +78,15 @@ public class StoreState extends BaseAppState {
         cardHeight = modal ? MODAL_CARD_HEIGHT : FULL_CARD_HEIGHT;
         swatchHeight = modal ? MODAL_SWATCH_HEIGHT : FULL_SWATCH_HEIGHT;
 
+        // A category with more items than the 3 every other tab has (currently just POWER-UPS,
+        // at 4) would otherwise overflow past the screen edge at the fixed card width - shrink
+        // proportionally to whatever actually fits instead of letting cards run off-screen.
+        int itemCount = itemCountFor(selectedCategory);
+        float maxRowWidth = screenW - (modal ? 80f : 112f);
+        if (itemCount > 0 && itemCount * cardWidth > maxRowWidth) {
+            cardWidth = maxRowWidth / itemCount;
+        }
+
         if (modal) {
             buildModal(app, screenW, screenH);
         } else {
@@ -223,6 +232,16 @@ public class StoreState extends BaseAppState {
             selectedCategory = category;
             rebuild(app);
         });
+    }
+
+    private int itemCountFor(String category) {
+        return switch (category) {
+            case "paddle" -> Catalog.PADDLES.size();
+            case "table" -> Catalog.TABLES.size();
+            case "ball" -> Catalog.BALLS.size();
+            case "powerup" -> Catalog.POWERUPS.size();
+            default -> 0;
+        };
     }
 
     private void buildCards(PaddleShockApp app, float screenW, float screenH) {
