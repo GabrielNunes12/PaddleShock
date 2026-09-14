@@ -29,6 +29,8 @@ import com.paddleshock.GameConstants;
 import com.paddleshock.app.PaddleShockApp;
 import com.paddleshock.net.NetClient;
 import com.paddleshock.net.NetHost;
+import com.paddleshock.net.RankClient;
+import com.paddleshock.net.RankState;
 import com.paddleshock.net.StunClient;
 
 /**
@@ -62,6 +64,14 @@ public class MultiplayerState extends BaseAppState {
     // match-end path without a separate negotiation. Persists across a CANCEL/re-host within this
     // screen visit, but resets to ranked (false) whenever the screen is freshly entered.
     private boolean unranked = false;
+
+    // Host-side only: a pre-match "your current rank" snapshot (and, if applicable, promotion
+    // series callout) shown on the HOSTING screen once fetched - see beginHosting()/fetchPreMatchRank().
+    // Purely informational flavor text; a failed/slow fetch just means it never appears, nothing
+    // else waits on it.
+    private final AtomicReference<RankState> preMatchRank = new AtomicReference<>();
+    private volatile boolean preMatchRankPending = false;
+    private boolean preMatchRankShown = false;
 
     // Host-side: AWS lobby code registration, run off the render thread. lobbyGeneration guards
     // against a stale background result (from a cancelled/replaced hosting attempt) overwriting
@@ -204,6 +214,31 @@ public class MultiplayerState extends BaseAppState {
         view = View.HOSTING;
         rebuild();
         beginLobbyRegistration();
+        if (ranked) {
+            fetchPreMatchRank(app);
+        }
+    }
+
+    /** Kicks off (off the render thread) a fetch of this player's current rank, purely to show a
+     *  "your rank" / promotion-series callout on the HOSTING screen before the match starts - see
+     *  {@link #buildHosting}. Never blocks hosting/joining; a failed fetch just shows nothing. */
+    private void fetchPreMatchRank(PaddleShockApp app) {
+        preMatchRank.set(null);
+        preMatchRankShown = false;
+        preMatchRankPending = true;
+        String playerId = app.getProfile().getPlayerId();
+        Thread thread = new Thread(() -> {
+            RankState rank;
+            try {
+                rank = RankClient.getRank(playerId);
+            } catch (IOException e) {
+                rank = null;
+            }
+            preMatchRank.set(rank);
+            preMatchRankPending = false;
+        }, "pre-match-rank");
+        thread.setDaemon(true);
+        thread.start();
     }
 
     /** Kicks off (on a background thread - it's a blocking HTTPS call) registering this host
@@ -267,6 +302,25 @@ public class MultiplayerState extends BaseAppState {
             unrankedBadge.setFontSize(13);
             unrankedBadge.setColor(Theme.GREEN);
             unrankedBadge.setInsets(new Insets3f(0, 0, 8, 0));
+        } else {
+            RankState rank = preMatchRank.get();
+            if (rank != null) {
+                Label rankLabel = panel.addChild(new Label("Your rank: " + rank.formatLabel() + " (" + rank.getLp() + " LP)"));
+                rankLabel.setFontSize(12);
+                rankLabel.setColor(Theme.TEXT_DIM);
+                rankLabel.setInsets(new Insets3f(0, 0, 4, 0));
+
+                if (rank.isInPromoSeries()) {
+                    String nextLabel = rank.nextPromoLabel();
+                    String promoText = nextLabel != null
+                            ? "Promotion match! Win to advance to " + nextLabel + "."
+                            : "Promotion match! Win to advance.";
+                    Label promoLabel = panel.addChild(new Label(promoText));
+                    promoLabel.setFontSize(13);
+                    promoLabel.setColor(Theme.ORANGE);
+                    promoLabel.setInsets(new Insets3f(0, 0, 8, 0));
+                }
+            }
         }
 
         Label addressLabel = panel.addChild(new Label(getLocalIpAddress() + " : " + netHost.getPort()));
@@ -343,6 +397,8 @@ public class MultiplayerState extends BaseAppState {
             netHost.close();
             netHost = null;
         }
+        preMatchRank.set(null);
+        preMatchRankShown = false;
         view = View.CHOICE;
         rebuild();
     }
@@ -527,6 +583,10 @@ public class MultiplayerState extends BaseAppState {
             lobbyTimeoutShown = true;
             rebuild();
         }
+        if (view == View.HOSTING && !preMatchRankShown && !preMatchRankPending && preMatchRank.get() != null) {
+            preMatchRankShown = true;
+            rebuild();
+        }
 
         if (view == View.JOINING && netClient == null) {
             NetClient resolved = pendingCodeClient.getAndSet(null);
@@ -618,6 +678,8 @@ public class MultiplayerState extends BaseAppState {
         view = View.CHOICE;
         joinError = null;
         unranked = false;
+        preMatchRank.set(null);
+        preMatchRankShown = false;
         rebuild();
         ((SimpleApplication) getApplication()).getGuiNode().attachChild(uiRoot);
         getApplication().getInputManager().setCursorVisible(true);

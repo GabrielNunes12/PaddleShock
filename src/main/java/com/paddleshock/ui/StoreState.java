@@ -28,11 +28,16 @@ public class StoreState extends BaseAppState {
     private static final float HEADER_HEIGHT = 92f;
     private static final float FOOTER_HEIGHT = 64f;
     private static final float FULL_CARD_WIDTH = 340f;
-    private static final float FULL_CARD_HEIGHT = 300f;
+    private static final float FULL_CARD_HEIGHT = 318f;
     private static final float FULL_SWATCH_HEIGHT = 60f;
     private static final float MODAL_CARD_WIDTH = 230f;
-    private static final float MODAL_CARD_HEIGHT = 260f;
+    private static final float MODAL_CARD_HEIGHT = 276f;
     private static final float MODAL_SWATCH_HEIGHT = 50f;
+
+    /** Rounded-up average of a match's credit reward range - the "typical" win used to turn a
+     *  price gap into a rough "X more wins to unlock" estimate. Flavor text, not a prediction. */
+    private static final int AVG_MATCH_REWARD = (com.paddleshock.GameConstants.MATCH_REWARD_MIN
+            + com.paddleshock.GameConstants.MATCH_REWARD_MAX + 1) / 2;
 
     private final Node uiRoot = new Node("storeUi");
     private String selectedCategory = "paddle";
@@ -273,6 +278,16 @@ public class StoreState extends BaseAppState {
         stats.setFontSize(13);
         stats.setColor(Theme.TEXT_DIM);
 
+        if (!owned) {
+            String hint = winsHint(price, profile.getCurrency());
+            if (hint != null) {
+                Label winsLabel = card.addChild(new Label(hint));
+                winsLabel.setInsets(new Insets3f(0, 16, 6, 16));
+                winsLabel.setFontSize(11);
+                winsLabel.setColor(Theme.TEXT_DIM);
+            }
+        }
+
         String actionLabel = equipped ? "EQUIPPED" : owned ? "EQUIP" : "BUY " + price;
         ColorRGBA actionColor = equipped ? Theme.GREEN : owned ? Theme.BLUE : Theme.ORANGE;
 
@@ -338,6 +353,14 @@ public class StoreState extends BaseAppState {
         stats.setColor(Theme.TEXT_DIM);
 
         if (!owned) {
+            String hint = winsHint(item.getPrice(), profile.getCurrency());
+            if (hint != null) {
+                Label winsLabel = card.addChild(new Label(hint));
+                winsLabel.setInsets(new Insets3f(0, 16, 6, 16));
+                winsLabel.setFontSize(11);
+                winsLabel.setColor(Theme.TEXT_DIM);
+            }
+
             Button buy = card.addChild(new Button("BUY " + item.getPrice()));
             buy.setInsets(new Insets3f(10, 16, 14, 16));
             buy.setBackground(quad(Theme.ORANGE));
@@ -389,6 +412,29 @@ public class StoreState extends BaseAppState {
             backAction.run();
         });
         uiRoot.attachChild(back);
+    }
+
+    /**
+     * How many more average-reward wins it'd take to afford an item costing {@code price} at
+     * {@code currentCredits}, rounded up. 0 if it's already affordable. Package-visible (rather
+     * than private) so it's directly unit-testable without touching any Lemur/jME UI code.
+     */
+    static int estimateWinsNeeded(int price, int currentCredits) {
+        int shortfall = price - currentCredits;
+        if (shortfall <= 0) {
+            return 0;
+        }
+        return (shortfall + AVG_MATCH_REWARD - 1) / AVG_MATCH_REWARD;
+    }
+
+    /** "~4 more wins to unlock" hint text, or {@code null} when the item's already affordable
+     *  (no framing needed - see {@link #estimateWinsNeeded}). */
+    private static String winsHint(int price, int currentCredits) {
+        int wins = estimateWinsNeeded(price, currentCredits);
+        if (wins <= 0) {
+            return null;
+        }
+        return "~" + wins + (wins == 1 ? " more win to unlock" : " more wins to unlock");
     }
 
     private static String percent(float multiplier) {
