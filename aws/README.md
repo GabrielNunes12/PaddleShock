@@ -1,13 +1,16 @@
 # PaddleShock AWS backend (matchmaking + ranked ladder)
 
-Scope: a tiny AWS backend with three jobs. (1) Matchmaking - hands two players a short lobby code
+Scope: a tiny AWS backend with four jobs. (1) Matchmaking - hands two players a short lobby code
 so they can exchange public `ip:port` and connect directly over UDP; gameplay itself stays
 peer-to-peer (see `src/main/java/com/paddleshock/net/`), nothing here touches game traffic. (2)
 Ranked ladder - tracks each player's Copper-through-Diamond rank server-side (see "Ranked ladder"
 below) so it isn't just a locally-editable save-file number. (3) Tournaments - sequences a
 lightweight single-elimination bracket (see "Tournaments" below); it never touches gameplay
 networking either, it just decides who plays whom and when, with each individual bracket match
-still getting its own real lobby code from the existing `create`/`join` actions.
+still getting its own real lobby code from the existing `create`/`join` actions. (4) Direct invites
+- a tiny server-mediated mailbox so a player can invite a friend straight into their current lobby
+(see "Direct invites" below); the friends list itself is entirely local (see
+`src/main/java/com/paddleshock/data/PlayerProfile.java`), never synced to this backend at all.
 
 ## What's deployed (account 920394550355, region us-east-1)
 
@@ -16,17 +19,22 @@ still getting its own real lobby code from the existing `create`/`join` actions.
 - **DynamoDB table** `paddleshock-tournaments` (added 2026-09-14) - PK `code` (String),
   PAY_PER_REQUEST billing, TTL attribute `ttl` (items auto-expire 6 hours after creation - see
   "Tournaments" below).
+- **DynamoDB table** `paddleshock-invites` (added 2026-09-14) - PK `toPlayerId` (String),
+  PAY_PER_REQUEST billing, TTL attribute `ttl` (items auto-expire 5 minutes after their last write -
+  see "Direct invites" below).
 - **IAM role** `paddleshock-lobby-lambda-role` - trusts `lambda.amazonaws.com`, has
   `AWSLambdaBasicExecutionRole` (CloudWatch Logs) plus an inline policy scoped to
   `PutItem`/`GetItem`/`UpdateItem`/`DeleteItem`/`Scan` on the `paddleshock-lobbies`,
-  `paddleshock-ranks`, and `paddleshock-tournaments` table ARNs (`DeleteItem` added 2026-09-13 so a
-  lobby record can be consumed after a verified match report - see "Security hardening" below;
-  `paddleshock-tournaments` added 2026-09-14).
+  `paddleshock-ranks`, `paddleshock-tournaments`, and `paddleshock-invites` table ARNs
+  (`DeleteItem` added 2026-09-13 so a lobby record can be consumed after a verified match report -
+  see "Security hardening" below; `paddleshock-tournaments` added 2026-09-14;
+  `paddleshock-invites` added 2026-09-14).
 - **Lambda function** `paddleshock-lobby` (Node.js 20.x, source in `lobby-lambda/index.mjs`) -
-  handles `create` / `join` / `poll` / ranked-ladder / tournament actions via a single JSON-body
-  handler. Env vars: `TABLE_NAME=paddleshock-lobbies`, `RANKS_TABLE_NAME=paddleshock-ranks`,
-  `TOURNAMENTS_TABLE_NAME=paddleshock-tournaments` (added 2026-09-14). Verified working via direct
-  `aws lambda invoke` (returns a real lobby code, writes to DynamoDB correctly).
+  handles `create` / `join` / `poll` / ranked-ladder / tournament / invite actions via a single
+  JSON-body handler. Env vars: `TABLE_NAME=paddleshock-lobbies`, `RANKS_TABLE_NAME=paddleshock-ranks`,
+  `TOURNAMENTS_TABLE_NAME=paddleshock-tournaments`, `INVITES_TABLE_NAME=paddleshock-invites`
+  (added 2026-09-14). Verified working via direct `aws lambda invoke` (returns a real lobby code,
+  writes to DynamoDB correctly).
 - **Lambda Function URL** `https://2mjcwpgb6sesrjy36nm6qxdmpu0wbvrb.lambda-url.us-east-1.on.aws/` -
   `AuthType=NONE` (public/unauthenticated - fine, since it only ever brokers ephemeral,
   non-sensitive lobby codes and ip:port pairs) with a resource policy granting both
@@ -112,8 +120,15 @@ Single POST endpoint, JSON body, `action` field selects behavior:
 - `{"action":"getTournamentState","code":"ABC123"}` -> the full tournament document. `404` if
   missing/expired. This is what clients poll for the waiting-room player list and live bracket
   progress (same pattern as `poll` for lobbies).
-- Any action carrying a `playerId`, `hostPlayerId`, or `reporterPlayerId` is subject to per-id rate
-  limiting - a `429 {"error":"too many requests, slow down"}` means back off.
+- `{"action":"sendInvite","fromPlayerId":"<uuid>","fromNameHint":"<optional, nullable>","toPlayerId":"<uuid>","lobbyCode":"ABC123"}`
+  -> `{"ok":true}`. Appends to the recipient's pending-invite list (creating their invites item if
+  it doesn't exist yet), capped at 5 (oldest dropped past that) - see "Direct invites" below.
+- `{"action":"getInvites","playerId":"<uuid>"}` -> `{"invites":[{"fromPlayerId","fromNameHint","lobbyCode","sentAt"}, ...]}`
+  (empty array if none) - this is what a client polls.
+- `{"action":"dismissInvites","playerId":"<uuid>"}` -> `{"ok":true}`. Clears the caller's pending
+  invite list, so they don't see the same invites again on the next poll.
+- Any action carrying a `playerId`, `hostPlayerId`, `reporterPlayerId`, or `fromPlayerId` is subject
+  to per-id rate limiting - a `429 {"error":"too many requests, slow down"}` means back off.
 
 ## Security hardening (2026-09-13)
 
@@ -312,6 +327,58 @@ actions.
   (`status` became `COMPLETE` with the correct `champion`), plus `setTournamentMatchLobbyCode`
   authorization (`p1`-only, `403` for anyone else) and idempotent-report-retry behavior. All test
   records deleted from DynamoDB afterward.
+
+## Friends list + direct invites (added 2026-09-14)
+
+**Friends list**: entirely local, no backend involvement at all. `PlayerProfile` gets a
+`Map<String, Friend>` (`playerId` -> `{playerId, nickname, dateAdded}`), same no-migration-needed
+treatment as every other field added to that class recently (`rivals`/`matchHistory`) - old saves
+predate it and deserialize it as `null`, treated the same as empty. Not mutual (adding someone by
+id doesn't notify them or require their consent) and there's no request/accept handshake - v1 is
+intentionally just a local address book. See `FriendsState`
+(`src/main/java/com/paddleshock/ui/FriendsState.java`) for the UI: shows the current friends list
+with a remove button per entry, an "add friend" row (paste a playerId, type a nickname), and this
+player's own id (with a copy button) so it can actually be shared with someone else - the only place
+that id is discoverable in the game today, alongside the Profile screen's identity.
+
+**Direct invites**: a small server-mediated mailbox layered on top of the friends list, so a friend
+can be invited straight into a real lobby instead of having to be told the code out-of-band. Item
+shape (`paddleshock-invites`, PK `toPlayerId`):
+```js
+{
+  toPlayerId: string,          // PK
+  invites: [
+    { fromPlayerId: string, fromNameHint: string|null, lobbyCode: string, sentAt: epoch-seconds },
+    ...                        // capped at 5, oldest dropped past that - see appendInviteCapped
+  ],
+  ttl: epoch-seconds,          // now + 300 (5 min), refreshed on every write so stale invites don't linger
+}
+```
+- **Actions**: `sendInvite` / `getInvites` / `dismissInvites` - see "Protocol" above for exact
+  request/response shapes. `sendInvite` is rate-limited the same as every other id-carrying action
+  (`rateLimitIdFor` now also checks `fromPlayerId`).
+- **Capping logic**: `appendInviteCapped` (pure, exported for testing - see `invites.test.mjs`)
+  appends the new invite and drops from the front (oldest first) until the list is back at 5 or
+  fewer. `sendInvite`/`dismissInvites` both do a plain `PutCommand` of the whole invites item (not a
+  targeted conditional update) - at the scale this feature operates at (one player inviting a
+  handful of friends, a handful of times), a lost update from two near-simultaneous `sendInvite`
+  calls to the same recipient is an accepted simplification, matching this file's existing
+  hobby-scale conventions (see the same tradeoff already made for `setTournamentMatchLobbyCode`/
+  `reportTournamentMatchResult`).
+- **Client-side polling**: `MainMenuState` polls `getInvites` a few seconds after the menu is shown
+  and periodically thereafter (same 2.5s-style polling interval convention `TournamentState`
+  already established) and shows a small non-blocking banner listing who invited you, with an
+  ACCEPT action per invite (navigates straight into `MultiplayerState`'s JOINING flow with that
+  invite's `lobbyCode` pre-filled, reusing the exact existing join-by-code code path) and a dismiss
+  action (calls `dismissInvites`). A failed/slow invite check never blocks or interrupts the menu.
+- **Sending an invite**: `MultiplayerState`'s HOSTING view, once a real lobby code exists, shows an
+  "INVITE A FRIEND" row per local friend (only if the player has any - no empty state needed there,
+  the Friends screen already covers that) with an INVITE button that calls `sendInvite` with the
+  current lobby code.
+- **Live-verified** (2026-09-14): sent an invite, confirmed `getInvites` returned it; sent 4 more
+  to the same recipient (6 total) and confirmed the oldest was dropped, leaving exactly 5, newest
+  last; called `dismissInvites` and confirmed a follow-up `getInvites` returned an empty array. All
+  test invite items deleted from DynamoDB afterward.
 
 ## Client-side progress
 

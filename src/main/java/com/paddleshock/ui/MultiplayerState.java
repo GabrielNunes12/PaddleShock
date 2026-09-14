@@ -8,6 +8,7 @@ import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.util.Enumeration;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -28,6 +29,8 @@ import com.simsilica.lemur.component.SpringGridLayout;
 
 import com.paddleshock.GameConstants;
 import com.paddleshock.app.PaddleShockApp;
+import com.paddleshock.data.Friend;
+import com.paddleshock.net.InviteClient;
 import com.paddleshock.net.NetClient;
 import com.paddleshock.net.NetHost;
 import com.paddleshock.net.RankClient;
@@ -432,6 +435,8 @@ public class MultiplayerState extends BaseAppState {
             codeHint.setFontSize(12);
             codeHint.setColor(Theme.TEXT_DIM);
             codeHint.setInsets(new Insets3f(0, 0, 14, 0));
+
+            buildInviteFriendsRow(app, panel, code);
         } else if (StunClient.SYMMETRIC_NAT_MESSAGE.equals(error)) {
             Label errorLabel = panel.addChild(new Label(error));
             errorLabel.setFontSize(12);
@@ -455,6 +460,54 @@ public class MultiplayerState extends BaseAppState {
             app.getAudioManager().playSfx("button_click.ogg");
             cancelHosting();
         });
+    }
+
+    /** One "INVITE" button per local friend (see {@code PlayerProfile#getFriends()}) - only shown
+     *  once a real lobby code exists. No friends -> nothing shown, no error/empty-state needed
+     *  here specifically (the Friends screen already covers that). Each button fires a
+     *  best-effort background {@code sendInvite} call; a failure just leaves the button's label
+     *  unchanged rather than blocking/interrupting hosting. */
+    private void buildInviteFriendsRow(PaddleShockApp app, Container panel, String code) {
+        List<Friend> friendsList = app.getProfile().getFriends();
+        if (friendsList.isEmpty()) {
+            return;
+        }
+        Label title = panel.addChild(new Label("INVITE A FRIEND:"));
+        title.setFontSize(12);
+        title.setColor(Theme.TEXT_DIM);
+        title.setInsets(new Insets3f(0, 0, 6, 0));
+
+        for (Friend friend : friendsList) {
+            Container row = panel.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
+            row.setInsets(new Insets3f(2, 0, 2, 0));
+
+            Label nameLabel = row.addChild(new Label(friend.getNickname()));
+            nameLabel.setFontSize(13);
+            nameLabel.setColor(Theme.TEXT);
+            nameLabel.setPreferredSize(new Vector3f(CARD_CONTENT_WIDTH - 90, nameLabel.getPreferredSize().y, 0));
+
+            Button invite = row.addChild(new Button("INVITE"));
+            invite.setBackground(new QuadBackgroundComponent(Theme.BLUE));
+            invite.setColor(Theme.ON_ACCENT);
+            invite.setFontSize(12);
+            invite.addClickCommands(source -> {
+                app.getAudioManager().playSfx("button_click.ogg");
+                invite.setText("SENT");
+                invite.setEnabled(false);
+                String selfId = app.getProfile().getPlayerId();
+                String selfName = app.getSteamManager().getPersonaName().orElseGet(() -> app.getProfile().getDisplayName());
+                Thread thread = new Thread(() -> {
+                    try {
+                        InviteClient.sendInvite(selfId, selfName, friend.getPlayerId(), code);
+                    } catch (java.io.IOException e) {
+                        // Best-effort - inviting a friend is a convenience on top of the lobby
+                        // code, which is still shown/copyable regardless of whether this succeeds.
+                    }
+                }, "send-invite");
+                thread.setDaemon(true);
+                thread.start();
+            });
+        }
     }
 
     private void cancelHosting() {
@@ -524,6 +577,24 @@ public class MultiplayerState extends BaseAppState {
             connectByAddress(app, raw);
         } else {
             connectByLobbyCode(app, raw.toUpperCase(java.util.Locale.ROOT));
+        }
+    }
+
+    /** Called by {@code PaddleShockApp.acceptInvite} once this screen has just been enabled:
+     *  jumps straight to the JOINING view with {@code lobbyCode} pre-filled and immediately
+     *  attempts to connect, reusing {@link #connectByLobbyCode} exactly - the same code path a
+     *  player typing a code in by hand would take. */
+    public void acceptInviteAndConnect(String lobbyCode) {
+        PaddleShockApp app = (PaddleShockApp) getApplication();
+        view = View.JOINING;
+        joinError = null;
+        rebuild();
+        String normalized = lobbyCode == null ? "" : lobbyCode.trim().toUpperCase(java.util.Locale.ROOT);
+        if (addressField != null) {
+            addressField.setText(normalized);
+        }
+        if (!normalized.isEmpty()) {
+            connectByLobbyCode(app, normalized);
         }
     }
 

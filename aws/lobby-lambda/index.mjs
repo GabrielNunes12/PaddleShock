@@ -8,6 +8,7 @@ import { DynamoDBDocumentClient, PutCommand, UpdateCommand, GetCommand, DeleteCo
 const TABLE = process.env.TABLE_NAME;
 const RANKS_TABLE = process.env.RANKS_TABLE_NAME;
 const TOURNAMENTS_TABLE = process.env.TOURNAMENTS_TABLE_NAME;
+const INVITES_TABLE = process.env.INVITES_TABLE_NAME;
 const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no ambiguous 0/O/1/I
@@ -693,6 +694,75 @@ async function handleGetTournamentState(body) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Direct invites: a tiny server-mediated "invite a friend to my lobby" mailbox, layered on top of
+// the friends list itself (which is entirely local - see PlayerProfile - no server involvement at
+// all for the friends list). A single item per recipient (keyed by toPlayerId) holds up to
+// INVITE_CAP pending invites; sendInvite appends (creating the item if needed), getInvites is what
+// a client polls, dismissInvites clears the list once seen/acted on. This never touches gameplay
+// networking - it's purely "who wants who to join what lobby code", the same broker role the rest
+// of this file already plays for create/join.
+// ---------------------------------------------------------------------------------------------
+
+const INVITE_TTL_SECONDS = 300; // 5 minutes - refreshed on every write so stale invites don't linger
+const INVITE_CAP = 5;
+
+/** Appends {@code invite} to {@code existingInvites}, dropping the oldest entries past
+ *  {@link INVITE_CAP}. Pure - exported for unit testing (see invites.test.mjs) without touching
+ *  DynamoDB. */
+function appendInviteCapped(existingInvites, invite) {
+    const next = [...(existingInvites || []), invite];
+    while (next.length > INVITE_CAP) {
+        next.shift(); // drop oldest
+    }
+    return next;
+}
+
+async function loadInvites(playerId) {
+    const result = await client.send(new GetCommand({ TableName: INVITES_TABLE, Key: { toPlayerId: playerId } }));
+    return result.Item ? result.Item.invites || [] : [];
+}
+
+async function handleSendInvite(body) {
+    const { fromPlayerId, fromNameHint, toPlayerId, lobbyCode } = body;
+    if (!fromPlayerId || !toPlayerId || !lobbyCode) {
+        return response(400, { error: "missing fromPlayerId/toPlayerId/lobbyCode" });
+    }
+    const now = Math.floor(Date.now() / 1000);
+    const existing = await loadInvites(toPlayerId);
+    const invites = appendInviteCapped(existing, {
+        fromPlayerId,
+        fromNameHint: fromNameHint ?? null,
+        lobbyCode,
+        sentAt: now,
+    });
+    await client.send(new PutCommand({
+        TableName: INVITES_TABLE,
+        Item: { toPlayerId, invites, ttl: now + INVITE_TTL_SECONDS },
+    }));
+    return response(200, { ok: true });
+}
+
+async function handleGetInvites(body) {
+    if (!body.playerId) {
+        return response(400, { error: "missing playerId" });
+    }
+    const invites = await loadInvites(body.playerId);
+    return response(200, { invites });
+}
+
+async function handleDismissInvites(body) {
+    if (!body.playerId) {
+        return response(400, { error: "missing playerId" });
+    }
+    const now = Math.floor(Date.now() / 1000);
+    await client.send(new PutCommand({
+        TableName: INVITES_TABLE,
+        Item: { toPlayerId: body.playerId, invites: [], ttl: now + INVITE_TTL_SECONDS },
+    }));
+    return response(200, { ok: true });
+}
+
+// ---------------------------------------------------------------------------------------------
 // Rate limiting: the Function URL is public/unauthenticated with no API Gateway in front of it,
 // so there is no reliable source IP to key off (that only becomes available behind API Gateway,
 // which is out of scope here - see aws/README.md). Instead this throttles per playerId (the one
@@ -728,9 +798,9 @@ async function checkRateLimit(playerId) {
 /** The identifier to rate-limit this request by, or null if the action carries none (currently
  *  just `poll`/`getTournamentState`, which are intentionally left unthrottled - see comment
  *  above). Covers the tournament actions' id fields too (hostPlayerId/playerId already handled;
- *  reporterPlayerId is tournament-report-specific). */
+ *  reporterPlayerId is tournament-report-specific), and sendInvite's fromPlayerId. */
 function rateLimitIdFor(body) {
-    return body.playerId || body.hostPlayerId || body.reporterPlayerId || null;
+    return body.playerId || body.hostPlayerId || body.reporterPlayerId || body.fromPlayerId || null;
 }
 
 // Exported purely so the ranked-ladder LP math can be unit-tested in isolation (see
@@ -757,6 +827,7 @@ export {
     buildFirstRound,
     buildNextRound,
     roundIsComplete,
+    appendInviteCapped,
 };
 
 export const handler = async (event) => {
@@ -788,6 +859,9 @@ export const handler = async (event) => {
         case "setTournamentMatchLobbyCode": return handleSetTournamentMatchLobbyCode(body);
         case "reportTournamentMatchResult": return handleReportTournamentMatchResult(body);
         case "getTournamentState": return handleGetTournamentState(body);
+        case "sendInvite": return handleSendInvite(body);
+        case "getInvites": return handleGetInvites(body);
+        case "dismissInvites": return handleDismissInvites(body);
         default: return response(400, { error: "unknown action" });
     }
 };

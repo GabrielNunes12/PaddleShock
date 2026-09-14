@@ -1,5 +1,11 @@
 package com.paddleshock.ui;
 
+import java.io.IOException;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+
 import com.jme3.app.Application;
 import com.jme3.app.SimpleApplication;
 import com.jme3.app.state.BaseAppState;
@@ -10,12 +16,14 @@ import com.simsilica.lemur.Axis;
 import com.simsilica.lemur.Button;
 import com.simsilica.lemur.Container;
 import com.simsilica.lemur.FillMode;
+import com.simsilica.lemur.HAlignment;
 import com.simsilica.lemur.Insets3f;
 import com.simsilica.lemur.Label;
 import com.simsilica.lemur.component.QuadBackgroundComponent;
 import com.simsilica.lemur.component.SpringGridLayout;
 
 import com.paddleshock.app.PaddleShockApp;
+import com.paddleshock.net.InviteClient;
 
 /**
  * Main menu: a two-column split - a left "hero" panel ({@link Theme#BACKGROUND_2}) carrying the
@@ -29,7 +37,22 @@ public class MainMenuState extends BaseAppState {
     /** Width of the hero-panel accent strip along its left edge. */
     private static final float ACCENT_WIDTH = 6f;
 
+    // Pending-invite polling: a first check a few seconds after the menu is shown, then a repeat
+    // check on a timer while it's up (same style of background-poll-then-rebuild TournamentState
+    // already established for its own waiting-room polling, just a much longer interval here since
+    // this is a convenience mailbox check, not a live match wait). Purely additive/non-blocking - a
+    // failed/slow check never affects the menu itself, it just means no banner appears this time.
+    private static final float INVITE_POLL_INITIAL_DELAY_SECONDS = 3f;
+    private static final float INVITE_POLL_INTERVAL_SECONDS = 12f;
+
     private final Node uiRoot = new Node("mainMenuUi");
+    private final Node inviteBannerRoot = new Node("inviteBannerUi");
+
+    private final AtomicInteger invitePollGeneration = new AtomicInteger(0);
+    private final AtomicReference<List<InviteClient.Invite>> pendingInvites = new AtomicReference<>();
+    private final AtomicBoolean invitePollPending = new AtomicBoolean(false);
+    private float invitePollTimer;
+    private boolean inviteBannerShown;
 
     @Override
     protected void initialize(Application application) {
@@ -118,6 +141,7 @@ public class MainMenuState extends BaseAppState {
         addNavCard(nav, "MULTIPLAYER", Theme.BLUE_DIM, cardWidth, app::showMultiplayer);
         addNavCard(nav, "LEADERBOARD", Theme.ORANGE_DIM, cardWidth, app::showLeaderboard);
         addNavCard(nav, "PROFILE", Theme.GREEN_DIM, cardWidth, app::showProfile);
+        addNavCard(nav, "FRIENDS", Theme.PANEL_HOVER, cardWidth, app::showFriends);
         addNavCard(nav, "STORE", Theme.PANEL_HOVER, cardWidth, app::showStore);
         addNavCard(nav, "SETTINGS", Theme.PANEL_HOVER, cardWidth, () -> app.showOptions(app::showMainMenu));
         addNavCard(nav, "HOW TO PLAY", Theme.PANEL_HOVER, cardWidth, () -> app.showHowToPlay(app::showMainMenu));
@@ -165,23 +189,146 @@ public class MainMenuState extends BaseAppState {
 
     @Override
     public void update(float tpf) {
-        // No per-frame work needed on the main menu itself.
+        invitePollTimer += tpf;
+        if (!invitePollPending.get() && invitePollTimer >= INVITE_POLL_INITIAL_DELAY_SECONDS) {
+            invitePollTimer = 0f;
+            beginInvitePoll();
+        }
+        List<InviteClient.Invite> invites = pendingInvites.get();
+        if (!inviteBannerShown && invites != null && !invites.isEmpty()) {
+            inviteBannerShown = true;
+            rebuildInviteBanner((PaddleShockApp) getApplication(), invites);
+        }
+    }
+
+    /** Kicks off (off the render thread) a poll of this player's pending invites - see
+     *  {@code aws/README.md} "Direct invites". Purely additive: a failure/timeout here is
+     *  indistinguishable from "no invites" and never affects the menu itself. */
+    private void beginInvitePoll() {
+        invitePollPending.set(true);
+        int myGeneration = invitePollGeneration.incrementAndGet();
+        PaddleShockApp app = (PaddleShockApp) getApplication();
+        String playerId = app.getProfile().getPlayerId();
+        Thread thread = new Thread(() -> {
+            List<InviteClient.Invite> invites = null;
+            try {
+                invites = InviteClient.getInvites(playerId);
+            } catch (IOException e) {
+                // offline, or the invite service is unreachable - just means no banner this poll.
+            }
+            if (invitePollGeneration.get() != myGeneration) {
+                return; // superseded (menu re-entered) - discard
+            }
+            pendingInvites.set(invites);
+            invitePollPending.set(false);
+        }, "invite-poll");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    /** Small non-blocking banner across the top of the screen listing who invited you, with an
+     *  ACCEPT per invite (jumps straight into Multiplayer's JOINING flow via
+     *  {@code PaddleShockApp.acceptInvite}) and a single DISMISS that clears all of them (calls
+     *  {@code dismissInvites}). Never interrupts/blocks the menu underneath it. */
+    private void rebuildInviteBanner(PaddleShockApp app, List<InviteClient.Invite> invites) {
+        inviteBannerRoot.detachAllChildren();
+        SimpleApplication simpleApp = (SimpleApplication) app;
+        float screenW = simpleApp.getCamera().getWidth();
+        float screenH = simpleApp.getCamera().getHeight();
+
+        Container banner = new Container(new SpringGridLayout(Axis.Y, Axis.X));
+        banner.setBackground(new QuadBackgroundComponent(Theme.PANEL));
+        banner.setInsets(new Insets3f(12, 18, 12, 18));
+
+        Container headerRow = banner.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
+        Label header = headerRow.addChild(new Label(invites.size() == 1
+                ? "1 match invite" : invites.size() + " match invites"));
+        header.setFontSize(14);
+        header.setColor(Theme.ORANGE);
+
+        Button dismissAll = headerRow.addChild(new Button("DISMISS"));
+        dismissAll.setInsets(new Insets3f(0, 0, 0, 16));
+        dismissAll.setBackground(new QuadBackgroundComponent(Theme.PANEL_HOVER));
+        dismissAll.setColor(Theme.TEXT_DIM);
+        dismissAll.setFontSize(12);
+        dismissAll.addClickCommands(source -> {
+            app.getAudioManager().playSfx("button_click.ogg");
+            dismissInvites(app);
+        });
+
+        for (InviteClient.Invite invite : invites) {
+            Container row = banner.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
+            row.setInsets(new Insets3f(4, 0, 0, 0));
+
+            Label text = row.addChild(new Label(invite.displayName() + " invited you to a match"));
+            text.setFontSize(13);
+            text.setColor(Theme.TEXT);
+            text.setTextHAlignment(HAlignment.Left);
+            text.setPreferredSize(new Vector3f(300, text.getPreferredSize().y, 0));
+
+            Button accept = row.addChild(new Button("ACCEPT"));
+            accept.setInsets(new Insets3f(0, 0, 0, 8));
+            accept.setBackground(new QuadBackgroundComponent(Theme.GREEN_DIM));
+            accept.setColor(Theme.GREEN);
+            accept.setFontSize(12);
+            String lobbyCode = invite.getLobbyCode();
+            accept.addClickCommands(source -> {
+                app.getAudioManager().playSfx("button_click.ogg");
+                dismissInvitesFireAndForget(app);
+                app.acceptInvite(lobbyCode);
+            });
+        }
+
+        Vector3f bannerSize = banner.getPreferredSize();
+        banner.setLocalTranslation((screenW - bannerSize.x) / 2f, screenH - 16, 2);
+        inviteBannerRoot.attachChild(banner);
+    }
+
+    /** DISMISS button on the banner: clears the banner immediately (optimistic - no need to wait
+     *  on the network for a purely cosmetic dismissal) and calls {@code dismissInvites}
+     *  best-effort in the background. */
+    private void dismissInvites(PaddleShockApp app) {
+        inviteBannerRoot.detachAllChildren();
+        pendingInvites.set(null);
+        dismissInvitesFireAndForget(app);
+    }
+
+    private void dismissInvitesFireAndForget(PaddleShockApp app) {
+        String playerId = app.getProfile().getPlayerId();
+        Thread thread = new Thread(() -> {
+            try {
+                InviteClient.dismissInvites(playerId);
+            } catch (IOException e) {
+                // best-effort - worst case the same invites reappear on a later poll.
+            }
+        }, "invite-dismiss");
+        thread.setDaemon(true);
+        thread.start();
     }
 
     @Override
     protected void cleanup(Application application) {
-        // uiRoot is detached in onDisable(); nothing else owns native resources here.
+        // uiRoot/inviteBannerRoot are detached in onDisable(); nothing else owns native resources here.
     }
 
     @Override
     protected void onEnable() {
         rebuild((PaddleShockApp) getApplication());
         ((SimpleApplication) getApplication()).getGuiNode().attachChild(uiRoot);
+        ((SimpleApplication) getApplication()).getGuiNode().attachChild(inviteBannerRoot);
         getApplication().getInputManager().setCursorVisible(true);
+        invitePollTimer = 0f;
+        inviteBannerShown = false;
+        pendingInvites.set(null);
     }
 
     @Override
     protected void onDisable() {
         uiRoot.removeFromParent();
+        inviteBannerRoot.removeFromParent();
+        inviteBannerRoot.detachAllChildren();
+        // Supersede any in-flight background poll so a late result discards itself instead of
+        // leaking into a future onEnable() - see the analogous pattern in ProfileState/LeaderboardState.
+        invitePollGeneration.incrementAndGet();
     }
 }

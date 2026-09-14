@@ -58,6 +58,14 @@ public class PlayerProfile {
     // append-only most-recent-first list.
     private Map<String, RivalRecord> rivals = new HashMap<>();
 
+    // Local friends list, keyed by playerId - see addFriend()/removeFriend()/getFriends(). Old
+    // saves predate this field and deserialize it as null; the same accessors below treat that as
+    // an empty map, same no-migration-needed treatment as rivals above. Entirely local: adding
+    // someone here doesn't notify them, isn't mutual, and is never synced to any backend - only
+    // the small "invite a friend to my lobby" mailbox (see aws/README.md "Direct invites") talks
+    // to AWS at all, and only once the local player explicitly sends an invite.
+    private Map<String, Friend> friends = new HashMap<>();
+
     // Seasonal peak-rank reward (see aws/README.md "Seasonal peak-rank reward"): the last season
     // number this profile was actually paid out for, so the reward is granted at most once per
     // season. Defaults to -1 (not 0, which is itself a valid season number) so any real season
@@ -206,6 +214,39 @@ public class PlayerProfile {
             record.setOpponentDisplayNameHint(opponentDisplayNameHint);
         }
         record.recordResult(won, System.currentTimeMillis());
+    }
+
+    /** The local friends list, most-recently-added-first. Never {@code null}. */
+    public List<Friend> getFriends() {
+        if (friends == null || friends.isEmpty()) {
+            return List.of();
+        }
+        List<Friend> sorted = new ArrayList<>(friends.values());
+        sorted.sort(Comparator.comparingLong(Friend::getDateAdded).reversed());
+        return sorted;
+    }
+
+    /** Adds (or, if already a friend, renames) {@code playerId} to the local friends list under
+     *  {@code nickname}. No-ops if {@code playerId} is {@code null}/blank. Not mutual - the other
+     *  player is never notified. */
+    public void addFriend(String playerId, String nickname) {
+        if (playerId == null || playerId.isBlank()) {
+            return;
+        }
+        if (friends == null) {
+            friends = new HashMap<>();
+        }
+        String finalNickname = (nickname == null || nickname.isBlank()) ? playerId : nickname.trim();
+        Friend existing = friends.get(playerId);
+        long dateAdded = existing != null ? existing.getDateAdded() : System.currentTimeMillis();
+        friends.put(playerId, new Friend(playerId, finalNickname, dateAdded));
+    }
+
+    /** Removes {@code playerId} from the local friends list, if present. */
+    public void removeFriend(String playerId) {
+        if (friends != null) {
+            friends.remove(playerId);
+        }
     }
 
     public boolean owns(String category, String id) {

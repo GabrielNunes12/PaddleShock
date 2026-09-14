@@ -27,6 +27,7 @@ import com.paddleshock.net.RankState;
 import com.paddleshock.net.TournamentClient;
 import com.paddleshock.settings.GameSettings;
 import com.paddleshock.steam.SteamManager;
+import com.paddleshock.ui.FriendsState;
 import com.paddleshock.ui.LeaderboardState;
 import com.paddleshock.ui.LoadoutState;
 import com.paddleshock.ui.MainMenuState;
@@ -62,6 +63,7 @@ public class PaddleShockApp extends SimpleApplication {
     private LeaderboardState leaderboardState;
     private ProfileState profileState;
     private TournamentState tournamentState;
+    private FriendsState friendsState;
     private GameplayAppState gameplayState;
 
     /** Set while the currently active {@link GameplayAppState} match is one bracket pairing of a
@@ -119,6 +121,7 @@ public class PaddleShockApp extends SimpleApplication {
         leaderboardState = new LeaderboardState();
         profileState = new ProfileState();
         tournamentState = new TournamentState();
+        friendsState = new FriendsState();
 
         stateManager.attach(splashState);
         stateManager.attach(mainMenuState);
@@ -132,6 +135,7 @@ public class PaddleShockApp extends SimpleApplication {
         stateManager.attach(leaderboardState);
         stateManager.attach(profileState);
         stateManager.attach(tournamentState);
+        stateManager.attach(friendsState);
 
         mainMenuState.setEnabled(false);
         pauseState.setEnabled(false);
@@ -144,6 +148,7 @@ public class PaddleShockApp extends SimpleApplication {
         leaderboardState.setEnabled(false);
         profileState.setEnabled(false);
         tournamentState.setEnabled(false);
+        friendsState.setEnabled(false);
     }
 
     @Override
@@ -224,6 +229,7 @@ public class PaddleShockApp extends SimpleApplication {
         leaderboardState.setEnabled(false);
         profileState.setEnabled(false);
         tournamentState.setEnabled(false);
+        friendsState.setEnabled(false);
         mainMenuState.setEnabled(true);
         audioManager.playMenuMusic();
     }
@@ -272,6 +278,22 @@ public class PaddleShockApp extends SimpleApplication {
     public void showProfile() {
         mainMenuState.setEnabled(false);
         profileState.setEnabled(true);
+    }
+
+    /** Shows the local friends list screen (wired up from the main menu's FRIENDS button). */
+    public void showFriends() {
+        mainMenuState.setEnabled(false);
+        friendsState.setEnabled(true);
+    }
+
+    /** Accepts a pending invite: navigates straight into Multiplayer's JOINING flow with
+     *  {@code lobbyCode} pre-filled and immediately attempts to connect - reuses the exact
+     *  existing join-by-code code path ({@link MultiplayerState#acceptInviteAndConnect}) rather
+     *  than reinventing it. Called from the main menu's invite banner. */
+    public void acceptInvite(String lobbyCode) {
+        mainMenuState.setEnabled(false);
+        multiplayerState.setEnabled(true);
+        multiplayerState.acceptInviteAndConnect(lobbyCode);
     }
 
     /** Shown before every match (fresh or rematch) to confirm/change loadout and buy from a store modal. */
