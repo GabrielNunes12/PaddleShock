@@ -5,6 +5,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 
 import com.paddleshock.powerups.PowerUpType;
 
@@ -92,28 +95,70 @@ public final class NetProtocol {
 
     // ---- HELLO (joiner -> host) ----
 
-    public static byte[] encodeHello(String playerId) {
+    /** The joiner's identity plus its currently-equipped power-up loadout (see
+     *  {@code PlayerProfile.getLoadout()}), sent once at connect time (and re-sent on every retry/
+     *  reconnect, so a mid-match loadout is never actually possible, but a reconnect always carries
+     *  a fresh copy anyway) so the host can validate a later {@code TYPE_INPUT} activation against
+     *  what this joiner is actually entitled to use rather than trusting a free-form catalog id -
+     *  see {@code NetHost#handleHello} and {@link #sanitizePowerUpId}. {@code loadout} may contain
+     *  empty-string entries for unfilled slots; callers should ignore those. */
+    public record HelloMessage(String playerId, List<String> loadout) {
+        public static final HelloMessage EMPTY = new HelloMessage("", List.of());
+    }
+
+    public static byte[] encodeHello(String playerId, List<String> loadout) {
         try {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
             DataOutputStream out = new DataOutputStream(bytes);
             out.writeByte(TYPE_HELLO);
             out.writeUTF(playerId == null ? "" : playerId);
+            List<String> safeLoadout = loadout == null ? List.of() : loadout;
+            out.writeByte(safeLoadout.size());
+            for (String id : safeLoadout) {
+                out.writeUTF(id == null ? "" : id);
+            }
             return bytes.toByteArray();
         } catch (IOException e) {
             throw new IllegalStateException("Failed to encode hello packet", e);
         }
     }
 
-    /** Returns the joiner's player id, or {@code ""} for a payload-less packet (a Phase-D punch
-     *  packet reusing this type byte, or an older client) - never throws for that case, only for
-     *  a genuinely truncated/corrupt UTF payload. */
-    public static String decodeHello(byte[] data) throws IOException {
+    /** Returns {@link HelloMessage#EMPTY} for a payload-less packet (a Phase-D punch packet
+     *  reusing this type byte, or an older client) - never throws for that case, only for a
+     *  genuinely truncated/corrupt payload. An older HELLO carrying only a player id (no loadout
+     *  count byte at all) decodes with an empty loadout rather than throwing, so a mismatched build
+     *  still degrades gracefully instead of dropping every hello. */
+    public static HelloMessage decodeHello(byte[] data) throws IOException {
         if (data.length <= 1) {
-            return "";
+            return HelloMessage.EMPTY;
         }
         DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
         in.readByte(); // type
-        return in.readUTF();
+        String playerId = in.readUTF();
+        List<String> loadout = new ArrayList<>();
+        if (in.available() > 0) {
+            int count = in.readByte() & 0xFF;
+            for (int i = 0; i < count; i++) {
+                loadout.add(in.readUTF());
+            }
+        }
+        return new HelloMessage(playerId, loadout);
+    }
+
+    /** Host-authoritative power-up ownership check: returns {@code requestedId} unchanged only if
+     *  it's both non-empty and a member of {@code allowedIds} (the joiner's own declared loadout,
+     *  intersected with the host's catalog - see {@code NetHost#handleHello}); otherwise returns
+     *  {@code ""} so the caller treats it as "no activation this tick" rather than honoring a
+     *  forged/free-form catalog id from a modified client. Pure and side-effect-free so it can be
+     *  unit tested directly. */
+    public static String sanitizePowerUpId(String requestedId, Set<String> allowedIds) {
+        if (requestedId == null || requestedId.isEmpty()) {
+            return "";
+        }
+        if (allowedIds == null || !allowedIds.contains(requestedId)) {
+            return "";
+        }
+        return requestedId;
     }
 
     // ---- INPUT (joiner -> host) ----

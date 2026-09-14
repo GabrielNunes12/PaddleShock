@@ -143,6 +143,23 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
      *  rematch can detect a fresh disconnect. */
     private boolean disconnectHandled = false;
 
+    /** Joiner-side only: how long {@code netClient.isHostTimedOut()} has been continuously true -
+     *  reset the instant a fresh packet arrives from the host (which flips {@code isHostTimedOut()}
+     *  back to false on its own, since it's just "time since last packet"). While this is below
+     *  {@link #JOINER_RECONNECT_WINDOW_SECONDS}, {@link #updateJoiner} keeps re-sending HELLO (see
+     *  {@link #JOINER_RECONNECT_HELLO_INTERVAL_SECONDS}) instead of giving up immediately - a
+     *  transient NAT remap (Wi-Fi blip, mobile handoff) is common enough to deserve a real chance
+     *  to self-heal rather than an instant dead-end (see {@code NetHost#handleHello}'s matching
+     *  reconnect-by-player-id acceptance). Only past this window does {@link #handleHostDisconnected}
+     *  actually fire. */
+    private float joinerReconnectElapsedSeconds;
+    private float joinerReconnectHelloTimer;
+    private static final float JOINER_RECONNECT_HELLO_INTERVAL_SECONDS = 1f;
+    /** A few seconds beyond {@link NetClient#DISCONNECT_TIMEOUT_MS} (which has already elapsed by
+     *  the time this window even starts) - long enough to give a real transient blip a chance to
+     *  self-heal, short enough that a genuinely dead host still dead-ends in a reasonable time. */
+    private static final float JOINER_RECONNECT_WINDOW_SECONDS = 8f;
+
     /** The existing, unchanged single-player-vs-AI match. */
     public GameplayAppState() {
         this(Mode.SINGLE_PLAYER, null, null, false);
@@ -669,9 +686,29 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
 
     private void updateJoiner(float tpf) {
         if (netClient.isHostTimedOut()) {
-            handleHostDisconnected();
+            joinerReconnectElapsedSeconds += tpf;
+            if (joinerReconnectElapsedSeconds >= JOINER_RECONNECT_WINDOW_SECONDS) {
+                // Bounded automatic reconnect attempts didn't get a WELCOME back in time - this is
+                // a genuinely dead/unreachable host, not just a transient blip. Fall through to the
+                // permanent dead-end exactly as before this feature existed.
+                handleHostDisconnected();
+                return;
+            }
+            // Still within the reconnect window: keep re-sending HELLO to the same host
+            // address/port on the SAME NetClient (same socket, same player id) - reusing the exact
+            // retry pattern MultiplayerState already uses while first connecting. If the host
+            // accepts it (see NetHost#handleHello's reconnect-by-player-id path) a fresh WELCOME/
+            // snapshot will arrive and isHostTimedOut() flips back to false on its own next frame,
+            // resuming the match with no further action needed here.
+            joinerReconnectHelloTimer += tpf;
+            if (joinerReconnectHelloTimer >= JOINER_RECONNECT_HELLO_INTERVAL_SECONDS) {
+                joinerReconnectHelloTimer = 0f;
+                netClient.sendHello();
+            }
             return;
         }
+        joinerReconnectElapsedSeconds = 0f;
+        joinerReconnectHelloTimer = 0f;
 
         PaddleInput localTickInput = computeLocalPaddleInput(tpf);
         PowerUpDefinition activated = consumePendingJoinerPowerUp();
@@ -851,6 +888,8 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         hostDisplayScore = 0;
         lastAppliedSnapshot = null;
         disconnectHandled = false;
+        joinerReconnectElapsedSeconds = 0f;
+        joinerReconnectHelloTimer = 0f;
         updateScoreText();
     }
 

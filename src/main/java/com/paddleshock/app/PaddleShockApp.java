@@ -222,13 +222,13 @@ public class PaddleShockApp extends SimpleApplication {
      *  caller ({@link MultiplayerState}) waits for the handshake to complete before actually
      *  entering the match via {@link #enterJoinedMatch(NetClient)}. */
     public NetClient joinMatch(String hostAddress, int port) throws IOException {
-        return new NetClient(hostAddress, port, profile.getPlayerId());
+        return new NetClient(hostAddress, port, profile.getPlayerId(), profile.getLoadout());
     }
 
     /** Connects to a host via an AWS lobby code instead of a typed IP:port - see
      *  {@link NetClient#connectByLobbyCode}. */
     public NetClient joinMatchByLobbyCode(String code) throws IOException {
-        return NetClient.connectByLobbyCode(code, profile.getPlayerId());
+        return NetClient.connectByLobbyCode(code, profile.getPlayerId(), profile.getLoadout());
     }
 
     /** Enters the match as the listen-server host, once a joiner has connected to {@code netHost}. */
