@@ -21,6 +21,7 @@ import com.simsilica.lemur.Button;
 import com.simsilica.lemur.Container;
 import com.simsilica.lemur.Insets3f;
 import com.simsilica.lemur.Label;
+import com.simsilica.lemur.Panel;
 import com.simsilica.lemur.TextField;
 import com.simsilica.lemur.component.QuadBackgroundComponent;
 import com.simsilica.lemur.component.SpringGridLayout;
@@ -48,6 +49,11 @@ import com.paddleshock.net.StunClient;
 public class MultiplayerState extends BaseAppState {
 
     private enum View { CHOICE, HOSTING, JOINING }
+
+    /** Width of the card's inner content column (buttons, fields, divider) - the card itself is
+     *  this plus the panel's left/right insets, landing in the ~440-480px range other redesigned
+     *  screens use for a centered card. */
+    private static final float CARD_CONTENT_WIDTH = 380f;
 
     private final Node uiRoot = new Node("multiplayerUi");
     private View view = View.CHOICE;
@@ -133,9 +139,34 @@ public class MultiplayerState extends BaseAppState {
             case JOINING -> buildJoining(app, panel);
         }
 
-        Vector3f panelSize = panel.getPreferredSize();
-        panel.setLocalTranslation((screenW - panelSize.x) / 2f, (screenH + panelSize.y) / 2f, 1);
-        uiRoot.attachChild(panel);
+        // Card treatment (PANEL bg + a hairline PANEL_LINE border) matching the other redesigned
+        // screens - a thin outer container just slightly bigger than the panel stands in for a
+        // border, since Lemur has no dedicated border component.
+        Container card = new Container(new SpringGridLayout(Axis.Y, Axis.X));
+        card.setBackground(new QuadBackgroundComponent(Theme.PANEL_LINE));
+        card.setInsets(new Insets3f(2, 2, 2, 2));
+        card.addChild(panel);
+
+        Vector3f cardSize = card.getPreferredSize();
+        float cardTopY = (screenH + cardSize.y) / 2f;
+        card.setLocalTranslation((screenW - cardSize.x) / 2f, cardTopY, 1);
+        uiRoot.attachChild(card);
+
+        if (view == View.CHOICE) {
+            // Per the redesign, BACK sits outside/below the card rather than as just another row
+            // inside it - same click behavior as before, just relocated and restyled to match
+            // other screens' standalone BACK buttons.
+            Button back = new Button("BACK");
+            styleButton(back, Theme.PANEL_HOVER, Theme.TEXT, 14);
+            back.addClickCommands(source -> {
+                app.getAudioManager().playSfx("button_click.ogg");
+                app.showMainMenu();
+            });
+            Vector3f backSize = back.getPreferredSize();
+            float cardBottomY = cardTopY - cardSize.y;
+            back.setLocalTranslation((screenW - backSize.x) / 2f, cardBottomY - 18, 1);
+            uiRoot.attachChild(back);
+        }
     }
 
     private void buildChoice(PaddleShockApp app, Container panel) {
@@ -149,50 +180,85 @@ public class MultiplayerState extends BaseAppState {
         sub.setColor(Theme.TEXT_DIM);
         sub.setInsets(new Insets3f(0, 0, 18, 0));
 
-        Button unrankedToggle = panel.addChild(new Button(unrankedToggleLabel()));
-        styleButton(unrankedToggle, unranked ? Theme.GREEN : Theme.PANEL_HOVER, unranked ? Theme.ON_ACCENT : Theme.TEXT, 14);
-        unrankedToggle.setInsets(new Insets3f(0, 0, 4, 0));
-        unrankedToggle.addClickCommands(source -> {
-            app.getAudioManager().playSfx("button_click.ogg");
-            unranked = !unranked;
-            rebuild();
-        });
+        // Ranked/unranked row: label + description on the left, a toggle-switch visual on the
+        // right, in place of the old single "RANKED (tap for unranked)" style button. Exact same
+        // click behavior/state field (unranked) as before - only the visual changed.
+        Container toggleRow = panel.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
+        toggleRow.setInsets(new Insets3f(0, 0, 18, 0));
 
-        Label unrankedHint = panel.addChild(new Label(unranked
+        Container toggleText = toggleRow.addChild(new Container(new SpringGridLayout(Axis.Y, Axis.X)));
+        Label toggleLabel = toggleText.addChild(new Label(unranked ? "UNRANKED" : "RANKED"));
+        toggleLabel.setFontSize(15);
+        toggleLabel.setColor(Theme.TEXT);
+        Label toggleHint = toggleText.addChild(new Label(unranked
                 ? "This match will NOT affect your ranked LP."
                 : "This match counts toward your ranked ladder."));
-        unrankedHint.setFontSize(11);
-        unrankedHint.setColor(Theme.TEXT_DIM);
-        unrankedHint.setInsets(new Insets3f(0, 0, 12, 0));
+        toggleHint.setFontSize(11);
+        toggleHint.setColor(Theme.TEXT_DIM);
+
+        Button toggleSwitch = toggleRow.addChild(buildToggleSwitch(app));
+        toggleSwitch.setInsets(new Insets3f(6, 16, 0, 0));
+
+        Panel divider = panel.addChild(new Panel());
+        divider.setBackground(new QuadBackgroundComponent(Theme.PANEL_LINE));
+        divider.setPreferredSize(new Vector3f(CARD_CONTENT_WIDTH, 1, 0));
+        divider.setInsets(new Insets3f(0, 0, 18, 0));
 
         Button hostButton = panel.addChild(new Button("HOST MATCH"));
         styleButton(hostButton, Theme.ORANGE, Theme.ON_ACCENT, 18);
+        hostButton.setPreferredSize(new Vector3f(CARD_CONTENT_WIDTH, 50, 0));
+        hostButton.setInsets(new Insets3f(0, 0, 22, 0));
         hostButton.addClickCommands(source -> {
             app.getAudioManager().playSfx("button_click.ogg");
             beginHosting(app);
         });
 
-        Button joinButton = panel.addChild(new Button("JOIN MATCH"));
-        styleButton(joinButton, Theme.BLUE, Theme.ON_ACCENT, 18);
-        joinButton.setInsets(new Insets3f(8, 0, 6, 0));
+        // NOTE: the actual address/lobby-code field and CONNECT button live on the JOINING view
+        // (buildJoining, below) exactly as before - that view/state-machine transition is
+        // untouched. This button is just the restyled entry point into that same flow, now
+        // presented as part of the card rather than a separate loose button.
+        Button joinButton = panel.addChild(new Button("JOIN A MATCH"));
+        styleButton(joinButton, Theme.PANEL_HOVER, Theme.TEXT, 16);
+        joinButton.setPreferredSize(new Vector3f(CARD_CONTENT_WIDTH, 46, 0));
         joinButton.addClickCommands(source -> {
             app.getAudioManager().playSfx("button_click.ogg");
             view = View.JOINING;
             joinError = null;
             rebuild();
         });
-
-        Button back = panel.addChild(new Button("BACK"));
-        styleButton(back, Theme.PANEL_HOVER, Theme.TEXT, 14);
-        back.setInsets(new Insets3f(16, 0, 0, 0));
-        back.addClickCommands(source -> {
-            app.getAudioManager().playSfx("button_click.ogg");
-            app.showMainMenu();
-        });
     }
 
-    private String unrankedToggleLabel() {
-        return unranked ? "UNRANKED (tap for ranked)" : "RANKED (tap for unranked)";
+    /** Small pill-shaped toggle-switch visual: a colored track (green when "on"/unranked, dim
+     *  when "off"/ranked) with a small square "knob" (Lemur has no easy circle without a custom
+     *  texture, so a square stands in - see the redesign notes) that slides to the opposite edge
+     *  depending on state. Reuses the same Button + click command as the old toggle button, so the
+     *  {@code unranked} field and its effect on hosting are unchanged - only the look is new. */
+    private Button buildToggleSwitch(PaddleShockApp app) {
+        float trackW = 44f, trackH = 22f, knobSize = 16f, pad = 3f;
+
+        Button toggle = new Button("");
+        toggle.setBackground(new QuadBackgroundComponent(unranked ? Theme.GREEN : Theme.PANEL_HOVER));
+        toggle.setPreferredSize(new Vector3f(trackW, trackH, 0));
+        toggle.setInsets(new Insets3f(0, 0, 0, 0));
+        toggle.addClickCommands(source -> {
+            app.getAudioManager().playSfx("button_click.ogg");
+            unranked = !unranked;
+            rebuild();
+        });
+
+        Panel knob = new Panel();
+        knob.setBackground(new QuadBackgroundComponent(Theme.TEXT));
+        knob.setPreferredSize(new Vector3f(knobSize, knobSize, 0));
+        // A Panel's own local space has its top edge at y=0, extending DOWN into negative y (see
+        // QuadBackgroundComponent#reshape) - not the top-left-positive-down convention used when
+        // a parent layout positions a *child* panel. So the knob's y here is negative, vertically
+        // centered within the track's height.
+        float knobX = unranked ? (trackW - pad - knobSize) : pad;
+        float knobY = -(trackH - knobSize) / 2f;
+        knob.setLocalTranslation(knobX, knobY, 1);
+        toggle.attachChild(knob);
+
+        return toggle;
     }
 
     private void beginHosting(PaddleShockApp app) {
@@ -417,9 +483,9 @@ public class MultiplayerState extends BaseAppState {
         addressField = panel.addChild(new TextField("127.0.0.1:" + GameConstants.MULTIPLAYER_DEFAULT_PORT));
         addressField.setFontSize(16);
         addressField.setColor(Theme.TEXT);
-        addressField.setBackground(new QuadBackgroundComponent(Theme.PANEL_HOVER));
-        addressField.setPreferredWidth(320);
-        addressField.setInsets(new Insets3f(6, 8, 6, 8));
+        addressField.setBackground(new QuadBackgroundComponent(Theme.BACKGROUND_2));
+        addressField.setPreferredWidth(CARD_CONTENT_WIDTH);
+        addressField.setInsets(new Insets3f(8, 10, 8, 10));
 
         statusLabel = panel.addChild(new Label(joinError != null ? joinError : ""));
         statusLabel.setFontSize(13);
@@ -427,7 +493,8 @@ public class MultiplayerState extends BaseAppState {
         statusLabel.setInsets(new Insets3f(10, 0, 10, 0));
 
         Button connect = panel.addChild(new Button("CONNECT"));
-        styleButton(connect, Theme.BLUE, Theme.ON_ACCENT, 18);
+        styleButton(connect, Theme.PANEL_HOVER, Theme.TEXT, 18);
+        connect.setPreferredSize(new Vector3f(CARD_CONTENT_WIDTH, 46, 0));
         connect.addClickCommands(source -> {
             app.getAudioManager().playSfx("button_click.ogg");
             attemptConnect(app);
