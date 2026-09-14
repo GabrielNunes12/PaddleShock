@@ -9,6 +9,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.paddleshock.data.Catalog;
@@ -56,6 +57,37 @@ public class NetHost implements AutoCloseable {
     /** How long without any packet from the joiner before it's considered disconnected. */
     public static final long DISCONNECT_TIMEOUT_MS = 5_000;
 
+    /** A single read-only spectator connection - address plus its own "last packet at" timestamp,
+     *  tracked the same way the real joiner's is, so a spectator that vanishes (process died, or
+     *  never sends anything again) is naturally pruned rather than accumulating forever. Never
+     *  treated as the joiner: its address is never written to {@link #joinerAddress}, so nothing it
+     *  sends (including a modified client's forged {@code TYPE_INPUT}) can ever be read back via
+     *  {@link #pollJoinerPaddleInput()}. */
+    private static final class SpectatorConnection {
+        final InetSocketAddress address;
+        volatile long lastPacketAt;
+
+        SpectatorConnection(InetSocketAddress address) {
+            this.address = address;
+            this.lastPacketAt = System.currentTimeMillis();
+        }
+    }
+
+    /** Hobby-scale cap on concurrent spectators - a HELLO with {@code role=SPECTATE} arriving once
+     *  this many are already connected gets {@link NetProtocol#TYPE_REJECT} just like a HELLO for a
+     *  second real joiner does. */
+    public static final int MAX_SPECTATORS = 6;
+
+    /** Same timeout basis as {@link #DISCONNECT_TIMEOUT_MS}, scoped to spectators - reused rather
+     *  than duplicated since a spectator going silent means exactly the same thing the joiner going
+     *  silent does (process died, or the network dropped). */
+    public static final long SPECTATOR_DISCONNECT_TIMEOUT_MS = DISCONNECT_TIMEOUT_MS;
+
+    /** Read/written from both the render thread (HOSTING-view spectator count, {@link #sendSnapshot})
+     *  and the UDP receive thread ({@link #handleSpectatorHello}) - a copy-on-write list is a cheap,
+     *  safe fit for "rare writes (join/prune), frequent reads (broadcast every tick)". */
+    private final List<SpectatorConnection> spectators = new CopyOnWriteArrayList<>();
+
     private volatile boolean rematchRequestedByJoiner = false;
     private volatile boolean rematchAcceptedByJoiner = false;
     private volatile boolean rematchDeclinedByJoiner = false;
@@ -102,8 +134,14 @@ public class NetHost implements AutoCloseable {
             switch (NetProtocol.messageType(data)) {
                 case NetProtocol.TYPE_HELLO -> handleHello(from, NetProtocol.decodeHello(data));
                 case NetProtocol.TYPE_INPUT -> {
-                    latestInput.set(NetProtocol.decodeInput(data));
-                    noteJoinerPacket(from);
+                    // Only ever trust input from the address on file as the real joiner - a
+                    // spectator (or anyone else) sending a forged/stray TYPE_INPUT must never be
+                    // able to influence pollJoinerPaddleInput(), even though this receive loop is
+                    // shared by every peer's packets.
+                    if (joinerAddress != null && joinerAddress.equals(from)) {
+                        latestInput.set(NetProtocol.decodeInput(data));
+                        noteJoinerPacket(from);
+                    }
                 }
                 case NetProtocol.TYPE_REMATCH_REQUEST -> {
                     rematchRequestedByJoiner = true;
@@ -137,6 +175,13 @@ public class NetHost implements AutoCloseable {
     }
 
     private void handleHello(InetSocketAddress from, NetProtocol.HelloMessage hello) {
+        if (hello.role() == NetProtocol.Role.SPECTATE) {
+            // Spectating and playing are independent: a spectator HELLO is accepted (capped, see
+            // MAX_SPECTATORS) regardless of whether a real joiner is already connected, and vice
+            // versa - it never touches joinerAddress/joinerPlayerId/joinerAllowedPowerUpIds at all.
+            handleSpectatorHello(from);
+            return;
+        }
         synchronized (this) {
             String playerId = hello.playerId();
             boolean sameAddress = joinerAddress != null && joinerAddress.equals(from);
@@ -179,6 +224,45 @@ public class NetHost implements AutoCloseable {
         return allowed;
     }
 
+    /** Accepts (or rejects, if already at {@link #MAX_SPECTATORS}) a spectator HELLO. A repeat
+     *  HELLO from an address already on the spectator list is a no-op re-accept (same "just refresh
+     *  and re-WELCOME" treatment {@link #handleHello} gives a repeat joiner HELLO from the same
+     *  address), not a second slot. */
+    private void handleSpectatorHello(InetSocketAddress from) {
+        synchronized (spectators) {
+            pruneTimedOutSpectators();
+            for (SpectatorConnection existing : spectators) {
+                if (existing.address.equals(from)) {
+                    existing.lastPacketAt = System.currentTimeMillis();
+                    sendRaw(from, NetProtocol.encodeWelcome(ranked, localPlayerId));
+                    return;
+                }
+            }
+            if (spectators.size() >= MAX_SPECTATORS) {
+                sendRaw(from, NetProtocol.encodeHandshake(NetProtocol.TYPE_REJECT));
+                return;
+            }
+            spectators.add(new SpectatorConnection(from));
+            sendRaw(from, NetProtocol.encodeWelcome(ranked, localPlayerId));
+        }
+    }
+
+    /** Drops any spectator that's gone silent for {@link #SPECTATOR_DISCONNECT_TIMEOUT_MS} - called
+     *  opportunistically (on a fresh spectator HELLO, and on every {@link #sendSnapshot}) rather
+     *  than from a dedicated timer thread, so a dead spectator connection never accumulates forever
+     *  without needing any new background machinery. */
+    private void pruneTimedOutSpectators() {
+        long now = System.currentTimeMillis();
+        spectators.removeIf(s -> now - s.lastPacketAt > SPECTATOR_DISCONNECT_TIMEOUT_MS);
+    }
+
+    /** How many spectators are currently connected - all the UI needs to show a "N spectators
+     *  watching" line; no need to expose individual spectator identities beyond this count. */
+    public int getSpectatorCount() {
+        pruneTimedOutSpectators();
+        return spectators.size();
+    }
+
     private void sendRaw(InetSocketAddress to, byte[] data) {
         try {
             socket.send(new DatagramPacket(data, data.length, to));
@@ -219,13 +303,26 @@ public class NetHost implements AutoCloseable {
         return new PaddleInput(msg.deltaX(), msg.deltaZ(), activated);
     }
 
-    /** Sends this tick's authoritative snapshot to the joiner, if one is connected. */
+    /** Sends this tick's authoritative snapshot to the joiner (if one is connected) AND broadcasts
+     *  the exact same snapshot to every currently-connected spectator - a spectator sees the same
+     *  authoritative game state the real joiner does, not a reduced view. A no-op only if neither a
+     *  joiner nor any spectator is connected. */
     public void sendSnapshot(NetProtocol.SnapshotMessage snapshot) {
         InetSocketAddress to = joinerAddress;
-        if (to == null) {
+        boolean hasSpectators = !spectators.isEmpty();
+        if (to == null && !hasSpectators) {
             return;
         }
-        sendRaw(to, NetProtocol.encodeSnapshot(snapshot));
+        byte[] data = NetProtocol.encodeSnapshot(snapshot);
+        if (to != null) {
+            sendRaw(to, data);
+        }
+        if (hasSpectators) {
+            pruneTimedOutSpectators();
+            for (SpectatorConnection spectator : spectators) {
+                sendRaw(spectator.address, data);
+            }
+        }
     }
 
     /** True once a joiner has connected and then gone silent for {@link #DISCONNECT_TIMEOUT_MS} -

@@ -2,6 +2,7 @@ package com.paddleshock.app;
 
 import java.awt.Dimension;
 import java.awt.Toolkit;
+import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
 import com.jme3.app.SimpleApplication;
@@ -180,6 +181,7 @@ public class PaddleShockApp extends SimpleApplication {
             case SINGLE_PLAYER -> "single-player";
             case HOST -> "host";
             case JOINER -> "joiner";
+            case SPECTATOR -> "spectator";
         };
         return mode + " match in progress";
     }
@@ -306,13 +308,27 @@ public class PaddleShockApp extends SimpleApplication {
      *  caller ({@link MultiplayerState}) waits for the handshake to complete before actually
      *  entering the match via {@link #enterJoinedMatch(NetClient)}. */
     public NetClient joinMatch(String hostAddress, int port) throws IOException {
-        return new NetClient(hostAddress, port, profile.getPlayerId(), profile.getLoadout());
+        return joinMatch(hostAddress, port, false);
+    }
+
+    /** {@code spectator} - see {@code MultiplayerState}'s JOINING view spectate toggle and
+     *  {@link NetClient#isSpectator()}. A spectator's loadout is irrelevant, so an empty one is
+     *  sent rather than this player's own equipped kit. */
+    public NetClient joinMatch(String hostAddress, int port, boolean spectator) throws IOException {
+        List<String> loadout = spectator ? List.of() : profile.getLoadout();
+        return new NetClient(hostAddress, port, profile.getPlayerId(), loadout, spectator);
     }
 
     /** Connects to a host via an AWS lobby code instead of a typed IP:port - see
      *  {@link NetClient#connectByLobbyCode}. */
     public NetClient joinMatchByLobbyCode(String code) throws IOException {
-        return NetClient.connectByLobbyCode(code, profile.getPlayerId(), profile.getLoadout());
+        return joinMatchByLobbyCode(code, false);
+    }
+
+    /** {@code spectator} - see {@link #joinMatch(String, int, boolean)}. */
+    public NetClient joinMatchByLobbyCode(String code, boolean spectator) throws IOException {
+        List<String> loadout = spectator ? List.of() : profile.getLoadout();
+        return NetClient.connectByLobbyCode(code, profile.getPlayerId(), loadout, spectator);
     }
 
     /** Enters the match as the listen-server host, once a joiner has connected to {@code netHost}. */
@@ -445,6 +461,10 @@ public class PaddleShockApp extends SimpleApplication {
             case SINGLE_PLAYER -> "vs AI";
             case HOST -> "LAN Host";
             case JOINER -> "LAN Join";
+            // Never actually reaches recordMatchHistory - a spectator's match-end goes through
+            // endSpectatedMatch instead, which never calls this - but the switch must still be
+            // exhaustive.
+            case SPECTATOR -> "Spectator";
         };
     }
 
@@ -564,6 +584,22 @@ public class PaddleShockApp extends SimpleApplication {
         audioManager.stopMusic();
         matchEndState.setConnectionLost(playerScore, opponentScore);
         matchEndState.setEnabled(true);
+    }
+
+    /** A spectator's watched match is over - either it actually ended (the final snapshot's
+     *  {@code FLAG_MATCH_OVER}) or the host connection was lost. Deliberately does NOT go through
+     *  {@link #endMatch}/{@link #endRankedJoinerMatch}/{@code MatchEndState}'s rematch negotiation
+     *  at all (those exist for the two real participants only) - a spectator was never in the
+     *  match, so nothing here ever touches {@link PlayerProfile} (no match-history entry, no rival
+     *  tracker update, no ranked report/fetch). Just tears down the gameplay state and drops the
+     *  viewer back on the Multiplayer screen. */
+    public void endSpectatedMatch() {
+        if (gameplayState != null) {
+            stateManager.detach(gameplayState);
+            gameplayState = null;
+        }
+        audioManager.stopMusic();
+        showMultiplayer();
     }
 
     /** Same as {@link #endMatch}, but for the JOINER side of a ranked multiplayer match: the

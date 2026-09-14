@@ -48,6 +48,53 @@ class NetProtocolTest {
     }
 
     @Test
+    void helloDefaultsToPlayRoleWhenEncodedWithoutOne() throws IOException {
+        // The original two-arg encodeHello (still used by every existing PLAY-role caller).
+        byte[] packet = NetProtocol.encodeHello("player-123", List.of());
+
+        assertEquals(NetProtocol.Role.PLAY, NetProtocol.decodeHello(packet).role());
+    }
+
+    @Test
+    void helloRoundTripsSpectateRole() throws IOException {
+        byte[] packet = NetProtocol.encodeHello("spectator-1", List.of(), NetProtocol.Role.SPECTATE);
+
+        NetProtocol.HelloMessage decoded = NetProtocol.decodeHello(packet);
+        assertEquals("spectator-1", decoded.playerId());
+        assertEquals(NetProtocol.Role.SPECTATE, decoded.role());
+    }
+
+    @Test
+    void helloRoundTripsPlayRoleViaThreeArgOverload() throws IOException {
+        byte[] packet = NetProtocol.encodeHello("player-123", List.of("powerup_speed_boost"), NetProtocol.Role.PLAY);
+
+        NetProtocol.HelloMessage decoded = NetProtocol.decodeHello(packet);
+        assertEquals(NetProtocol.Role.PLAY, decoded.role());
+        assertEquals(List.of("powerup_speed_boost"), decoded.loadout());
+    }
+
+    @Test
+    void decodeHelloDefaultsToPlayRoleForAnOlderHelloWithNoTrailingRoleByte() throws IOException {
+        // Simulates an older build's HELLO: playerId + loadout count/entries, but no role byte at
+        // all - must still decode (as PLAY) rather than throwing, same graceful degradation the
+        // loadout field itself already gets for an even older HELLO with no loadout at all.
+        byte[] fullPacket = NetProtocol.encodeHello("player-123", List.of("powerup_speed_boost"), NetProtocol.Role.SPECTATE);
+        byte[] withoutRoleByte = new byte[fullPacket.length - 1];
+        System.arraycopy(fullPacket, 0, withoutRoleByte, 0, withoutRoleByte.length);
+
+        NetProtocol.HelloMessage decoded = NetProtocol.decodeHello(withoutRoleByte);
+        assertEquals(NetProtocol.Role.PLAY, decoded.role());
+        assertEquals(List.of("powerup_speed_boost"), decoded.loadout());
+    }
+
+    @Test
+    void decodeHelloReturnsPlayRoleForPayloadLessPacket() throws IOException {
+        byte[] punchPacket = NetProtocol.encodeHandshake(NetProtocol.TYPE_HELLO);
+
+        assertEquals(NetProtocol.Role.PLAY, NetProtocol.decodeHello(punchPacket).role());
+    }
+
+    @Test
     void decodeHelloThrowsOnTruncatedUtfPayload() {
         byte[] packet = NetProtocol.encodeHello("player-123", List.of());
         // Keep the type byte and the UTF length prefix, but chop off the actual string bytes.

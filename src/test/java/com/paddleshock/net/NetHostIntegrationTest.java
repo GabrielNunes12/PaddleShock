@@ -4,6 +4,7 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.jupiter.api.AfterEach;
@@ -34,11 +35,15 @@ class NetHostIntegrationTest {
     private NetHost host;
     private NetClient client;
     private DatagramSocket rawSocket;
+    private final List<NetClient> extraClients = new ArrayList<>();
 
     @AfterEach
     void tearDown() {
         if (client != null) {
             client.close();
+        }
+        for (NetClient extra : extraClients) {
+            extra.close();
         }
         if (host != null) {
             host.close();
@@ -127,6 +132,75 @@ class NetHostIntegrationTest {
                 reply.getOffset() + reply.getLength());
         assertEquals(NetProtocol.TYPE_REJECT, NetProtocol.messageType(replyData),
                 "a genuinely different, non-matching player id must still be rejected while a joiner is connected");
+    }
+
+    @Test
+    void spectatorConnectsIndependentlyOfARealJoinerAndReceivesBroadcastSnapshots() throws Exception {
+        host = new NetHost(0, "host-player", true);
+        client = new NetClient("127.0.0.1", host.getPort(), "joiner-player", List.of());
+        awaitTrue(client::isConnected, "real joiner never connected");
+        awaitTrue(host::hasJoiner, "host never recorded the real joiner");
+
+        NetClient spectator = new NetClient("127.0.0.1", host.getPort(), "spectator-1", List.of(), true);
+        extraClients.add(spectator);
+        awaitTrue(spectator::isConnected, "spectator never received WELCOME");
+        assertEquals(1, host.getSpectatorCount());
+
+        // The spectator must never be mistaken for the real joiner: this is what host.hasJoiner()
+        // and pollJoinerPaddleInput() must keep reflecting even with a spectator connected too.
+        assertTrue(host.hasJoiner());
+
+        NetProtocol.SnapshotMessage snapshot = new NetProtocol.SnapshotMessage(
+                1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f, 9f, 10f, 3, 5, 0,
+                NetProtocol.SnapshotMessage.ACTOR_NONE, -1);
+        host.sendSnapshot(snapshot);
+
+        awaitTrue(() -> spectator.getLatestSnapshot() != null, "spectator never received the broadcast snapshot");
+        assertEquals(3, spectator.getLatestSnapshot().hostScore());
+        assertEquals(5, spectator.getLatestSnapshot().joinerScore());
+    }
+
+    @Test
+    void spectatorInputIsNeverTreatedAsTheRealJoinersInput() throws Exception {
+        host = new NetHost(0, "host-player", true);
+        client = new NetClient("127.0.0.1", host.getPort(), "joiner-player", List.of());
+        awaitTrue(client::isConnected, "real joiner never connected");
+        awaitTrue(host::hasJoiner, "host never recorded the real joiner");
+
+        NetClient spectator = new NetClient("127.0.0.1", host.getPort(), "spectator-1", List.of(), true);
+        extraClients.add(spectator);
+        awaitTrue(spectator::isConnected, "spectator never received WELCOME");
+
+        // sendInput() is itself a no-op for a spectator NetClient, but even a hand-built raw
+        // TYPE_INPUT packet from the spectator's own address must never move pollJoinerPaddleInput()
+        // off whatever the real joiner last sent.
+        spectator.sendInput(0.9f, 0.9f, "");
+        for (int i = 0; i < 5; i++) {
+            Thread.sleep(POLL_INTERVAL_MS);
+            assertEquals(0f, host.pollJoinerPaddleInput().getDeltaX(),
+                    "a spectator's input must never be honored as the real joiner's");
+        }
+
+        client.sendInput(0.4f, 0f, "");
+        awaitTrue(() -> host.pollJoinerPaddleInput().getDeltaX() == 0.4f,
+                "the real joiner's own input must still be honored");
+    }
+
+    @Test
+    void spectatorHelloIsRejectedOnceTheCapIsReached() throws Exception {
+        host = new NetHost(0, "host-player", true);
+
+        for (int i = 0; i < NetHost.MAX_SPECTATORS; i++) {
+            NetClient spectator = new NetClient("127.0.0.1", host.getPort(), "spectator-" + i, List.of(), true);
+            extraClients.add(spectator);
+            awaitTrue(spectator::isConnected, "spectator " + i + " never received WELCOME");
+        }
+        assertEquals(NetHost.MAX_SPECTATORS, host.getSpectatorCount());
+
+        NetClient overflow = new NetClient("127.0.0.1", host.getPort(), "spectator-overflow", List.of(), true);
+        extraClients.add(overflow);
+        awaitTrue(overflow::isRejected, "a spectator HELLO past the cap must be rejected");
+        assertEquals(NetHost.MAX_SPECTATORS, host.getSpectatorCount());
     }
 
     private interface Condition {
