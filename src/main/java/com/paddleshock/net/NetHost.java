@@ -6,6 +6,9 @@ import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.net.SocketException;
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.paddleshock.data.Catalog;
@@ -26,10 +29,20 @@ public class NetHost implements AutoCloseable {
     private volatile boolean running = true;
 
     private final InetSocketAddress publicAddress;
+    /** Best-effort symmetric-NAT diagnosis (see {@link StunClient#detectsSymmetricNat}) - only
+     *  meaningful (and only computed) when {@link #publicAddress} was actually discovered, since a
+     *  purely LAN-only host never needs STUN/NAT traversal at all. */
+    private final boolean symmetricNatSuspected;
     private final String localPlayerId;
     private volatile InetSocketAddress joinerAddress;
     private volatile String joinerPlayerId = "";
     private volatile String lobbyCode;
+    /** The catalog power-up ids the connected joiner is actually entitled to activate - the
+     *  intersection of what it declared as its equipped loadout in its HELLO (see
+     *  {@link NetProtocol.HelloMessage}) and this host's own catalog. Re-derived on every accepted
+     *  HELLO (including a reconnect) so a stale entitlement never outlives the joiner that sent it.
+     *  Never {@code null}; empty until a joiner has said hello. */
+    private volatile Set<String> joinerAllowedPowerUpIds = Set.of();
     private final AtomicReference<NetProtocol.InputMessage> latestInput =
             new AtomicReference<>(NetProtocol.InputMessage.NEUTRAL);
 
@@ -59,6 +72,7 @@ public class NetHost implements AutoCloseable {
         // its per-attempt SO_TIMEOUT must be restored) before the receive thread starts reading
         // the same socket - otherwise the two would race for incoming packets.
         publicAddress = StunClient.discoverPublicAddress(socket);
+        symmetricNatSuspected = publicAddress != null && StunClient.detectsSymmetricNat(socket);
         receiveThread = new Thread(this::receiveLoop, "NetHost-recv");
         receiveThread.setDaemon(true);
         receiveThread.start();
@@ -120,19 +134,47 @@ public class NetHost implements AutoCloseable {
         }
     }
 
-    private void handleHello(InetSocketAddress from, String playerId) {
+    private void handleHello(InetSocketAddress from, NetProtocol.HelloMessage hello) {
         synchronized (this) {
-            if (joinerAddress == null || joinerAddress.equals(from)) {
+            String playerId = hello.playerId();
+            boolean sameAddress = joinerAddress != null && joinerAddress.equals(from);
+            // A reconnect after a NAT remap (Wi-Fi blip, mobile handoff, ...): the joiner is
+            // already on file under a DIFFERENT address, but this HELLO carries the same
+            // player id it originally connected with, so it's genuinely the same peer - accept it
+            // and re-point where snapshots go / input is trusted from, rather than rejecting it as
+            // "already has a peer" the way a HELLO from a truly different player would be. The
+            // match itself (score, ball state) already lives in MatchSimulation on the render
+            // thread, untouched by this - a reconnect just re-points the transport.
+            boolean reconnectFromNewAddress = joinerAddress != null && !sameAddress
+                    && !playerId.isEmpty() && playerId.equals(joinerPlayerId);
+            if (joinerAddress == null || sameAddress || reconnectFromNewAddress) {
                 joinerAddress = from;
                 lastJoinerPacketAt = System.currentTimeMillis();
                 if (!playerId.isEmpty()) {
                     joinerPlayerId = playerId;
                 }
+                joinerAllowedPowerUpIds = resolveAllowedPowerUpIds(hello.loadout());
                 sendRaw(from, NetProtocol.encodeWelcome(ranked));
             } else {
                 sendRaw(from, NetProtocol.encodeHandshake(NetProtocol.TYPE_REJECT));
             }
         }
+    }
+
+    /** Intersects the joiner's declared loadout (from its HELLO) with this host's own catalog, so
+     *  a later {@code TYPE_INPUT} activation can be validated against what the joiner is actually
+     *  entitled to use - see {@link NetProtocol#sanitizePowerUpId}. Empty/unfilled slots and any id
+     *  the host's catalog doesn't recognize are silently dropped rather than trusted. */
+    private static Set<String> resolveAllowedPowerUpIds(List<String> loadout) {
+        Set<String> allowed = new HashSet<>();
+        if (loadout != null) {
+            for (String id : loadout) {
+                if (id != null && !id.isEmpty() && Catalog.findPowerUp(id).isPresent()) {
+                    allowed.add(id);
+                }
+            }
+        }
+        return allowed;
     }
 
     private void sendRaw(InetSocketAddress to, byte[] data) {
@@ -164,9 +206,14 @@ public class NetHost implements AutoCloseable {
      *  input if nothing has arrived yet. */
     public PaddleInput pollJoinerPaddleInput() {
         NetProtocol.InputMessage msg = latestInput.get();
-        PowerUpDefinition activated = (msg.powerUpId() == null || msg.powerUpId().isEmpty())
+        // Host-authoritative ownership check: never honor a power-up id the joiner didn't declare
+        // (and this host didn't independently confirm exists) in its HELLO - see handleHello /
+        // resolveAllowedPowerUpIds. A forged/free-form id from a modified client is silently
+        // dropped here (treated as "no activation"), same as any other malformed input.
+        String sanitizedPowerUpId = NetProtocol.sanitizePowerUpId(msg.powerUpId(), joinerAllowedPowerUpIds);
+        PowerUpDefinition activated = sanitizedPowerUpId.isEmpty()
                 ? null
-                : Catalog.findPowerUp(msg.powerUpId()).orElse(null);
+                : Catalog.findPowerUp(sanitizedPowerUpId).orElse(null);
         return new PaddleInput(msg.deltaX(), msg.deltaZ(), activated);
     }
 
@@ -266,6 +313,15 @@ public class NetHost implements AutoCloseable {
      *  STUN traffic was blocked) - callers should fall back to LAN-only direct connect. */
     public InetSocketAddress getPublicAddress() {
         return publicAddress;
+    }
+
+    /** True if this host's network is best-effort diagnosed as behind a symmetric NAT (see
+     *  {@link StunClient#detectsSymmetricNat}) - direct/hole-punched internet play from here is
+     *  unlikely to work. Always {@code false} for a LAN-only host (no public address discovered at
+     *  all). Callers ({@code MultiplayerState}) should surface a clear warning instead of letting
+     *  internet-code registration/punching silently hang. */
+    public boolean isSymmetricNatSuspected() {
+        return symmetricNatSuspected;
     }
 
     /** Registers this host with the AWS lobby broker and returns a short code the joiner can

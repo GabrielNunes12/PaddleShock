@@ -6,6 +6,7 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -24,6 +25,11 @@ public class NetClient implements AutoCloseable {
 
     private final InetSocketAddress publicAddress;
     private final String localPlayerId;
+    /** This player's equipped power-up loadout (catalog ids, empty-string for an unfilled slot -
+     *  see {@code PlayerProfile.getLoadout()}), sent with every HELLO so the host can validate a
+     *  later activation against it rather than trusting a free-form id - see
+     *  {@code NetHost#handleHello}/{@link NetProtocol#sanitizePowerUpId}. */
+    private final List<String> loadout;
     private final String lobbyCode; // null for a direct IP:port connect - see connectByLobbyCode
     private volatile boolean connected = false;
     private volatile boolean rejected = false;
@@ -46,9 +52,10 @@ public class NetClient implements AutoCloseable {
     private volatile boolean rematchAcceptedByHost = false;
     private volatile boolean rematchDeclinedByHost = false;
 
-    public NetClient(String hostAddress, int port, String localPlayerId) throws IOException {
+    public NetClient(String hostAddress, int port, String localPlayerId, List<String> loadout) throws IOException {
         this.hostAddress = new InetSocketAddress(InetAddress.getByName(hostAddress), port);
         this.localPlayerId = localPlayerId;
+        this.loadout = loadout == null ? List.of() : List.copyOf(loadout);
         this.lobbyCode = null;
         socket = new DatagramSocket();
         // Same ordering constraint as NetHost: STUN discovery's own blocking receives must
@@ -63,11 +70,12 @@ public class NetClient implements AutoCloseable {
     /** Internal constructor used by {@link #connectByLobbyCode}, where the public address is
      *  already known (discovered before the host's address was) and doesn't need rediscovering. */
     private NetClient(DatagramSocket socket, InetSocketAddress publicAddress, InetSocketAddress hostAddress,
-            String localPlayerId, String lobbyCode) {
+            String localPlayerId, List<String> loadout, String lobbyCode) {
         this.socket = socket;
         this.publicAddress = publicAddress;
         this.hostAddress = hostAddress;
         this.localPlayerId = localPlayerId;
+        this.loadout = loadout == null ? List.of() : List.copyOf(loadout);
         this.lobbyCode = lobbyCode;
         receiveThread = new Thread(this::receiveLoop, "NetClient-recv");
         receiveThread.setDaemon(true);
@@ -83,12 +91,20 @@ public class NetClient implements AutoCloseable {
      * direct constructor. Blocking network calls (STUN + the lobby HTTPS round trip) - run off
      * the render thread.
      */
-    public static NetClient connectByLobbyCode(String code, String localPlayerId) throws IOException {
+    public static NetClient connectByLobbyCode(String code, String localPlayerId, List<String> loadout)
+            throws IOException {
         DatagramSocket socket = new DatagramSocket();
         InetSocketAddress publicAddress = StunClient.discoverPublicAddress(socket);
         if (publicAddress == null) {
             socket.close();
             throw new IOException("no public address available for internet play (offline, or STUN is blocked)");
+        }
+        // Only the internet/lobby-code path needs gating here - direct LAN IP:port connects never
+        // touch STUN at all, so a symmetric NAT on this machine is irrelevant to them. Best-effort:
+        // detectsSymmetricNat never throws and is bounded to ~1-2s.
+        if (StunClient.detectsSymmetricNat(socket)) {
+            socket.close();
+            throw new IOException(StunClient.SYMMETRIC_NAT_MESSAGE);
         }
         String hostAddressText;
         try {
@@ -98,7 +114,7 @@ public class NetClient implements AutoCloseable {
             throw e;
         }
         InetSocketAddress hostAddress = StunClient.parseAddress(hostAddressText);
-        return new NetClient(socket, publicAddress, hostAddress, localPlayerId, code);
+        return new NetClient(socket, publicAddress, hostAddress, localPlayerId, loadout, code);
     }
 
     /** Re-sends the handshake "hello"; safe to call repeatedly while waiting for a welcome
@@ -106,7 +122,7 @@ public class NetClient implements AutoCloseable {
      *  a no-op re-accept rather than a second connection. Carries this player's ranked-ladder id
      *  (see {@code RankClient}) so the host can report a ranked match's result for both players. */
     public void sendHello() {
-        sendRaw(NetProtocol.encodeHello(localPlayerId));
+        sendRaw(NetProtocol.encodeHello(localPlayerId, loadout));
     }
 
     private void receiveLoop() {

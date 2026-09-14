@@ -2,6 +2,8 @@ package com.paddleshock.net;
 
 import java.io.EOFException;
 import java.io.IOException;
+import java.util.List;
+import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 
@@ -17,18 +19,22 @@ class NetProtocolTest {
     // ---- HELLO ----
 
     @Test
-    void helloRoundTripsPlayerId() throws IOException {
-        byte[] packet = NetProtocol.encodeHello("player-123");
+    void helloRoundTripsPlayerIdAndLoadout() throws IOException {
+        byte[] packet = NetProtocol.encodeHello("player-123", List.of("powerup_speed_boost", "", "powerup_paddle_grow"));
 
         assertEquals(NetProtocol.TYPE_HELLO, NetProtocol.messageType(packet));
-        assertEquals("player-123", NetProtocol.decodeHello(packet));
+        NetProtocol.HelloMessage decoded = NetProtocol.decodeHello(packet);
+        assertEquals("player-123", decoded.playerId());
+        assertEquals(List.of("powerup_speed_boost", "", "powerup_paddle_grow"), decoded.loadout());
     }
 
     @Test
-    void helloEncodesNullPlayerIdAsEmptyString() throws IOException {
-        byte[] packet = NetProtocol.encodeHello(null);
+    void helloEncodesNullPlayerIdAsEmptyStringAndNullLoadoutAsEmptyList() throws IOException {
+        byte[] packet = NetProtocol.encodeHello(null, null);
 
-        assertEquals("", NetProtocol.decodeHello(packet));
+        NetProtocol.HelloMessage decoded = NetProtocol.decodeHello(packet);
+        assertEquals("", decoded.playerId());
+        assertEquals(List.of(), decoded.loadout());
     }
 
     @Test
@@ -36,17 +42,50 @@ class NetProtocolTest {
         // A Phase-D host-to-joiner punch packet reuses TYPE_HELLO with no payload at all.
         byte[] punchPacket = NetProtocol.encodeHandshake(NetProtocol.TYPE_HELLO);
 
-        assertEquals("", NetProtocol.decodeHello(punchPacket));
+        NetProtocol.HelloMessage decoded = NetProtocol.decodeHello(punchPacket);
+        assertEquals("", decoded.playerId());
+        assertEquals(List.of(), decoded.loadout());
     }
 
     @Test
     void decodeHelloThrowsOnTruncatedUtfPayload() {
-        byte[] packet = NetProtocol.encodeHello("player-123");
+        byte[] packet = NetProtocol.encodeHello("player-123", List.of());
         // Keep the type byte and the UTF length prefix, but chop off the actual string bytes.
         byte[] truncated = new byte[3];
         System.arraycopy(packet, 0, truncated, 0, truncated.length);
 
         assertThrows(EOFException.class, () -> NetProtocol.decodeHello(truncated));
+    }
+
+    // ---- power-up ownership validation (sanitizePowerUpId) ----
+
+    @Test
+    void sanitizePowerUpIdReturnsRequestedIdWhenAllowed() {
+        Set<String> allowed = Set.of("powerup_speed_boost", "powerup_paddle_grow");
+
+        assertEquals("powerup_speed_boost", NetProtocol.sanitizePowerUpId("powerup_speed_boost", allowed));
+    }
+
+    @Test
+    void sanitizePowerUpIdDropsIdNotInAllowedSet() {
+        // e.g. a modified client claiming a power-up it never declared/owns.
+        Set<String> allowed = Set.of("powerup_speed_boost");
+
+        assertEquals("", NetProtocol.sanitizePowerUpId("powerup_tiny_paddle", allowed));
+    }
+
+    @Test
+    void sanitizePowerUpIdDropsEmptyOrNullRequest() {
+        Set<String> allowed = Set.of("powerup_speed_boost");
+
+        assertEquals("", NetProtocol.sanitizePowerUpId("", allowed));
+        assertEquals("", NetProtocol.sanitizePowerUpId(null, allowed));
+    }
+
+    @Test
+    void sanitizePowerUpIdDropsEverythingWhenAllowedSetIsEmptyOrNull() {
+        assertEquals("", NetProtocol.sanitizePowerUpId("powerup_speed_boost", Set.of()));
+        assertEquals("", NetProtocol.sanitizePowerUpId("powerup_speed_boost", null));
     }
 
     // ---- WELCOME / REJECT (payload-less handshake messages) ----

@@ -29,6 +29,7 @@ import com.paddleshock.GameConstants;
 import com.paddleshock.app.PaddleShockApp;
 import com.paddleshock.net.NetClient;
 import com.paddleshock.net.NetHost;
+import com.paddleshock.net.StunClient;
 
 /**
  * Multiplayer screen: pick HOST (bind a UDP port, show this machine's LAN address AND an AWS
@@ -220,6 +221,14 @@ public class MultiplayerState extends BaseAppState {
             lobbyPending = false;
             return;
         }
+        if (hostRef.isSymmetricNatSuspected()) {
+            // Direct/hole-punched internet play is unlikely to work from behind a symmetric NAT -
+            // surface a clear reason instead of silently registering a code that will just hang
+            // for whoever tries it. LAN-only hosting (the address label above) is unaffected.
+            lobbyPending = false;
+            lobbyError.set(StunClient.SYMMETRIC_NAT_MESSAGE);
+            return;
+        }
         lobbyPending = true;
         Thread thread = new Thread(() -> {
             String code = null;
@@ -304,6 +313,11 @@ public class MultiplayerState extends BaseAppState {
             codeHint.setFontSize(12);
             codeHint.setColor(Theme.TEXT_DIM);
             codeHint.setInsets(new Insets3f(0, 0, 14, 0));
+        } else if (StunClient.SYMMETRIC_NAT_MESSAGE.equals(error)) {
+            Label errorLabel = panel.addChild(new Label(error));
+            errorLabel.setFontSize(12);
+            errorLabel.setColor(Theme.ORANGE);
+            errorLabel.setInsets(new Insets3f(0, 0, 14, 0));
         } else if (error != null) {
             Label errorLabel = panel.addChild(new Label("(Internet code unavailable: " + error + ")"));
             errorLabel.setFontSize(11);
@@ -528,10 +542,16 @@ public class MultiplayerState extends BaseAppState {
                     // "lobby already has a joiner" is the losing side of a join race (two players
                     // entering the same code at nearly the same time) - a different message than
                     // a bad/expired code, since retrying with a fresh code from the host is the
-                    // right next step here, not re-typing the same one.
-                    joinError = error.contains("already has a joiner")
-                            ? "That code already has a joiner - ask the host for a fresh one."
-                            : "Could not find that code: " + error;
+                    // right next step here, not re-typing the same one. A symmetric-NAT diagnosis
+                    // is already a complete, clear message on its own - shown as-is rather than
+                    // wrapped in the generic "could not find that code" framing.
+                    if (StunClient.SYMMETRIC_NAT_MESSAGE.equals(error)) {
+                        joinError = error;
+                    } else if (error.contains("already has a joiner")) {
+                        joinError = "That code already has a joiner - ask the host for a fresh one.";
+                    } else {
+                        joinError = "Could not find that code: " + error;
+                    }
                     statusLabel.setColor(Theme.ORANGE);
                     statusLabel.setText(joinError);
                 }

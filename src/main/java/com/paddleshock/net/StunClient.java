@@ -40,6 +40,12 @@ public final class StunClient {
 
     private static final int PER_SERVER_TIMEOUT_MS = 600;
 
+    /** Shown to the player instead of silently attempting (and hanging on) a direct/hole-punched
+     *  connection once {@link #detectsSymmetricNat} comes back positive - see its doc for what
+     *  that means and why it breaks this game's connection model. */
+    public static final String SYMMETRIC_NAT_MESSAGE = "Your network doesn't support direct "
+            + "connections (symmetric NAT) - try a different network, or ask your host to do the same.";
+
     private StunClient() {
     }
 
@@ -71,11 +77,8 @@ public final class StunClient {
      *  direct connect in that case rather than fail outright. */
     public static InetSocketAddress discoverPublicAddress(DatagramSocket socket) {
         for (String server : DEFAULT_SERVERS) {
-            int colon = server.lastIndexOf(':');
-            String host = server.substring(0, colon);
-            int port = Integer.parseInt(server.substring(colon + 1));
             try {
-                InetSocketAddress result = query(socket, host, port);
+                InetSocketAddress result = queryServer(socket, server);
                 if (result != null) {
                     return result;
                 }
@@ -84,6 +87,43 @@ public final class StunClient {
             }
         }
         return null;
+    }
+
+    /**
+     * Best-effort detector for a symmetric NAT - one that hands out a DIFFERENT external port per
+     * destination address, rather than the same port for every destination (a "cone" NAT). That
+     * silently breaks this game's direct/hole-punch connection model (the port the host learns via
+     * STUN is not the port traffic to any OTHER address, e.g. the host itself, will actually use),
+     * which otherwise just manifests as a confusing hang with no diagnosis.
+     *
+     * <p>Queries the first two of {@link #DEFAULT_SERVERS} on the SAME socket and compares the
+     * external port each reports back - a mismatch is diagnostic of a symmetric NAT. Bounded to at
+     * most ~2x {@link #PER_SERVER_TIMEOUT_MS} (comfortably under the "don't add more than ~1-2s"
+     * budget) and NEVER throws or hard-fails the caller's connection attempt: any failure of either
+     * query (timeout, DNS, a firewalled second server, ...) is treated as "can't tell" ({@code
+     * false}) rather than a symmetric-NAT positive - a false negative here is fine, a hang is not.
+     *
+     * <p>Must be called on the same socket/port that will carry actual game traffic, and (like
+     * {@link #discoverPublicAddress}) before any other thread starts reading from that socket.
+     */
+    public static boolean detectsSymmetricNat(DatagramSocket socket) {
+        if (DEFAULT_SERVERS.length < 2) {
+            return false; // nothing to compare against - can't tell, so don't warn
+        }
+        try {
+            InetSocketAddress first = queryServer(socket, DEFAULT_SERVERS[0]);
+            InetSocketAddress second = queryServer(socket, DEFAULT_SERVERS[1]);
+            return first != null && second != null && first.getPort() != second.getPort();
+        } catch (IOException e) {
+            return false; // one of the two queries failed outright - inconclusive, not a positive
+        }
+    }
+
+    private static InetSocketAddress queryServer(DatagramSocket socket, String serverSpec) throws IOException {
+        int colon = serverSpec.lastIndexOf(':');
+        String host = serverSpec.substring(0, colon);
+        int port = Integer.parseInt(serverSpec.substring(colon + 1));
+        return query(socket, host, port);
     }
 
     private static InetSocketAddress query(DatagramSocket socket, String stunHost, int stunPort) throws IOException {
