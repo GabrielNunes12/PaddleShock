@@ -32,6 +32,11 @@ public class NetClient implements AutoCloseable {
      *  later activation against it rather than trusting a free-form id - see
      *  {@code NetHost#handleHello}/{@link NetProtocol#sanitizePowerUpId}. */
     private final List<String> loadout;
+    /** True for a read-only spectator connection (see {@link NetProtocol.Role#SPECTATE}) - never
+     *  sends input (see {@link #sendInput}) and is never treated by the host as "the opponent". A
+     *  spectator's loadout is irrelevant, but its HELLO still carries its playerId for
+     *  logging/consistency, same as a playing joiner's. */
+    private final boolean spectator;
     private final String lobbyCode; // null for a direct IP:port connect - see connectByLobbyCode
     private volatile boolean connected = false;
     private volatile boolean rejected = false;
@@ -59,9 +64,16 @@ public class NetClient implements AutoCloseable {
     private volatile boolean rematchDeclinedByHost = false;
 
     public NetClient(String hostAddress, int port, String localPlayerId, List<String> loadout) throws IOException {
+        this(hostAddress, port, localPlayerId, loadout, false);
+    }
+
+    /** {@code spectator} - see {@link #spectator}. */
+    public NetClient(String hostAddress, int port, String localPlayerId, List<String> loadout, boolean spectator)
+            throws IOException {
         this.hostAddress = new InetSocketAddress(InetAddress.getByName(hostAddress), port);
         this.localPlayerId = localPlayerId;
         this.loadout = loadout == null ? List.of() : List.copyOf(loadout);
+        this.spectator = spectator;
         this.lobbyCode = null;
         socket = new DatagramSocket();
         // Same ordering constraint as NetHost: STUN discovery's own blocking receives must
@@ -76,12 +88,13 @@ public class NetClient implements AutoCloseable {
     /** Internal constructor used by {@link #connectByLobbyCode}, where the public address is
      *  already known (discovered before the host's address was) and doesn't need rediscovering. */
     private NetClient(DatagramSocket socket, InetSocketAddress publicAddress, InetSocketAddress hostAddress,
-            String localPlayerId, List<String> loadout, String lobbyCode) {
+            String localPlayerId, List<String> loadout, String lobbyCode, boolean spectator) {
         this.socket = socket;
         this.publicAddress = publicAddress;
         this.hostAddress = hostAddress;
         this.localPlayerId = localPlayerId;
         this.loadout = loadout == null ? List.of() : List.copyOf(loadout);
+        this.spectator = spectator;
         this.lobbyCode = lobbyCode;
         receiveThread = new Thread(this::receiveLoop, "NetClient-recv");
         receiveThread.setDaemon(true);
@@ -99,6 +112,12 @@ public class NetClient implements AutoCloseable {
      */
     public static NetClient connectByLobbyCode(String code, String localPlayerId, List<String> loadout)
             throws IOException {
+        return connectByLobbyCode(code, localPlayerId, loadout, false);
+    }
+
+    /** {@code spectator} - see {@link #spectator}. */
+    public static NetClient connectByLobbyCode(String code, String localPlayerId, List<String> loadout,
+            boolean spectator) throws IOException {
         DatagramSocket socket = new DatagramSocket();
         InetSocketAddress publicAddress = StunClient.discoverPublicAddress(socket);
         if (publicAddress == null) {
@@ -120,15 +139,18 @@ public class NetClient implements AutoCloseable {
             throw e;
         }
         InetSocketAddress hostAddress = StunClient.parseAddress(hostAddressText);
-        return new NetClient(socket, publicAddress, hostAddress, localPlayerId, loadout, code);
+        return new NetClient(socket, publicAddress, hostAddress, localPlayerId, loadout, code, spectator);
     }
 
     /** Re-sends the handshake "hello"; safe to call repeatedly while waiting for a welcome
      *  (e.g. from a UI poll loop) since the host treats a repeat hello from the same peer as
      *  a no-op re-accept rather than a second connection. Carries this player's ranked-ladder id
-     *  (see {@code RankClient}) so the host can report a ranked match's result for both players. */
+     *  (see {@code RankClient}) so the host can report a ranked match's result for both players.
+     *  A spectator's loadout is irrelevant (its HELLO is sent with {@code role=SPECTATE} - see
+     *  {@link NetProtocol.Role}), but its playerId is still carried, for logging/consistency. */
     public void sendHello() {
-        sendRaw(NetProtocol.encodeHello(localPlayerId, loadout));
+        sendRaw(NetProtocol.encodeHello(localPlayerId, loadout,
+                spectator ? NetProtocol.Role.SPECTATE : NetProtocol.Role.PLAY));
     }
 
     private void receiveLoop() {
@@ -222,9 +244,20 @@ public class NetClient implements AutoCloseable {
     }
 
     /** Sends this frame's local input to the host. {@code powerUpId} is the catalog id of a
-     *  power-up activated this frame, or an empty string if none. */
+     *  power-up activated this frame, or an empty string if none. A no-op for a spectator
+     *  connection - defensive belt-and-suspenders on top of {@code GameplayAppState} simply never
+     *  calling this in {@code Mode.SPECTATOR}, so a spectator can never influence the match no
+     *  matter what calls this. */
     public void sendInput(float deltaX, float deltaZ, String powerUpId) {
+        if (spectator) {
+            return;
+        }
         sendRaw(NetProtocol.encodeInput(deltaX, deltaZ, powerUpId));
+    }
+
+    /** True for a read-only spectator connection - see {@link #spectator}. */
+    public boolean isSpectator() {
+        return spectator;
     }
 
     /** The most recently received authoritative snapshot, or {@code null} if none has arrived yet. */

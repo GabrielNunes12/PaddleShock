@@ -67,6 +67,12 @@ public class MultiplayerState extends BaseAppState {
     private TextField addressField;
     private String joinError;
 
+    // Joiner-side only: whether the pending CONNECT should join read-only as a spectator instead
+    // of as a real player - toggled on the JOINING view, reused by both the address and
+    // lobby-code resolution paths (attemptConnect routes to whichever one applies either way).
+    // Resets to false whenever the screen is freshly entered, same as unranked below.
+    private boolean joinAsSpectator = false;
+
     // Host-side only: the host's own choice of whether this match counts toward the ranked
     // ladder, made before hosting starts. Authoritative - communicated to the joiner via the
     // WELCOME handshake (see NetProtocol/NetHost/NetClient) so both sides agree on the same
@@ -81,6 +87,12 @@ public class MultiplayerState extends BaseAppState {
     private final AtomicReference<RankState> preMatchRank = new AtomicReference<>();
     private volatile boolean preMatchRankPending = false;
     private boolean preMatchRankShown = false;
+
+    // Host-side only: the live spectator count last shown on the HOSTING view - re-rebuilds the
+    // screen whenever it changes (see update()), same "poll a background/host-owned value and
+    // rebuild on change" pattern the lobby code/pre-match rank fields above already use. -1 so the
+    // very first (possibly zero) reading still triggers a rebuild once hosting begins.
+    private int lastShownSpectatorCount = -1;
 
     // Host-side: AWS lobby code registration, run off the render thread. lobbyGeneration guards
     // against a stale background result (from a cancelled/replaced hosting attempt) overwriting
@@ -263,6 +275,24 @@ public class MultiplayerState extends BaseAppState {
         return toggle;
     }
 
+    /** Same pill-shaped toggle-switch visual as {@link #buildToggleSwitch}, wired to
+     *  {@link #joinAsSpectator} instead of {@link #unranked}. */
+    private Button buildSpectateToggle(PaddleShockApp app) {
+        Button toggle = new Button(joinAsSpectator ? "ON" : "OFF");
+        toggle.setBackground(new QuadBackgroundComponent(joinAsSpectator ? Theme.BLUE : Theme.PANEL_HOVER));
+        toggle.setColor(joinAsSpectator ? Theme.ON_ACCENT : Theme.TEXT_DIM);
+        toggle.setFontSize(13);
+        toggle.setTextHAlignment(com.simsilica.lemur.HAlignment.Center);
+        toggle.setPreferredSize(new Vector3f(56f, 26f, 0));
+        toggle.setInsets(new Insets3f(0, 0, 0, 0));
+        toggle.addClickCommands(source -> {
+            app.getAudioManager().playSfx("button_click.ogg");
+            joinAsSpectator = !joinAsSpectator;
+            rebuild();
+        });
+        return toggle;
+    }
+
     private void beginHosting(PaddleShockApp app) {
         boolean ranked = !unranked;
         try {
@@ -280,6 +310,7 @@ public class MultiplayerState extends BaseAppState {
             }
         }
         view = View.HOSTING;
+        lastShownSpectatorCount = -1;
         rebuild();
         beginLobbyRegistration();
         if (ranked) {
@@ -449,10 +480,20 @@ public class MultiplayerState extends BaseAppState {
             errorLabel.setInsets(new Insets3f(0, 0, 14, 0));
         }
 
+        int spectatorCount = hostRef == null ? 0 : hostRef.getSpectatorCount();
+
         statusLabel = panel.addChild(new Label("Waiting for opponent..."));
         statusLabel.setFontSize(16);
         statusLabel.setColor(Theme.TEXT);
-        statusLabel.setInsets(new Insets3f(0, 0, 18, 0));
+        statusLabel.setInsets(new Insets3f(0, 0, spectatorCount > 0 ? 4 : 18, 0));
+
+        if (spectatorCount > 0) {
+            Label spectatorLabel = panel.addChild(new Label(
+                    spectatorCount + (spectatorCount == 1 ? " spectator watching" : " spectators watching")));
+            spectatorLabel.setFontSize(11);
+            spectatorLabel.setColor(Theme.TEXT_DIM);
+            spectatorLabel.setInsets(new Insets3f(0, 0, 18, 0));
+        }
 
         Button cancel = panel.addChild(new Button("CANCEL"));
         styleButton(cancel, Theme.PANEL_HOVER, Theme.TEXT, 14);
@@ -539,6 +580,21 @@ public class MultiplayerState extends BaseAppState {
         addressField.setPreferredWidth(CARD_CONTENT_WIDTH);
         addressField.setInsets(new Insets3f(8, 10, 8, 10));
 
+        // Same address/lobby-code field and resolution logic either way - this toggle only
+        // changes which HELLO role attemptConnect sends once CONNECT is clicked (see
+        // connectByAddress/connectByLobbyCode).
+        Container spectateRow = panel.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
+        spectateRow.setInsets(new Insets3f(8, 0, 4, 0));
+        Container spectateText = spectateRow.addChild(new Container(new SpringGridLayout(Axis.Y, Axis.X)));
+        Label spectateLabel = spectateText.addChild(new Label("JOIN AS SPECTATOR"));
+        spectateLabel.setFontSize(13);
+        spectateLabel.setColor(Theme.TEXT);
+        Label spectateHint = spectateText.addChild(new Label("Watch read-only - you won't control a paddle."));
+        spectateHint.setFontSize(11);
+        spectateHint.setColor(Theme.TEXT_DIM);
+        Button spectateToggle = spectateRow.addChild(buildSpectateToggle(app));
+        spectateToggle.setInsets(new Insets3f(6, 16, 0, 0));
+
         statusLabel = panel.addChild(new Label(joinError != null ? joinError : ""));
         statusLabel.setFontSize(13);
         statusLabel.setColor(Theme.ORANGE);
@@ -619,7 +675,7 @@ public class MultiplayerState extends BaseAppState {
             if (netClient != null) {
                 netClient.close();
             }
-            netClient = app.joinMatch(host, port);
+            netClient = app.joinMatch(host, port, joinAsSpectator);
         } catch (IOException e) {
             joinError = "Could not resolve/connect to " + raw + ": " + e.getMessage();
             statusLabel.setText(joinError);
@@ -648,9 +704,10 @@ public class MultiplayerState extends BaseAppState {
         int myGeneration = lobbyJoinGeneration.incrementAndGet();
         pendingCodeClient.set(null);
         pendingCodeError.set(null);
+        boolean spectator = joinAsSpectator;
         Thread thread = new Thread(() -> {
             try {
-                NetClient client = app.joinMatchByLobbyCode(code);
+                NetClient client = app.joinMatchByLobbyCode(code, spectator);
                 if (lobbyJoinGeneration.get() == myGeneration) {
                     pendingCodeClient.set(client);
                 } else {
@@ -723,6 +780,13 @@ public class MultiplayerState extends BaseAppState {
         if (view == View.HOSTING && !preMatchRankShown && !preMatchRankPending && preMatchRank.get() != null) {
             preMatchRankShown = true;
             rebuild();
+        }
+        if (view == View.HOSTING && netHost != null) {
+            int spectatorCount = netHost.getSpectatorCount();
+            if (spectatorCount != lastShownSpectatorCount) {
+                lastShownSpectatorCount = spectatorCount;
+                rebuild();
+            }
         }
 
         if (view == View.JOINING && netClient == null) {
@@ -815,8 +879,10 @@ public class MultiplayerState extends BaseAppState {
         view = View.CHOICE;
         joinError = null;
         unranked = false;
+        joinAsSpectator = false;
         preMatchRank.set(null);
         preMatchRankShown = false;
+        lastShownSpectatorCount = -1;
         rebuild();
         ((SimpleApplication) getApplication()).getGuiNode().attachChild(uiRoot);
         getApplication().getInputManager().setCursorVisible(true);

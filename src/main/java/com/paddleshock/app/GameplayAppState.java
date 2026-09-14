@@ -60,8 +60,11 @@ import com.paddleshock.ui.Theme;
  */
 public class GameplayAppState extends BaseAppState implements ActionListener {
 
-    /** Which role this instance of the gameplay state is playing. */
-    public enum Mode { SINGLE_PLAYER, HOST, JOINER }
+    /** Which role this instance of the gameplay state is playing. {@link #SPECTATOR} shares the
+     *  connection type (and most of the receiving/rendering logic) with {@link #JOINER} - see the
+     *  {@link #GameplayAppState(NetClient, boolean)} constructor - but never sends input and is
+     *  never treated as "the opponent" by the host. */
+    public enum Mode { SINGLE_PLAYER, HOST, JOINER, SPECTATOR }
 
     private static final String ACTION_PAUSE = "PS_Pause";
     private static final String[] POWERUP_ACTIONS = {"PS_PowerUp1", "PS_PowerUp2", "PS_PowerUp3"};
@@ -180,11 +183,14 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         this(Mode.HOST, netHost, null, ranked);
     }
 
-    /** A joiner match: sends local input to, and renders snapshots received from, the host
-     *  connected via {@code netClient}. Runs no {@link MatchSimulation} of its own. {@code ranked}
-     *  reflects the host's choice, learned via the WELCOME handshake ({@link NetClient#isRanked()}). */
+    /** A joiner OR spectator match: renders snapshots received from the host connected via
+     *  {@code netClient}. Runs no {@link MatchSimulation} of its own. {@code ranked} reflects the
+     *  host's choice, learned via the WELCOME handshake ({@link NetClient#isRanked()}). Which of
+     *  the two this actually is was already decided at connect time ({@link NetClient#isSpectator()},
+     *  set from the role the joining screen chose) - a joiner additionally sends local input every
+     *  frame; a spectator never does. */
     public GameplayAppState(NetClient netClient, boolean ranked) {
-        this(Mode.JOINER, null, netClient, ranked);
+        this(netClient.isSpectator() ? Mode.SPECTATOR : Mode.JOINER, null, netClient, ranked);
     }
 
     private GameplayAppState(Mode mode, NetHost netHost, NetClient netClient, boolean ranked) {
@@ -212,9 +218,14 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         setUpScene();
         setUpHud(simpleApp);
 
-        playerInput.register(app.getInputManager());
+        // A spectator's mouse movement must never affect anything in the scene: skip registering
+        // the mouse/gamepad-follows-paddle capture and the power-up hotkeys entirely, rather than
+        // relying on the update loop simply never consuming them - see updateSpectator().
+        if (mode != Mode.SPECTATOR) {
+            playerInput.register(app.getInputManager());
+            registerPowerUpKeys(app.getInputManager());
+        }
         registerPauseKey(app.getInputManager());
-        registerPowerUpKeys(app.getInputManager());
 
         simpleApp.getRootNode().attachChild(gameNode);
         simpleApp.getGuiNode().attachChild(hudNode);
@@ -237,6 +248,13 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             // actual orientation, so it self-corrects for the mirror with no further changes.
             simpleApp.getCamera().setLocation(new Vector3f(0, 7f, 11f));
             simpleApp.getCamera().lookAt(new Vector3f(0, 0, 1f), Vector3f.UNIT_Y);
+        } else if (mode == Mode.SPECTATOR) {
+            // Neither "side" of the table is the spectator's own - a raised, centered overhead
+            // view of the whole table reads better than mirroring either player's own low,
+            // paddle's-eye camera onto a viewer who isn't controlling anything. No side-select UI
+            // (out of scope - see the constraints), just this one sensible default framing.
+            simpleApp.getCamera().setLocation(new Vector3f(0, 13f, 13f));
+            simpleApp.getCamera().lookAt(new Vector3f(0, 0, 0f), Vector3f.UNIT_Y);
         } else {
             simpleApp.getCamera().setLocation(new Vector3f(0, 7f, -11f));
             simpleApp.getCamera().lookAt(new Vector3f(0, 0, -1f), Vector3f.UNIT_Y);
@@ -299,9 +317,9 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                 combinedRestitution, level.getGravityMultiplier(), level.getWindAccelX());
         gameNode.attachChild(ball.getNode());
 
-        // A joiner never runs its own simulation - it only renders whatever the host's
-        // MatchSimulation reports via network snapshots.
-        if (mode != Mode.JOINER) {
+        // A joiner or spectator never runs its own simulation - both only render whatever the
+        // host's MatchSimulation reports via network snapshots.
+        if (mode != Mode.JOINER && mode != Mode.SPECTATOR) {
             matchSimulation = new MatchSimulation(ball, playerPaddle, opponentPaddle, table);
         }
         resolveLoadout(profile);
@@ -406,6 +424,13 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         hudNode.attachChild(powerUpBannerText);
         powerUpBannerTimer = 0f;
 
+        // A spectator has nothing to activate - its own equipped loadout isn't even relevant to
+        // the match it's watching, so skip the power-up slot HUD entirely rather than showing a
+        // viewer's own unrelated loadout icons over someone else's match.
+        if (mode == Mode.SPECTATOR) {
+            return;
+        }
+
         float boxTopY = simpleApp.getCamera().getHeight() - 64;
         for (int i = 0; i < powerUpLoadout.length; i++) {
             PowerUpDefinition def = powerUpLoadout[i];
@@ -457,6 +482,9 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                     + matchSimulation.getOpponentScore() + " Joiner  (Esc: pause)");
             case JOINER -> scoreText.setText("You " + joinerDisplayScore + " : "
                     + hostDisplayScore + " Host  (Esc: pause)");
+            // Read-only view: neither side is "you" - name both players plainly instead.
+            case SPECTATOR -> scoreText.setText("Host " + hostDisplayScore + " : "
+                    + joinerDisplayScore + " Joiner  (Esc: pause)");
         }
     }
 
@@ -560,6 +588,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             case SINGLE_PLAYER -> updateSinglePlayer(tpf);
             case HOST -> updateHost(tpf);
             case JOINER -> updateJoiner(tpf);
+            case SPECTATOR -> updateSpectator(tpf);
         }
         updatePowerUpBanner(tpf);
     }
@@ -570,10 +599,16 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
      *  reliably tell apart (Slow Opponent's red/orange vs. Paddle Grow's green, for example).
      *  Overwrites any banner already showing, so the most recent activation always wins. */
     private void showPowerUpBanner(boolean activatedByLocalViewer, PowerUpType type) {
+        showPowerUpBanner(activatedByLocalViewer ? "YOU" : "OPPONENT", type);
+    }
+
+    /** Same banner, but for a viewer who isn't one of the two players (a spectator) - {@code who}
+     *  names the actual side ("HOST"/"JOINER") instead of the YOU/OPPONENT wording above, which
+     *  only makes sense from a participant's own point of view. */
+    private void showPowerUpBanner(String who, PowerUpType type) {
         if (powerUpBannerText == null || type == null) {
             return;
         }
-        String who = activatedByLocalViewer ? "YOU" : "OPPONENT";
         String kind = type.isDebuff() ? "DEBUFF" : "BUFF";
         String text = "[" + kind + "] " + who + ": " + type.getLabel().toUpperCase();
         powerUpBannerText.setText(text);
@@ -619,7 +654,10 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         applyTickResult(result);
         updatePowerUpHud();
 
-        if (netHost.hasJoiner()) {
+        // Broadcast whenever there's anyone to broadcast to - a real joiner, or any spectators
+        // (spectating and playing are independent; a spectator-only host still runs the match and
+        // must still send it snapshots - see NetHost#sendSnapshot).
+        if (netHost.hasJoiner() || netHost.getSpectatorCount() > 0) {
             netHost.sendSnapshot(buildSnapshot(result));
         }
     }
@@ -694,7 +732,14 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             return;
         }
         disconnectHandled = true;
-        app.handleJoinerConnectionLost(joinerDisplayScore, hostDisplayScore);
+        if (mode == Mode.SPECTATOR) {
+            // A spectator never goes through the "connection lost" match-end UI (that's built for
+            // a real participant, with its own rematch negotiation) - just drop it back to the
+            // Multiplayer screen, same as a normal spectated match ending.
+            app.endSpectatedMatch();
+        } else {
+            app.handleJoinerConnectionLost(joinerDisplayScore, hostDisplayScore);
+        }
     }
 
     private void updateJoiner(float tpf) {
@@ -734,6 +779,33 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         }
     }
 
+    /** Same receiving/rendering loop as {@link #updateJoiner}, minus ever sending input - a
+     *  spectator never has anything of its own to send (see {@code NetClient#sendInput}'s
+     *  spectator no-op, and {@code NetClient.isSpectator()} being what selects this mode in the
+     *  first place), so it never calls {@link #computeLocalPaddleInput} at all. */
+    private void updateSpectator(float tpf) {
+        if (netClient.isHostTimedOut()) {
+            joinerReconnectElapsedSeconds += tpf;
+            if (joinerReconnectElapsedSeconds >= JOINER_RECONNECT_WINDOW_SECONDS) {
+                handleHostDisconnected();
+                return;
+            }
+            joinerReconnectHelloTimer += tpf;
+            if (joinerReconnectHelloTimer >= JOINER_RECONNECT_HELLO_INTERVAL_SECONDS) {
+                joinerReconnectHelloTimer = 0f;
+                netClient.sendHello();
+            }
+            return;
+        }
+        joinerReconnectElapsedSeconds = 0f;
+        joinerReconnectHelloTimer = 0f;
+
+        NetProtocol.SnapshotMessage snapshot = netClient.getLatestSnapshot();
+        if (snapshot != null) {
+            applySnapshotToScene(snapshot);
+        }
+    }
+
     private void applySnapshotToScene(NetProtocol.SnapshotMessage snapshot) {
         ball.setNetworkState(snapshot.ballX(), snapshot.ballY(), snapshot.ballZ(),
                 snapshot.ballVelX(), snapshot.ballVelZ(), snapshot.ballVerticalVel());
@@ -762,17 +834,31 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                 app.getAudioManager().playSfx("powerup_activate.ogg");
                 PowerUpType activatedType = snapshot.getActivatedPowerUpType();
                 if (activatedType != null) {
-                    // From the joiner's own point of view "you" are the joiner (mirroring the
-                    // isHostWon() negation just below), so ACTOR_JOINER means the local viewer.
-                    boolean byLocalViewer = snapshot.powerUpActorSide() == NetProtocol.SnapshotMessage.ACTOR_JOINER;
-                    showPowerUpBanner(byLocalViewer, activatedType);
+                    if (mode == Mode.SPECTATOR) {
+                        // Neither side is "you" for a spectator - name the actual side instead of
+                        // the joiner-relative YOU/OPPONENT wording below.
+                        String who = snapshot.powerUpActorSide() == NetProtocol.SnapshotMessage.ACTOR_HOST
+                                ? "HOST" : "JOINER";
+                        showPowerUpBanner(who, activatedType);
+                    } else {
+                        // From the joiner's own point of view "you" are the joiner (mirroring the
+                        // isHostWon() negation just below), so ACTOR_JOINER means the local viewer.
+                        boolean byLocalViewer = snapshot.powerUpActorSide() == NetProtocol.SnapshotMessage.ACTOR_JOINER;
+                        showPowerUpBanner(byLocalViewer, activatedType);
+                    }
                 }
             }
             updateScoreText();
             if (snapshot.isMatchOver()) {
-                // From the joiner's own point of view: "you" are the joiner, so isHostWon()
-                // (a host-perspective flag) is negated to get whether the local viewer won.
-                if (ranked) {
+                if (mode == Mode.SPECTATOR) {
+                    // A spectator never goes through the ranked-report/match-history/rival-tracking
+                    // flows below (those are for the two real participants only, and must never
+                    // touch PlayerProfile on a spectator's behalf) - just return to the
+                    // Multiplayer screen once the final snapshot shows the match is over.
+                    app.endSpectatedMatch();
+                } else if (ranked) {
+                    // From the joiner's own point of view: "you" are the joiner, so isHostWon()
+                    // (a host-perspective flag) is negated to get whether the local viewer won.
                     app.endRankedJoinerMatch(!snapshot.isHostWon(), joinerDisplayScore, hostDisplayScore, netClient);
                 } else {
                     // Unranked joiner: the host's playerId (if it sent one - see NetProtocol
@@ -931,8 +1017,12 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         simpleApp.getRootNode().detachChild(gameNode);
         simpleApp.getGuiNode().detachChild(hudNode);
         simpleApp.getInputManager().deleteMapping(ACTION_PAUSE);
-        for (String action : POWERUP_ACTIONS) {
-            simpleApp.getInputManager().deleteMapping(action);
+        // Only ever deleted if they were actually registered in initialize() - see the mode check
+        // there (a spectator never registers the power-up hotkeys at all).
+        if (mode != Mode.SPECTATOR) {
+            for (String action : POWERUP_ACTIONS) {
+                simpleApp.getInputManager().deleteMapping(action);
+            }
         }
         simpleApp.getInputManager().removeListener(this);
         simpleApp.getViewPort().setBackgroundColor(ColorRGBA.Black);

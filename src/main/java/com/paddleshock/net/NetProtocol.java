@@ -132,11 +132,32 @@ public final class NetProtocol {
      *  what this joiner is actually entitled to use rather than trusting a free-form catalog id -
      *  see {@code NetHost#handleHello} and {@link #sanitizePowerUpId}. {@code loadout} may contain
      *  empty-string entries for unfilled slots; callers should ignore those. */
-    public record HelloMessage(String playerId, List<String> loadout) {
-        public static final HelloMessage EMPTY = new HelloMessage("", List.of());
+    /** Which role a HELLO is connecting as. {@link #PLAY} is the original (and only, before
+     *  spectator mode) role - a real participant who will send {@code TYPE_INPUT} and be treated
+     *  as "the opponent" by {@code NetHost}. {@link #SPECTATE} is read-only: accepted into the
+     *  host's separate spectator list regardless of whether a real joiner is already connected,
+     *  receives the exact same broadcast snapshots, but is never treated as the joiner and never
+     *  expected to send input. */
+    public enum Role { PLAY, SPECTATE }
+
+    /** Trailing role byte carried by a HELLO - appended after the loadout, following the same
+     *  "older/newer peer degrades gracefully" pattern the loadout itself uses (see
+     *  {@link #decodeHello}): a HELLO with no trailing role byte at all (an older build) decodes
+     *  as {@link Role#PLAY}, matching the original always-a-player behavior. */
+    public record HelloMessage(String playerId, List<String> loadout, Role role) {
+        public static final HelloMessage EMPTY = new HelloMessage("", List.of(), Role.PLAY);
     }
 
+    /** Encodes a {@link Role#PLAY} HELLO - the original, unchanged shape every existing host/joiner
+     *  connect still uses. See {@link #encodeHello(String, List, Role)} for a spectator HELLO. */
     public static byte[] encodeHello(String playerId, List<String> loadout) {
+        return encodeHello(playerId, loadout, Role.PLAY);
+    }
+
+    /** {@code role} carries the joiner's/spectator's playerId (spectators send it too, for
+     *  logging/consistency, even though their loadout is irrelevant) plus which role this HELLO is
+     *  connecting as - see {@link Role}. */
+    public static byte[] encodeHello(String playerId, List<String> loadout, Role role) {
         try {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
             DataOutputStream out = new DataOutputStream(bytes);
@@ -147,6 +168,7 @@ public final class NetProtocol {
             for (String id : safeLoadout) {
                 out.writeUTF(id == null ? "" : id);
             }
+            out.writeByte(role == Role.SPECTATE ? 1 : 0);
             return bytes.toByteArray();
         } catch (IOException e) {
             throw new IllegalStateException("Failed to encode hello packet", e);
@@ -157,7 +179,9 @@ public final class NetProtocol {
      *  reusing this type byte, or an older client) - never throws for that case, only for a
      *  genuinely truncated/corrupt payload. An older HELLO carrying only a player id (no loadout
      *  count byte at all) decodes with an empty loadout rather than throwing, so a mismatched build
-     *  still degrades gracefully instead of dropping every hello. */
+     *  still degrades gracefully instead of dropping every hello. Same degradation for the trailing
+     *  role byte: missing entirely (an older client, or a hand-built loadout-only packet) decodes
+     *  as {@link Role#PLAY}. */
     public static HelloMessage decodeHello(byte[] data) throws IOException {
         if (data.length <= 1) {
             return HelloMessage.EMPTY;
@@ -172,7 +196,11 @@ public final class NetProtocol {
                 loadout.add(in.readUTF());
             }
         }
-        return new HelloMessage(playerId, loadout);
+        Role role = Role.PLAY;
+        if (in.available() > 0) {
+            role = in.readByte() != 0 ? Role.SPECTATE : Role.PLAY;
+        }
+        return new HelloMessage(playerId, loadout, role);
     }
 
     /** Host-authoritative power-up ownership check: returns {@code requestedId} unchanged only if
