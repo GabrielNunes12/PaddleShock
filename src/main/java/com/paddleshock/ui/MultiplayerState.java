@@ -220,11 +220,20 @@ public class MultiplayerState extends BaseAppState {
         Button joinButton = panel.addChild(new Button("JOIN A MATCH"));
         styleButton(joinButton, Theme.PANEL_HOVER, Theme.TEXT, 16);
         joinButton.setPreferredSize(new Vector3f(CARD_CONTENT_WIDTH, 46, 0));
+        joinButton.setInsets(new Insets3f(0, 0, 22, 0));
         joinButton.addClickCommands(source -> {
             app.getAudioManager().playSfx("button_click.ogg");
             view = View.JOINING;
             joinError = null;
             rebuild();
+        });
+
+        Button tournamentButton = panel.addChild(new Button("TOURNAMENT"));
+        styleButton(tournamentButton, Theme.BLUE, Theme.ON_ACCENT, 16);
+        tournamentButton.setPreferredSize(new Vector3f(CARD_CONTENT_WIDTH, 46, 0));
+        tournamentButton.addClickCommands(source -> {
+            app.getAudioManager().playSfx("button_click.ogg");
+            app.showTournament();
         });
     }
 
