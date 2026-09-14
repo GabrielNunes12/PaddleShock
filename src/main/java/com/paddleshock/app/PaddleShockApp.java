@@ -24,6 +24,7 @@ import com.paddleshock.net.NetHost;
 import com.paddleshock.net.NetProtocol;
 import com.paddleshock.net.RankClient;
 import com.paddleshock.net.RankState;
+import com.paddleshock.net.TournamentClient;
 import com.paddleshock.settings.GameSettings;
 import com.paddleshock.steam.SteamManager;
 import com.paddleshock.ui.LeaderboardState;
@@ -36,6 +37,7 @@ import com.paddleshock.ui.PauseState;
 import com.paddleshock.ui.ProfileState;
 import com.paddleshock.ui.SplashState;
 import com.paddleshock.ui.StoreState;
+import com.paddleshock.ui.TournamentState;
 
 /** App shell: owns save data and switches between the menu/gameplay app states. */
 public class PaddleShockApp extends SimpleApplication {
@@ -59,7 +61,23 @@ public class PaddleShockApp extends SimpleApplication {
     private com.paddleshock.ui.HowToPlayState howToPlayState;
     private LeaderboardState leaderboardState;
     private ProfileState profileState;
+    private TournamentState tournamentState;
     private GameplayAppState gameplayState;
+
+    /** Set while the currently active {@link GameplayAppState} match is one bracket pairing of a
+     *  live tournament, so {@link #endMatch} knows to also report the result to the tournament
+     *  backend - see {@link #setActiveTournamentContext}. Cleared once reported (or once the
+     *  match-end path that would report it is not reached, e.g. a plain quit-to-menu). A tournament
+     *  match otherwise runs through the exact same unranked HOST/JOINER match-end path as a normal
+     *  LAN match - this is the only extra bit of state it needs. */
+    private volatile TournamentMatchContext activeTournamentContext;
+
+    /** See {@link #activeTournamentContext}. {@code selfPlayerId}/{@code opponentPlayerId} are
+     *  this pairing's two player ids (whichever order - the winner is derived from {@code
+     *  playerWon} at report time, not from p1/p2 order). */
+    public record TournamentMatchContext(String code, int roundIndex, int matchIndex,
+            String selfPlayerId, String opponentPlayerId) {
+    }
 
     @Override
     public void simpleInitApp() {
@@ -100,6 +118,7 @@ public class PaddleShockApp extends SimpleApplication {
         howToPlayState = new com.paddleshock.ui.HowToPlayState();
         leaderboardState = new LeaderboardState();
         profileState = new ProfileState();
+        tournamentState = new TournamentState();
 
         stateManager.attach(splashState);
         stateManager.attach(mainMenuState);
@@ -112,6 +131,7 @@ public class PaddleShockApp extends SimpleApplication {
         stateManager.attach(howToPlayState);
         stateManager.attach(leaderboardState);
         stateManager.attach(profileState);
+        stateManager.attach(tournamentState);
 
         mainMenuState.setEnabled(false);
         pauseState.setEnabled(false);
@@ -123,6 +143,7 @@ public class PaddleShockApp extends SimpleApplication {
         howToPlayState.setEnabled(false);
         leaderboardState.setEnabled(false);
         profileState.setEnabled(false);
+        tournamentState.setEnabled(false);
     }
 
     @Override
@@ -202,6 +223,7 @@ public class PaddleShockApp extends SimpleApplication {
         howToPlayState.setEnabled(false);
         leaderboardState.setEnabled(false);
         profileState.setEnabled(false);
+        tournamentState.setEnabled(false);
         mainMenuState.setEnabled(true);
         audioManager.playMenuMusic();
     }
@@ -221,7 +243,22 @@ public class PaddleShockApp extends SimpleApplication {
     public void showMultiplayer() {
         mainMenuState.setEnabled(false);
         matchEndState.setEnabled(false);
+        tournamentState.setEnabled(false);
         multiplayerState.setEnabled(true);
+    }
+
+    /** Shows the tournament create/join/bracket screen (wired up from the Multiplayer screen's
+     *  TOURNAMENT button). */
+    public void showTournament() {
+        multiplayerState.setEnabled(false);
+        tournamentState.setEnabled(true);
+    }
+
+    /** Records that the match about to start (or already running) is one bracket pairing of a
+     *  live tournament - see {@link #activeTournamentContext}. Called by {@link TournamentState}
+     *  right before handing off to {@link #enterHostedMatch}/{@link #enterJoinedMatch}. */
+    public void setActiveTournamentContext(TournamentMatchContext context) {
+        activeTournamentContext = context;
     }
 
     /** Shows the ranked ladder standings screen (wired up from the main menu's LEADERBOARD button). */
@@ -282,6 +319,7 @@ public class PaddleShockApp extends SimpleApplication {
     public void enterHostedMatch(NetHost netHost) {
         mainMenuState.setEnabled(false);
         multiplayerState.setEnabled(false);
+        tournamentState.setEnabled(false);
         if (gameplayState != null) {
             stateManager.detach(gameplayState);
         }
@@ -294,6 +332,7 @@ public class PaddleShockApp extends SimpleApplication {
     public void enterJoinedMatch(NetClient netClient) {
         mainMenuState.setEnabled(false);
         multiplayerState.setEnabled(false);
+        tournamentState.setEnabled(false);
         if (gameplayState != null) {
             stateManager.detach(gameplayState);
         }
@@ -355,6 +394,7 @@ public class PaddleShockApp extends SimpleApplication {
             stateManager.detach(gameplayState);
             gameplayState = null;
         }
+        activeTournamentContext = null;
         mainMenuState.setEnabled(true);
     }
 
@@ -369,6 +409,32 @@ public class PaddleShockApp extends SimpleApplication {
         matchEndState.setResult(playerWon, reward, playerScore, opponentScore);
         matchEndState.setEnabled(true);
         recordMatchHistory(mode, playerScore, opponentScore, playerWon, 0, opponentPlayerId);
+        reportTournamentResultIfActive(playerWon);
+    }
+
+    /** If this match was one bracket pairing of a live tournament (see
+     *  {@link #activeTournamentContext}), also reports the result to the tournament backend -
+     *  idempotent server-side, so no coordination is needed with the opponent's own client also
+     *  calling this. Best-effort: a failure here doesn't affect the match that already completed
+     *  normally. The context is cleared immediately (not just after the call returns) so a
+     *  subsequent unrelated match (e.g. a single-player match played right after) never re-reports it. */
+    private void reportTournamentResultIfActive(boolean playerWon) {
+        TournamentMatchContext context = activeTournamentContext;
+        if (context == null) {
+            return;
+        }
+        activeTournamentContext = null;
+        String winnerId = playerWon ? context.selfPlayerId() : context.opponentPlayerId();
+        Thread thread = new Thread(() -> {
+            try {
+                TournamentClient.reportTournamentMatchResult(context.code(), context.roundIndex(),
+                        context.matchIndex(), winnerId, context.selfPlayerId());
+            } catch (IOException e) {
+                NetLog.log("tournament match report failed", e);
+            }
+        }, "tournament-report");
+        thread.setDaemon(true);
+        thread.start();
     }
 
     /** "vs AI" / "LAN Host" / "LAN Join" for a completed match's {@link GameplayAppState#getMode()} -
