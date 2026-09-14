@@ -104,6 +104,7 @@ public class PaddleShockApp extends SimpleApplication {
         profile.getPlayerId();
         SaveManager.saveProfile(profile);
         gameSettings = SaveManager.loadSettings();
+        com.paddleshock.i18n.I18n.setLanguage(gameSettings.getLanguage());
         audioManager = new AudioManager(assetManager, gameSettings);
 
         GuiGlobals.initialize(this);

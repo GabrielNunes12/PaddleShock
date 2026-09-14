@@ -23,6 +23,7 @@ import com.simsilica.lemur.component.QuadBackgroundComponent;
 import com.simsilica.lemur.component.SpringGridLayout;
 
 import com.paddleshock.app.PaddleShockApp;
+import com.paddleshock.i18n.I18n;
 import com.paddleshock.net.InviteClient;
 
 /**
@@ -88,12 +89,12 @@ public class MainMenuState extends BaseAppState {
         accentBar.setLocalTranslation(0, screenH, 1);
         uiRoot.attachChild(accentBar);
 
-        Label paddleLabel = new Label("PADDLE");
+        Label paddleLabel = new Label(I18n.t("menu.wordmark.paddle"));
         paddleLabel.setFontSize(48);
         paddleLabel.setColor(Theme.TEXT);
         uiRoot.attachChild(paddleLabel);
 
-        Label shockLabel = new Label("SHOCK");
+        Label shockLabel = new Label(I18n.t("menu.wordmark.shock"));
         shockLabel.setFontSize(48);
         shockLabel.setColor(Theme.ORANGE);
         uiRoot.attachChild(shockLabel);
@@ -104,7 +105,7 @@ public class MainMenuState extends BaseAppState {
         paddleLabel.setLocalTranslation(logoX, logoY, 2);
         shockLabel.setLocalTranslation(logoX + paddleLabel.getPreferredSize().x, logoY, 2);
 
-        Label tagline = new Label("Arcade ping-pong with ranked online play.");
+        Label tagline = new Label(I18n.t("menu.tagline"));
         tagline.setFontSize(13);
         tagline.setColor(Theme.TEXT_DIM);
         uiRoot.attachChild(tagline);
@@ -113,7 +114,7 @@ public class MainMenuState extends BaseAppState {
 
         float ctaWidth = leftWidth - 64;
         float ctaHeight = 54;
-        Button playVsAi = new Button("PLAY VS AI");
+        Button playVsAi = new Button(I18n.t("menu.play_vs_ai"));
         playVsAi.setBackground(new QuadBackgroundComponent(Theme.ORANGE));
         playVsAi.setColor(Theme.ON_ACCENT);
         playVsAi.setFontSize(20);
@@ -138,14 +139,14 @@ public class MainMenuState extends BaseAppState {
 
         Container nav = new Container(new SpringGridLayout(Axis.Y, Axis.X));
         nav.setBackground(new QuadBackgroundComponent(Theme.BACKGROUND));
-        addNavCard(nav, "MULTIPLAYER", Theme.BLUE_DIM, cardWidth, app::showMultiplayer);
-        addNavCard(nav, "LEADERBOARD", Theme.ORANGE_DIM, cardWidth, app::showLeaderboard);
-        addNavCard(nav, "PROFILE", Theme.GREEN_DIM, cardWidth, app::showProfile);
-        addNavCard(nav, "FRIENDS", Theme.PANEL_HOVER, cardWidth, app::showFriends);
-        addNavCard(nav, "STORE", Theme.PANEL_HOVER, cardWidth, app::showStore);
-        addNavCard(nav, "SETTINGS", Theme.PANEL_HOVER, cardWidth, () -> app.showOptions(app::showMainMenu));
-        addNavCard(nav, "HOW TO PLAY", Theme.PANEL_HOVER, cardWidth, () -> app.showHowToPlay(app::showMainMenu));
-        addNavCard(nav, "QUIT", Theme.PANEL_HOVER, cardWidth, app::stop);
+        addNavCard(nav, I18n.t("menu.multiplayer"), Theme.BLUE_DIM, cardWidth, app::showMultiplayer);
+        addNavCard(nav, I18n.t("menu.leaderboard"), Theme.ORANGE_DIM, cardWidth, app::showLeaderboard);
+        addNavCard(nav, I18n.t("menu.profile"), Theme.GREEN_DIM, cardWidth, app::showProfile);
+        addNavCard(nav, I18n.t("menu.friends"), Theme.PANEL_HOVER, cardWidth, app::showFriends);
+        addNavCard(nav, I18n.t("menu.store"), Theme.PANEL_HOVER, cardWidth, app::showStore);
+        addNavCard(nav, I18n.t("menu.settings"), Theme.PANEL_HOVER, cardWidth, () -> app.showOptions(app::showMainMenu));
+        addNavCard(nav, I18n.t("menu.how_to_play"), Theme.PANEL_HOVER, cardWidth, () -> app.showHowToPlay(app::showMainMenu));
+        addNavCard(nav, I18n.t("menu.quit"), Theme.PANEL_HOVER, cardWidth, app::stop);
 
         Vector3f navSize = nav.getPreferredSize();
         nav.setLocalTranslation(leftWidth + 48, (screenH + navSize.y) / 2f, 1);
@@ -242,11 +243,11 @@ public class MainMenuState extends BaseAppState {
 
         Container headerRow = banner.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
         Label header = headerRow.addChild(new Label(invites.size() == 1
-                ? "1 match invite" : invites.size() + " match invites"));
+                ? I18n.t("menu.invite.header_one") : I18n.t("menu.invite.header_many", invites.size())));
         header.setFontSize(14);
         header.setColor(Theme.ORANGE);
 
-        Button dismissAll = headerRow.addChild(new Button("DISMISS"));
+        Button dismissAll = headerRow.addChild(new Button(I18n.t("menu.dismiss")));
         dismissAll.setInsets(new Insets3f(0, 0, 0, 16));
         dismissAll.setBackground(new QuadBackgroundComponent(Theme.PANEL_HOVER));
         dismissAll.setColor(Theme.TEXT_DIM);
@@ -260,13 +261,13 @@ public class MainMenuState extends BaseAppState {
             Container row = banner.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
             row.setInsets(new Insets3f(4, 0, 0, 0));
 
-            Label text = row.addChild(new Label(invite.displayName() + " invited you to a match"));
+            Label text = row.addChild(new Label(I18n.t("menu.invite.text", invite.displayName())));
             text.setFontSize(13);
             text.setColor(Theme.TEXT);
             text.setTextHAlignment(HAlignment.Left);
             text.setPreferredSize(new Vector3f(300, text.getPreferredSize().y, 0));
 
-            Button accept = row.addChild(new Button("ACCEPT"));
+            Button accept = row.addChild(new Button(I18n.t("menu.accept")));
             accept.setInsets(new Insets3f(0, 0, 0, 8));
             accept.setBackground(new QuadBackgroundComponent(Theme.GREEN_DIM));
             accept.setColor(Theme.GREEN);

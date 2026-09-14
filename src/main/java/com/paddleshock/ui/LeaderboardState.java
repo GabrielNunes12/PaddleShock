@@ -19,6 +19,7 @@ import com.simsilica.lemur.component.QuadBackgroundComponent;
 import com.simsilica.lemur.component.SpringGridLayout;
 
 import com.paddleshock.app.PaddleShockApp;
+import com.paddleshock.i18n.I18n;
 import com.paddleshock.net.RankClient;
 import com.paddleshock.net.RankClient.LeaderboardEntry;
 
@@ -69,7 +70,7 @@ public class LeaderboardState extends BaseAppState {
             try {
                 entries = RankClient.getLeaderboard(LIMIT);
             } catch (IOException e) {
-                error = e.getMessage() == null ? "the rank service is unreachable" : e.getMessage();
+                error = e.getMessage() == null ? I18n.t("leaderboard.error_unreachable") : e.getMessage();
             }
             if (fetchGeneration.get() != myGeneration) {
                 return; // superseded by a newer fetch (a retry, or the screen was left) - discard
@@ -108,12 +109,12 @@ public class LeaderboardState extends BaseAppState {
         panel.setBackground(new QuadBackgroundComponent(Theme.PANEL));
         panel.setInsets(new Insets3f(24, 32, 24, 32));
 
-        Label title = panel.addChild(new Label("RANKED LEADERBOARD"));
+        Label title = panel.addChild(new Label(I18n.t("leaderboard.title")));
         title.setFontSize(26);
         title.setColor(Theme.ORANGE);
         title.setInsets(new Insets3f(0, 0, 4, 0));
 
-        Label sub = panel.addChild(new Label("Top " + LIMIT + " players, best to worst."));
+        Label sub = panel.addChild(new Label(I18n.t("leaderboard.subtitle", LIMIT)));
         sub.setFontSize(12);
         sub.setColor(Theme.TEXT_DIM);
         sub.setInsets(new Insets3f(0, 0, 16, 0));
@@ -124,7 +125,7 @@ public class LeaderboardState extends BaseAppState {
             case ERROR -> buildError(panel);
         }
 
-        Button back = panel.addChild(new Button("BACK"));
+        Button back = panel.addChild(new Button(I18n.t("leaderboard.back")));
         styleButton(back, Theme.PANEL_HOVER, Theme.TEXT, 14);
         back.setInsets(new Insets3f(18, 0, 0, 0));
         back.addClickCommands(source -> {
@@ -138,7 +139,7 @@ public class LeaderboardState extends BaseAppState {
     }
 
     private void buildLoading(Container panel) {
-        Label loading = panel.addChild(new Label("Loading standings..."));
+        Label loading = panel.addChild(new Label(I18n.t("leaderboard.loading")));
         loading.setFontSize(16);
         loading.setColor(Theme.TEXT);
         loading.setInsets(new Insets3f(20, 0, 20, 0));
@@ -146,17 +147,18 @@ public class LeaderboardState extends BaseAppState {
 
     private void buildError(Container panel) {
         String reason = fetchError.get();
-        Label errorLabel = panel.addChild(new Label("Couldn't load the leaderboard right now."));
+        Label errorLabel = panel.addChild(new Label(I18n.t("leaderboard.error")));
         errorLabel.setFontSize(16);
         errorLabel.setColor(Theme.ORANGE);
         errorLabel.setInsets(new Insets3f(10, 0, 4, 0));
 
-        Label detail = panel.addChild(new Label("(" + (reason == null ? "unknown error" : reason) + ")"));
+        Label detail = panel.addChild(new Label(
+                I18n.t("leaderboard.error_detail", reason == null ? I18n.t("leaderboard.unknown_error") : reason)));
         detail.setFontSize(11);
         detail.setColor(Theme.TEXT_DIM);
         detail.setInsets(new Insets3f(0, 0, 16, 0));
 
-        Button retry = panel.addChild(new Button("RETRY"));
+        Button retry = panel.addChild(new Button(I18n.t("leaderboard.retry")));
         styleButton(retry, Theme.BLUE, Theme.ON_ACCENT, 15);
         retry.addClickCommands(source -> {
             ((PaddleShockApp) getApplication()).getAudioManager().playSfx("button_click.ogg");
@@ -168,7 +170,7 @@ public class LeaderboardState extends BaseAppState {
     private void buildLoaded(Container panel) {
         List<LeaderboardEntry> entries = fetchResult.get();
         if (entries == null || entries.isEmpty()) {
-            Label empty = panel.addChild(new Label("No ranked matches have been played yet."));
+            Label empty = panel.addChild(new Label(I18n.t("leaderboard.empty")));
             empty.setFontSize(14);
             empty.setColor(Theme.TEXT_DIM);
             empty.setInsets(new Insets3f(10, 0, 16, 0));

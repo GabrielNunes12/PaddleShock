@@ -15,6 +15,7 @@ import com.simsilica.lemur.component.QuadBackgroundComponent;
 import com.simsilica.lemur.component.SpringGridLayout;
 
 import com.paddleshock.app.PaddleShockApp;
+import com.paddleshock.i18n.I18n;
 
 public class PauseState extends BaseAppState {
 
@@ -44,14 +45,14 @@ public class PauseState extends BaseAppState {
         panel.setBackground(new QuadBackgroundComponent(Theme.PANEL));
         panel.setInsets(new Insets3f(24, 32, 24, 32));
 
-        Label title = panel.addChild(new Label("PAUSED"));
+        Label title = panel.addChild(new Label(I18n.t("pause.title")));
         title.setFontSize(28);
         title.setColor(Theme.TEXT);
         title.setInsets(new Insets3f(0, 0, 16, 0));
 
-        addMenuButton(panel, "RESUME", Theme.ORANGE, Theme.ON_ACCENT, app::resumeMatch);
-        addMenuButton(panel, "OPTIONS", Theme.PANEL_HOVER, Theme.TEXT, () -> app.showOptions(app::showPause));
-        addMenuButton(panel, "QUIT TO MENU", Theme.PANEL_HOVER, Theme.TEXT, app::quitToMainMenu);
+        addMenuButton(panel, I18n.t("pause.resume"), Theme.ORANGE, Theme.ON_ACCENT, app::resumeMatch);
+        addMenuButton(panel, I18n.t("pause.options"), Theme.PANEL_HOVER, Theme.TEXT, () -> app.showOptions(app::showPause));
+        addMenuButton(panel, I18n.t("pause.quit_to_menu"), Theme.PANEL_HOVER, Theme.TEXT, app::quitToMainMenu);
 
         Vector3f panelSize = panel.getPreferredSize();
         panel.setLocalTranslation((screenW - panelSize.x) / 2f, (screenH + panelSize.y) / 2f, 1);

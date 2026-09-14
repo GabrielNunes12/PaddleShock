@@ -27,6 +27,7 @@ import com.paddleshock.data.PaddleDefinition;
 import com.paddleshock.data.PlayerProfile;
 import com.paddleshock.data.PowerUpDefinition;
 import com.paddleshock.data.TableDefinition;
+import com.paddleshock.i18n.I18n;
 import com.paddleshock.settings.AiDifficulty;
 
 /**
@@ -85,12 +86,12 @@ public class LoadoutState extends BaseAppState {
         PaddleDefinition equippedPaddle = Catalog.findPaddle(profile.getEquippedId("paddle")).orElse(null);
         TableDefinition equippedTable = Catalog.findTable(profile.getEquippedId("table")).orElse(null);
         BallDefinition equippedBall = Catalog.findBall(profile.getEquippedId("ball")).orElse(null);
-        paddleLabel = addEquipTile(equipRow, "PADDLE", equippedPaddle == null ? Theme.PANEL_LINE : equippedPaddle.getColor());
-        tableLabel = addEquipTile(equipRow, "TABLE", equippedTable == null ? Theme.PANEL_LINE : equippedTable.getSurfaceColor());
-        ballLabel = addEquipTile(equipRow, "BALL", equippedBall == null ? Theme.PANEL_LINE : equippedBall.getColor());
+        paddleLabel = addEquipTile(equipRow, I18n.t("loadout.paddle_caption"), equippedPaddle == null ? Theme.PANEL_LINE : equippedPaddle.getColor());
+        tableLabel = addEquipTile(equipRow, I18n.t("loadout.table_caption"), equippedTable == null ? Theme.PANEL_LINE : equippedTable.getSurfaceColor());
+        ballLabel = addEquipTile(equipRow, I18n.t("loadout.ball_caption"), equippedBall == null ? Theme.PANEL_LINE : equippedBall.getColor());
 
         // Levels are free and picked right here - no store trip needed, unlike the gear above.
-        Label levelTitle = panel.addChild(new Label("LEVEL"));
+        Label levelTitle = panel.addChild(new Label(I18n.t("loadout.level_title")));
         levelTitle.setFontSize(12);
         levelTitle.setColor(Theme.TEXT_DIM);
         levelTitle.setInsets(new Insets3f(14, 0, 6, 0));
@@ -113,7 +114,7 @@ public class LoadoutState extends BaseAppState {
             levelButtons[i] = levelButton;
         }
 
-        Label aiTitle = panel.addChild(new Label("AI DIFFICULTY"));
+        Label aiTitle = panel.addChild(new Label(I18n.t("loadout.ai_difficulty_title")));
         aiTitle.setFontSize(12);
         aiTitle.setColor(Theme.TEXT_DIM);
         aiTitle.setInsets(new Insets3f(14, 0, 6, 0));
@@ -151,7 +152,7 @@ public class LoadoutState extends BaseAppState {
             cycleAiDifficulty(app, 1);
         });
 
-        Label powerUpTitle = panel.addChild(new Label("POWER-UPS"));
+        Label powerUpTitle = panel.addChild(new Label(I18n.t("loadout.powerups_title")));
         powerUpTitle.setFontSize(12);
         powerUpTitle.setColor(Theme.TEXT_DIM);
         powerUpTitle.setInsets(new Insets3f(14, 0, 6, 0));
@@ -162,7 +163,7 @@ public class LoadoutState extends BaseAppState {
             powerUpLabels[i] = addPowerUpSlotCard(powerUpRow, i + 1);
         }
 
-        Button storeButton = panel.addChild(new Button("OPEN STORE"));
+        Button storeButton = panel.addChild(new Button(I18n.t("loadout.open_store")));
         storeButton.setInsets(new Insets3f(16, 0, 8, 0));
         storeButton.setBackground(new QuadBackgroundComponent(Theme.BLUE_DIM));
         storeButton.setColor(Theme.BLUE);
@@ -180,7 +181,7 @@ public class LoadoutState extends BaseAppState {
             });
         });
 
-        Button startButton = panel.addChild(new Button("START MATCH"));
+        Button startButton = panel.addChild(new Button(I18n.t("loadout.start_match")));
         startButton.setInsets(new Insets3f(8, 0, 6, 0));
         startButton.setBackground(new QuadBackgroundComponent(Theme.ORANGE));
         startButton.setColor(Theme.ON_ACCENT);
@@ -194,7 +195,7 @@ public class LoadoutState extends BaseAppState {
             app.startMatchVsAI();
         });
 
-        Button back = panel.addChild(new Button("BACK"));
+        Button back = panel.addChild(new Button(I18n.t("loadout.back")));
         back.setInsets(new Insets3f(6, 0, 0, 0));
         back.setBackground(new QuadBackgroundComponent(Theme.PANEL_HOVER));
         back.setColor(Theme.TEXT);
@@ -224,7 +225,7 @@ public class LoadoutState extends BaseAppState {
         headerBar.setLocalTranslation(0, screenH, 1);
         uiRoot.attachChild(headerBar);
 
-        Button back = new Button("< BACK");
+        Button back = new Button(I18n.t("loadout.back_header"));
         back.setBackground(new QuadBackgroundComponent(Theme.PANEL_HOVER));
         back.setColor(Theme.TEXT);
         back.setFontSize(15);
@@ -240,7 +241,7 @@ public class LoadoutState extends BaseAppState {
         });
         uiRoot.attachChild(back);
 
-        Label title = new Label("MATCH SETUP");
+        Label title = new Label(I18n.t("loadout.title"));
         title.setFontSize(24);
         title.setColor(Theme.ORANGE);
         Vector3f titleSize = title.getPreferredSize();
@@ -341,7 +342,7 @@ public class LoadoutState extends BaseAppState {
     }
 
     private void refreshLabels(PlayerProfile profile) {
-        creditsLabel.setText(profile.getCurrency() + " CREDITS");
+        creditsLabel.setText(I18n.t("loadout.credits", profile.getCurrency()));
         aiDifficultyLabel.setText(((PaddleShockApp) getApplication()).getGameSettings().getAiDifficulty().getDisplayName());
 
         paddleLabel.setText(nameOf(Catalog.findPaddle(profile.getEquippedId("paddle")), PaddleDefinition::getDisplayName));
@@ -353,11 +354,11 @@ public class LoadoutState extends BaseAppState {
         for (int i = 0; i < powerUpLabels.length; i++) {
             String id = loadout.get(i);
             if (id.isEmpty()) {
-                powerUpLabels[i].setText("Empty slot");
+                powerUpLabels[i].setText(I18n.t("loadout.empty_slot"));
                 powerUpLabels[i].setColor(Theme.TEXT_DIM2);
             } else {
                 Optional<PowerUpDefinition> def = Catalog.findPowerUp(id);
-                powerUpLabels[i].setText(def.map(PowerUpDefinition::getDisplayName).orElse("?").toUpperCase());
+                powerUpLabels[i].setText(def.map(PowerUpDefinition::getDisplayName).orElse(I18n.t("loadout.unknown_powerup")).toUpperCase());
                 powerUpLabels[i].setColor(Theme.TEXT);
             }
         }
@@ -373,7 +374,7 @@ public class LoadoutState extends BaseAppState {
     }
 
     private <T> String nameOf(Optional<T> item, Function<T, String> nameFn) {
-        return item.map(nameFn).map(String::toUpperCase).orElse("NONE");
+        return item.map(nameFn).map(String::toUpperCase).orElse(I18n.t("loadout.none"));
     }
 
     private void refreshLevelButtons(PlayerProfile profile) {

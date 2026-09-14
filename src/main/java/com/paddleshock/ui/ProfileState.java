@@ -27,6 +27,7 @@ import com.simsilica.lemur.component.QuadBackgroundComponent;
 import com.simsilica.lemur.component.SpringGridLayout;
 
 import com.paddleshock.app.PaddleShockApp;
+import com.paddleshock.i18n.I18n;
 import com.paddleshock.data.MatchHistoryEntry;
 import com.paddleshock.data.RivalRecord;
 import com.paddleshock.net.RankClient;
@@ -141,8 +142,7 @@ public class ProfileState extends BaseAppState {
         app.getProfile().addCurrency(credits);
         app.getProfile().setLastRewardedSeason(lastSeasonNumber);
         app.saveProfile();
-        seasonRewardNotice = "Season reward: +" + credits + " credits for reaching "
-                + rank.formatLastSeasonPeakLabel() + " last season!";
+        seasonRewardNotice = I18n.t("profile.season_reward", credits, rank.formatLastSeasonPeakLabel());
     }
 
     @Override
@@ -170,7 +170,7 @@ public class ProfileState extends BaseAppState {
         panel.setBackground(new QuadBackgroundComponent(Theme.PANEL));
         panel.setInsets(new Insets3f(24, 32, 24, 32));
 
-        Label title = panel.addChild(new Label("PROFILE"));
+        Label title = panel.addChild(new Label(I18n.t("profile.title")));
         title.setFontSize(26);
         title.setColor(Theme.ORANGE);
         title.setInsets(new Insets3f(0, 0, 16, 0));
@@ -189,7 +189,7 @@ public class ProfileState extends BaseAppState {
         buildRivals(app, rightCard);
         fixCardWidth(rightCard, RIGHT_CARD_WIDTH);
 
-        Button back = panel.addChild(new Button("BACK"));
+        Button back = panel.addChild(new Button(I18n.t("profile.back")));
         styleButton(back, Theme.PANEL_HOVER, Theme.TEXT, 14);
         back.setInsets(new Insets3f(18, 0, 0, 0));
         back.addClickCommands(source -> {
@@ -266,13 +266,13 @@ public class ProfileState extends BaseAppState {
             nameLabel.setColor(Theme.TEXT);
             nameLabel.setInsets(new Insets3f(0, 0, 2, 0));
 
-            Label steamHint = nameBlock.addChild(new Label("Steam display name"));
+            Label steamHint = nameBlock.addChild(new Label(I18n.t("profile.steam_display_name")));
             steamHint.setFontSize(11);
             steamHint.setColor(Theme.TEXT_DIM);
             return;
         }
 
-        Label hint = nameBlock.addChild(new Label("Display name (Steam not available - edit below):"));
+        Label hint = nameBlock.addChild(new Label(I18n.t("profile.name_hint")));
         hint.setFontSize(11);
         hint.setColor(Theme.TEXT_DIM);
         hint.setInsets(new Insets3f(0, 0, 4, 0));
@@ -286,7 +286,7 @@ public class ProfileState extends BaseAppState {
         nameField.setPreferredWidth(150);
         nameField.setInsets(new Insets3f(6, 8, 6, 8));
 
-        Button save = nameRow.addChild(new Button("SAVE"));
+        Button save = nameRow.addChild(new Button(I18n.t("profile.save")));
         save.setInsets(new Insets3f(0, 10, 0, 0));
         save.setBackground(new QuadBackgroundComponent(Theme.BLUE));
         save.setColor(Theme.ON_ACCENT);
@@ -315,13 +315,13 @@ public class ProfileState extends BaseAppState {
     }
 
     private void buildRank(Container card) {
-        Label rankTitle = card.addChild(new Label("RANK"));
+        Label rankTitle = card.addChild(new Label(I18n.t("profile.rank_title")));
         rankTitle.setFontSize(12);
         rankTitle.setColor(Theme.TEXT_DIM);
         rankTitle.setInsets(new Insets3f(0, 0, 6, 0));
 
         if (rankView == RankView.LOADING) {
-            Label loading = card.addChild(new Label("Loading..."));
+            Label loading = card.addChild(new Label(I18n.t("profile.loading")));
             loading.setFontSize(15);
             loading.setColor(Theme.TEXT_DIM);
             return;
@@ -329,7 +329,7 @@ public class ProfileState extends BaseAppState {
 
         RankState rank = rankView == RankView.LOADED ? fetchResult.get() : null;
         if (rank == null) {
-            Label unranked = card.addChild(new Label("Not yet ranked."));
+            Label unranked = card.addChild(new Label(I18n.t("profile.not_ranked")));
             unranked.setFontSize(15);
             unranked.setColor(Theme.TEXT_DIM);
             return;
@@ -341,7 +341,7 @@ public class ProfileState extends BaseAppState {
         tierLabel.setInsets(new Insets3f(0, 0, 4, 0));
 
         Label detailLabel = card.addChild(new Label(
-                rank.getLp() + " LP  -  " + rank.getWins() + "W-" + rank.getLosses() + "L"));
+                I18n.t("profile.rank_detail", rank.getLp(), rank.getWins(), rank.getLosses())));
         detailLabel.setFontSize(13);
         detailLabel.setColor(Theme.TEXT_DIM);
 
@@ -354,14 +354,14 @@ public class ProfileState extends BaseAppState {
     }
 
     private void buildRivals(PaddleShockApp app, Container card) {
-        Label rivalsTitle = card.addChild(new Label("RIVALS"));
+        Label rivalsTitle = card.addChild(new Label(I18n.t("profile.rivals_title")));
         rivalsTitle.setFontSize(12);
         rivalsTitle.setColor(Theme.TEXT_DIM);
         rivalsTitle.setInsets(new Insets3f(14, 0, 10, 0));
 
         List<RivalRecord> rivals = app.getProfile().getRivals();
         if (rivals.isEmpty()) {
-            Label empty = card.addChild(new Label("No rivals yet - play a multiplayer match!"));
+            Label empty = card.addChild(new Label(I18n.t("profile.no_rivals")));
             empty.setFontSize(14);
             empty.setColor(Theme.TEXT_DIM);
             empty.setTextHAlignment(HAlignment.Center);
@@ -395,14 +395,14 @@ public class ProfileState extends BaseAppState {
     }
 
     private void buildHistory(PaddleShockApp app, Container card) {
-        Label historyTitle = card.addChild(new Label("RECENT MATCHES"));
+        Label historyTitle = card.addChild(new Label(I18n.t("profile.history_title")));
         historyTitle.setFontSize(12);
         historyTitle.setColor(Theme.TEXT_DIM);
         historyTitle.setInsets(new Insets3f(0, 0, 10, 0));
 
         List<MatchHistoryEntry> history = app.getProfile().getMatchHistory();
         if (history.isEmpty()) {
-            Label empty = card.addChild(new Label("No matches played yet."));
+            Label empty = card.addChild(new Label(I18n.t("profile.no_matches")));
             empty.setFontSize(14);
             empty.setColor(Theme.TEXT_DIM);
             empty.setTextHAlignment(HAlignment.Center);
@@ -450,7 +450,7 @@ public class ProfileState extends BaseAppState {
         scoreLabel.setColor(Theme.TEXT_DIM);
         scoreLabel.setPreferredSize(new Vector3f(48, scoreLabel.getPreferredSize().y, 0));
 
-        Label pill = row.addChild(new Label(won ? "WIN" : "LOSS"));
+        Label pill = row.addChild(new Label(won ? I18n.t("profile.win") : I18n.t("profile.loss")));
         pill.setFontSize(11);
         pill.setColor(won ? Theme.GREEN : Theme.TEXT_DIM);
         pill.setBackground(new QuadBackgroundComponent(chipBg));
@@ -462,7 +462,7 @@ public class ProfileState extends BaseAppState {
         ColorRGBA lpColor = Theme.TEXT_DIM;
         if (entry.getLpChange() != 0) {
             int lpChange = entry.getLpChange();
-            lpText = lpChange > 0 ? "+" + lpChange + " LP" : "-" + Math.abs(lpChange) + " LP";
+            lpText = lpChange > 0 ? I18n.t("profile.lp_gain", lpChange) : I18n.t("profile.lp_loss", Math.abs(lpChange));
             lpColor = lpChange > 0 ? Theme.GREEN : Theme.ORANGE;
         }
         Label lpLabel = row.addChild(new Label(lpText));

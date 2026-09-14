@@ -16,6 +16,7 @@ import com.simsilica.lemur.component.QuadBackgroundComponent;
 import com.simsilica.lemur.component.SpringGridLayout;
 
 import com.paddleshock.app.PaddleShockApp;
+import com.paddleshock.i18n.I18n;
 
 /**
  * A single "HOW TO PLAY" screen: covers paddle movement, gamepad support, and power-up keys for a
@@ -64,7 +65,7 @@ public class HowToPlayState extends BaseAppState {
         panel.setBackground(new QuadBackgroundComponent(Theme.BACKGROUND));
         panel.setInsets(new Insets3f(24, 32, 24, 32));
 
-        Label title = panel.addChild(new Label("HOW TO PLAY"));
+        Label title = panel.addChild(new Label(I18n.t("howtoplay.title")));
         title.setFontSize(28);
         title.setColor(Theme.ORANGE);
         title.setInsets(new Insets3f(0, 0, 16, 0));
@@ -78,22 +79,22 @@ public class HowToPlayState extends BaseAppState {
         Container row1 = grid.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
         row1.setBackground(new QuadBackgroundComponent(Theme.BACKGROUND));
         row1.setInsets(new Insets3f(0, 0, 16, 0));
-        addHowToCard(row1, "MOVE YOUR PADDLE", Theme.BLUE_DIM, cardWidth, new String[] {
-                "Move the mouse to slide your paddle across the table - your paddle follows",
-                "your cursor's motion. A connected gamepad's left stick works too."});
-        addHowToCard(row1, "AIM YOUR SHOTS", Theme.GREEN_DIM, cardWidth, new String[] {
-                "Where you're moving when the ball arrives changes the angle of your return -",
-                "a moving paddle redirects the ball, a still one just bounces it back."});
+        addHowToCard(row1, I18n.t("howtoplay.move_paddle.heading"), Theme.BLUE_DIM, cardWidth, new String[] {
+                I18n.t("howtoplay.move_paddle.line1"),
+                I18n.t("howtoplay.move_paddle.line2")});
+        addHowToCard(row1, I18n.t("howtoplay.aim_shots.heading"), Theme.GREEN_DIM, cardWidth, new String[] {
+                I18n.t("howtoplay.aim_shots.line1"),
+                I18n.t("howtoplay.aim_shots.line2")});
 
         Container row2 = grid.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
         row2.setBackground(new QuadBackgroundComponent(Theme.BACKGROUND));
-        addHowToCard(row2, "POWER-UPS", Theme.ORANGE_DIM, cardWidth, new String[] {
-                "Keys 1, 2 and 3 activate the power-ups in your loadout (set them up from the",
-                "STORE or MATCH SETUP screen). Each one goes on cooldown after use - watch the",
-                "HUD boxes in the top-left during a match."});
-        addHowToCard(row2, "PAUSE", Theme.PANEL_HOVER, cardWidth, new String[] {"Press Esc any time during a match to pause."});
+        addHowToCard(row2, I18n.t("howtoplay.power_ups.heading"), Theme.ORANGE_DIM, cardWidth, new String[] {
+                I18n.t("howtoplay.power_ups.line1"),
+                I18n.t("howtoplay.power_ups.line2"),
+                I18n.t("howtoplay.power_ups.line3")});
+        addHowToCard(row2, I18n.t("howtoplay.pause.heading"), Theme.PANEL_HOVER, cardWidth, new String[] {I18n.t("howtoplay.pause.line1")});
 
-        Button back = panel.addChild(new Button("GOT IT"));
+        Button back = panel.addChild(new Button(I18n.t("howtoplay.got_it")));
         back.setInsets(new Insets3f(20, 0, 0, 0));
         back.setBackground(new QuadBackgroundComponent(Theme.ORANGE));
         back.setColor(Theme.ON_ACCENT);

@@ -21,6 +21,7 @@ import com.simsilica.lemur.component.SpringGridLayout;
 
 import com.paddleshock.app.PaddleShockApp;
 import com.paddleshock.data.Friend;
+import com.paddleshock.i18n.I18n;
 
 /**
  * Local friends list screen: this player's own id (with a COPY button - the only place it's
@@ -62,7 +63,7 @@ public class FriendsState extends BaseAppState {
         panel.setBackground(new QuadBackgroundComponent(Theme.PANEL));
         panel.setInsets(new Insets3f(24, 32, 24, 32));
 
-        Label title = panel.addChild(new Label("FRIENDS"));
+        Label title = panel.addChild(new Label(I18n.t("friends.title")));
         title.setFontSize(26);
         title.setColor(Theme.ORANGE);
         title.setInsets(new Insets3f(0, 0, 16, 0));
@@ -83,7 +84,7 @@ public class FriendsState extends BaseAppState {
         Vector3f currentSize = inner.getPreferredSize();
         inner.setPreferredSize(new Vector3f(CARD_WIDTH, currentSize.y, 0));
 
-        Button back = panel.addChild(new Button("BACK"));
+        Button back = panel.addChild(new Button(I18n.t("friends.back")));
         styleButton(back, Theme.PANEL_HOVER, Theme.TEXT, 14);
         back.setInsets(new Insets3f(18, 0, 0, 0));
         back.addClickCommands(source -> {
@@ -106,7 +107,7 @@ public class FriendsState extends BaseAppState {
     /** This player's own id - the only way to actually give it to a friend so they can add you
      *  back (not mutual - see class docs - but they still need to know your id to invite you). */
     private void buildOwnId(PaddleShockApp app, Container card) {
-        Label hint = card.addChild(new Label("YOUR ID (share this with a friend):"));
+        Label hint = card.addChild(new Label(I18n.t("friends.your_id_hint")));
         hint.setFontSize(11);
         hint.setColor(Theme.TEXT_DIM);
         hint.setInsets(new Insets3f(0, 0, 6, 0));
@@ -118,7 +119,7 @@ public class FriendsState extends BaseAppState {
         idLabel.setColor(Theme.TEXT);
         idLabel.setPreferredSize(new Vector3f(CARD_WIDTH - 36 - 80, idLabel.getPreferredSize().y, 0));
 
-        Button copy = row.addChild(new Button("COPY"));
+        Button copy = row.addChild(new Button(I18n.t("friends.copy")));
         copy.setInsets(new Insets3f(0, 0, 0, 10));
         copy.setBackground(new QuadBackgroundComponent(Theme.PANEL_HOVER));
         copy.setColor(Theme.TEXT);
@@ -130,7 +131,7 @@ public class FriendsState extends BaseAppState {
     }
 
     private void buildAddFriendRow(PaddleShockApp app, Container card) {
-        Label title = card.addChild(new Label("ADD A FRIEND"));
+        Label title = card.addChild(new Label(I18n.t("friends.add_a_friend")));
         title.setFontSize(12);
         title.setColor(Theme.TEXT_DIM);
         title.setInsets(new Insets3f(0, 0, 8, 0));
@@ -141,7 +142,7 @@ public class FriendsState extends BaseAppState {
         addIdField.setBackground(new QuadBackgroundComponent(Theme.BACKGROUND_2));
         addIdField.setPreferredWidth(CARD_WIDTH - 36);
         addIdField.setInsets(new Insets3f(6, 8, 6, 8));
-        setPlaceholder(addIdField, "Friend's player id");
+        setPlaceholder(addIdField, I18n.t("friends.placeholder_player_id"));
 
         addNicknameField = card.addChild(new TextField(""));
         addNicknameField.setFontSize(14);
@@ -149,7 +150,7 @@ public class FriendsState extends BaseAppState {
         addNicknameField.setBackground(new QuadBackgroundComponent(Theme.BACKGROUND_2));
         addNicknameField.setPreferredWidth(CARD_WIDTH - 36);
         addNicknameField.setInsets(new Insets3f(6, 8, 8, 8));
-        setPlaceholder(addNicknameField, "Nickname");
+        setPlaceholder(addNicknameField, I18n.t("friends.placeholder_nickname"));
 
         if (addError != null) {
             Label error = card.addChild(new Label(addError));
@@ -158,7 +159,7 @@ public class FriendsState extends BaseAppState {
             error.setInsets(new Insets3f(0, 0, 6, 0));
         }
 
-        Button add = card.addChild(new Button("ADD"));
+        Button add = card.addChild(new Button(I18n.t("friends.add")));
         add.setBackground(new QuadBackgroundComponent(Theme.BLUE));
         add.setColor(Theme.ON_ACCENT);
         add.setFontSize(14);
@@ -180,17 +181,17 @@ public class FriendsState extends BaseAppState {
     private void attemptAddFriend(PaddleShockApp app) {
         String rawId = addIdField.getText() == null ? "" : addIdField.getText().trim();
         String rawNickname = addNicknameField.getText() == null ? "" : addNicknameField.getText().trim();
-        if (rawId.isEmpty() || "Friend's player id".equals(rawId)) {
-            addError = "Enter a player id to add.";
+        if (rawId.isEmpty() || I18n.t("friends.placeholder_player_id").equals(rawId)) {
+            addError = I18n.t("friends.error_enter_id");
             rebuild();
             return;
         }
         if (rawId.equals(app.getProfile().getPlayerId())) {
-            addError = "That's your own id.";
+            addError = I18n.t("friends.error_own_id");
             rebuild();
             return;
         }
-        String nickname = "Nickname".equals(rawNickname) ? "" : rawNickname;
+        String nickname = I18n.t("friends.placeholder_nickname").equals(rawNickname) ? "" : rawNickname;
         app.getProfile().addFriend(rawId, nickname);
         app.saveProfile();
         addError = null;
@@ -198,14 +199,14 @@ public class FriendsState extends BaseAppState {
     }
 
     private void buildFriendsList(PaddleShockApp app, Container card) {
-        Label title = card.addChild(new Label("YOUR FRIENDS"));
+        Label title = card.addChild(new Label(I18n.t("friends.your_friends")));
         title.setFontSize(12);
         title.setColor(Theme.TEXT_DIM);
         title.setInsets(new Insets3f(0, 0, 8, 0));
 
         List<Friend> friendsList = app.getProfile().getFriends();
         if (friendsList.isEmpty()) {
-            Label empty = card.addChild(new Label("No friends yet - add one above."));
+            Label empty = card.addChild(new Label(I18n.t("friends.no_friends_yet")));
             empty.setFontSize(14);
             empty.setColor(Theme.TEXT_DIM);
             empty.setTextHAlignment(HAlignment.Center);
@@ -232,7 +233,7 @@ public class FriendsState extends BaseAppState {
         idLabel.setColor(Theme.TEXT_DIM);
         nameBlock.setPreferredSize(new Vector3f(CARD_WIDTH - 36 - 90, nameBlock.getPreferredSize().y, 0));
 
-        Button remove = row.addChild(new Button("REMOVE"));
+        Button remove = row.addChild(new Button(I18n.t("friends.remove")));
         remove.setBackground(new QuadBackgroundComponent(Theme.PANEL_HOVER));
         remove.setColor(Theme.TEXT_DIM);
         remove.setFontSize(12);

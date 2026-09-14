@@ -43,6 +43,7 @@ import com.paddleshock.entities.Ball;
 import com.paddleshock.entities.Paddle;
 import com.paddleshock.entities.Table;
 import com.paddleshock.entities.TextureSet;
+import com.paddleshock.i18n.I18n;
 import com.paddleshock.input.PlayerInput;
 import com.paddleshock.net.NetClient;
 import com.paddleshock.net.NetHost;
@@ -449,7 +450,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         replayLabelText = new BitmapText(font);
         replayLabelText.setSize(34);
         replayLabelText.setColor(Theme.ORANGE);
-        replayLabelText.setText("INSTANT REPLAY");
+        replayLabelText.setText(I18n.t("gameplay.instant_replay"));
         replayLabelText.setLocalTranslation(
                 (simpleApp.getCamera().getWidth() - replayLabelText.getLineWidth()) / 2f,
                 simpleApp.getCamera().getHeight() - 40, 5);
@@ -459,7 +460,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         replaySkipText = new BitmapText(font);
         replaySkipText.setSize(16);
         replaySkipText.setColor(Theme.TEXT_DIM);
-        replaySkipText.setText("CLICK OR PRESS ENTER TO SKIP");
+        replaySkipText.setText(I18n.t("gameplay.replay_skip_hint"));
         replaySkipText.setLocalTranslation(
                 (simpleApp.getCamera().getWidth() - replaySkipText.getLineWidth()) / 2f,
                 simpleApp.getCamera().getHeight() - 78, 5);
@@ -518,15 +519,13 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
 
     private void updateScoreText() {
         switch (mode) {
-            case SINGLE_PLAYER -> scoreText.setText("You " + matchSimulation.getPlayerScore() + " : "
-                    + matchSimulation.getOpponentScore() + " AI  (Esc: pause)");
-            case HOST -> scoreText.setText("You " + matchSimulation.getPlayerScore() + " : "
-                    + matchSimulation.getOpponentScore() + " Joiner  (Esc: pause)");
-            case JOINER -> scoreText.setText("You " + joinerDisplayScore + " : "
-                    + hostDisplayScore + " Host  (Esc: pause)");
+            case SINGLE_PLAYER -> scoreText.setText(I18n.t("gameplay.score_single_player",
+                    matchSimulation.getPlayerScore(), matchSimulation.getOpponentScore()));
+            case HOST -> scoreText.setText(I18n.t("gameplay.score_host",
+                    matchSimulation.getPlayerScore(), matchSimulation.getOpponentScore()));
+            case JOINER -> scoreText.setText(I18n.t("gameplay.score_joiner", joinerDisplayScore, hostDisplayScore));
             // Read-only view: neither side is "you" - name both players plainly instead.
-            case SPECTATOR -> scoreText.setText("Host " + hostDisplayScore + " : "
-                    + joinerDisplayScore + " Joiner  (Esc: pause)");
+            case SPECTATOR -> scoreText.setText(I18n.t("gameplay.score_spectator", hostDisplayScore, joinerDisplayScore));
         }
     }
 
@@ -666,7 +665,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
      *  reliably tell apart (Slow Opponent's red/orange vs. Paddle Grow's green, for example).
      *  Overwrites any banner already showing, so the most recent activation always wins. */
     private void showPowerUpBanner(boolean activatedByLocalViewer, PowerUpType type) {
-        showPowerUpBanner(activatedByLocalViewer ? "YOU" : "OPPONENT", type);
+        showPowerUpBanner(activatedByLocalViewer ? I18n.t("gameplay.powerup_you") : I18n.t("gameplay.powerup_opponent"), type);
     }
 
     /** Same banner, but for a viewer who isn't one of the two players (a spectator) - {@code who}
@@ -676,8 +675,8 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         if (powerUpBannerText == null || type == null) {
             return;
         }
-        String kind = type.isDebuff() ? "DEBUFF" : "BUFF";
-        String text = "[" + kind + "] " + who + ": " + type.getLabel().toUpperCase();
+        String kind = type.isDebuff() ? I18n.t("gameplay.powerup_debuff") : I18n.t("gameplay.powerup_buff");
+        String text = I18n.t("gameplay.powerup_banner", kind, who, type.getLabel().toUpperCase());
         powerUpBannerText.setText(text);
         powerUpBannerText.setColor(type.getColor());
         float screenW = ((SimpleApplication) getApplication()).getCamera().getWidth();
@@ -917,7 +916,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                         // Neither side is "you" for a spectator - name the actual side instead of
                         // the joiner-relative YOU/OPPONENT wording below.
                         String who = snapshot.powerUpActorSide() == NetProtocol.SnapshotMessage.ACTOR_HOST
-                                ? "HOST" : "JOINER";
+                                ? I18n.t("gameplay.powerup_host") : I18n.t("gameplay.powerup_joiner");
                         showPowerUpBanner(who, activatedType);
                     } else {
                         // From the joiner's own point of view "you" are the joiner (mirroring the

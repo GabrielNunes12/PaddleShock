@@ -14,7 +14,9 @@ import com.simsilica.lemur.component.QuadBackgroundComponent;
 import com.simsilica.lemur.component.SpringGridLayout;
 
 import com.paddleshock.app.PaddleShockApp;
+import com.paddleshock.i18n.I18n;
 import com.paddleshock.settings.GameSettings;
+import com.paddleshock.settings.Lang;
 import com.paddleshock.settings.Resolution;
 import com.paddleshock.settings.VideoQuality;
 
@@ -38,6 +40,9 @@ public class OptionsState extends BaseAppState {
     private Label videoQualityLabel;
     private Label fullscreenLabel;
     private Label resolutionLabel;
+
+    private Button enLangButton;
+    private Button ptBrLangButton;
 
     private Runnable backAction = () -> {
     };
@@ -68,7 +73,7 @@ public class OptionsState extends BaseAppState {
         panel.setBackground(new QuadBackgroundComponent(Theme.PANEL));
         panel.setInsets(new Insets3f(24, 32, 24, 32));
 
-        Label title = panel.addChild(new Label("OPTIONS"));
+        Label title = panel.addChild(new Label(I18n.t("options.title")));
         title.setFontSize(28);
         title.setColor(Theme.ORANGE);
         title.setInsets(new Insets3f(0, 0, 16, 0));
@@ -76,30 +81,33 @@ public class OptionsState extends BaseAppState {
         Container columns = panel.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
         columns.setInsets(new Insets3f(0, 0, 18, 0));
 
-        Container audioCard = addCard(columns, "AUDIO", 16);
-        soundVolumeLabel = addStepperRow(audioCard, "SOUND VOLUME",
+        Container audioCard = addCard(columns, I18n.t("options.audio"), 16);
+        soundVolumeLabel = addStepperRow(audioCard, I18n.t("options.sound_volume"),
                 () -> adjustSoundVolume(app, -0.1f), () -> adjustSoundVolume(app, 0.1f));
-        musicVolumeLabel = addStepperRow(audioCard, "MUSIC VOLUME",
+        musicVolumeLabel = addStepperRow(audioCard, I18n.t("options.music_volume"),
                 () -> adjustMusicVolume(app, -0.1f), () -> adjustMusicVolume(app, 0.1f));
         fixCardWidth(audioCard);
 
-        Container videoCard = addCard(columns, "VIDEO", 16);
-        brightnessLabel = addStepperRow(videoCard, "BRIGHTNESS",
+        Container videoCard = addCard(columns, I18n.t("options.video"), 16);
+        brightnessLabel = addStepperRow(videoCard, I18n.t("options.brightness"),
                 () -> adjustBrightness(app, -0.1f), () -> adjustBrightness(app, 0.1f));
-        videoQualityLabel = addStepperRow(videoCard, "VIDEO QUALITY",
+        videoQualityLabel = addStepperRow(videoCard, I18n.t("options.video_quality"),
                 () -> cycleVideoQuality(app, -1), () -> cycleVideoQuality(app, 1));
-        fullscreenLabel = addStepperRow(videoCard, "FULLSCREEN",
+        fullscreenLabel = addStepperRow(videoCard, I18n.t("options.fullscreen"),
                 () -> toggleFullscreen(app), () -> toggleFullscreen(app));
         fixCardWidth(videoCard);
 
-        Container controlsCard = addCard(columns, "CONTROLS", 0);
-        mouseSensitivityLabel = addStepperRow(controlsCard, "MOUSE SENS.",
+        Container controlsCard = addCard(columns, I18n.t("options.controls"), 16);
+        mouseSensitivityLabel = addStepperRow(controlsCard, I18n.t("options.mouse_sens"),
                 () -> adjustMouseSensitivity(app, -0.1f), () -> adjustMouseSensitivity(app, 0.1f));
-        resolutionLabel = addStepperRow(controlsCard, "RESOLUTION",
+        resolutionLabel = addStepperRow(controlsCard, I18n.t("options.resolution"),
                 () -> cycleResolution(app, -1), () -> cycleResolution(app, 1));
         fixCardWidth(controlsCard);
 
-        Button back = panel.addChild(new Button("BACK"));
+        Container languageCard = addLanguageCard(columns, app);
+        fixCardWidth(languageCard);
+
+        Button back = panel.addChild(new Button(I18n.t("options.back")));
         back.setInsets(new Insets3f(16, 0, 0, 0));
         back.setBackground(new QuadBackgroundComponent(Theme.ORANGE));
         back.setColor(Theme.ON_ACCENT);
@@ -150,6 +158,73 @@ public class OptionsState extends BaseAppState {
     private void fixCardWidth(Container card) {
         Vector3f current = card.getPreferredSize();
         card.setPreferredSize(new Vector3f(CARD_WIDTH, current.y, 0));
+    }
+
+    /** Builds the LANGUAGE card (approved mockup Option A): two flag rows, English and
+     *  Português (Brasil), the active one highlighted green with a checkmark. Picking the
+     *  inactive one saves it, reloads {@link I18n}, and rebuilds this whole screen in the new
+     *  language immediately - every UI state already rebuilds its text on {@code onEnable()}, so
+     *  no restart is needed for screens visited after the switch either. */
+    private Container addLanguageCard(Container parent, PaddleShockApp app) {
+        Container wrapper = parent.addChild(new Container(new SpringGridLayout(Axis.Y, Axis.X)));
+
+        Container border = wrapper.addChild(new Container(new SpringGridLayout(Axis.Y, Axis.X)));
+        border.setBackground(new QuadBackgroundComponent(Theme.PANEL_LINE));
+        border.setInsets(new Insets3f(2, 2, 2, 2));
+
+        Container inner = border.addChild(new Container(new SpringGridLayout(Axis.Y, Axis.X)));
+        inner.setBackground(new QuadBackgroundComponent(Theme.PANEL));
+        inner.setInsets(new Insets3f(14, 16, 14, 16));
+
+        Label header = inner.addChild(new Label(I18n.t("options.language")));
+        header.setFontSize(12);
+        header.setColor(Theme.TEXT_DIM);
+        header.setInsets(new Insets3f(0, 0, 10, 0));
+
+        Lang active = app.getGameSettings().getLanguage();
+
+        enLangButton = inner.addChild(new Button(langButtonText(Lang.EN)));
+        enLangButton.setIcon(FlagIcons.usFlag());
+        styleLanguageButton(enLangButton, active == Lang.EN);
+        enLangButton.addClickCommands(source -> {
+            playClick();
+            applyLanguage(app, Lang.EN);
+        });
+
+        ptBrLangButton = inner.addChild(new Button(langButtonText(Lang.PT_BR)));
+        ptBrLangButton.setIcon(FlagIcons.brFlag());
+        styleLanguageButton(ptBrLangButton, active == Lang.PT_BR);
+        ptBrLangButton.setInsets(new Insets3f(6, 0, 0, 0));
+        ptBrLangButton.addClickCommands(source -> {
+            playClick();
+            applyLanguage(app, Lang.PT_BR);
+        });
+
+        return inner;
+    }
+
+    private String langButtonText(Lang lang) {
+        String key = lang == Lang.EN ? "lang.en" : "lang.pt_br";
+        return "  " + I18n.t(key + ".name") + "\n  " + I18n.t(key + ".region");
+    }
+
+    private void styleLanguageButton(Button button, boolean active) {
+        button.setBackground(new QuadBackgroundComponent(active ? Theme.GREEN_DIM : Theme.PANEL_HOVER));
+        button.setColor(active ? Theme.TEXT : Theme.TEXT_DIM);
+        button.setFontSize(12);
+        button.setTextHAlignment(com.simsilica.lemur.HAlignment.Left);
+        button.setPreferredSize(new Vector3f(CARD_WIDTH - 32, 44, 0));
+    }
+
+    private void applyLanguage(PaddleShockApp app, Lang lang) {
+        GameSettings settings = app.getGameSettings();
+        if (settings.getLanguage() == lang) {
+            return;
+        }
+        settings.setLanguage(lang);
+        app.saveGameSettings();
+        I18n.setLanguage(lang);
+        rebuild(app);
     }
 
     private Label addStepperRow(Container parent, String name, Runnable onDecrease, Runnable onIncrease) {
@@ -260,7 +335,7 @@ public class OptionsState extends BaseAppState {
         musicVolumeLabel.setText(String.format("%.1f", settings.getMusicVolume()));
         videoQualityLabel.setText(settings.getVideoQuality().name());
         resolutionLabel.setText(settings.getResolution().toString());
-        fullscreenLabel.setText(settings.isFullscreen() ? "ON" : "OFF");
+        fullscreenLabel.setText(settings.isFullscreen() ? I18n.t("common.on") : I18n.t("common.off"));
     }
 
     @Override

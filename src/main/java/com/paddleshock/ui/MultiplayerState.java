@@ -30,6 +30,7 @@ import com.simsilica.lemur.component.SpringGridLayout;
 import com.paddleshock.GameConstants;
 import com.paddleshock.app.PaddleShockApp;
 import com.paddleshock.data.Friend;
+import com.paddleshock.i18n.I18n;
 import com.paddleshock.net.InviteClient;
 import com.paddleshock.net.NetClient;
 import com.paddleshock.net.NetHost;
@@ -171,7 +172,7 @@ public class MultiplayerState extends BaseAppState {
             // Per the redesign, BACK sits outside/below the card rather than as just another row
             // inside it - same click behavior as before, just relocated and restyled to match
             // other screens' standalone BACK buttons.
-            Button back = new Button("BACK");
+            Button back = new Button(I18n.t("multiplayer.back"));
             styleButton(back, Theme.PANEL_HOVER, Theme.TEXT, 14);
             back.addClickCommands(source -> {
                 app.getAudioManager().playSfx("button_click.ogg");
@@ -185,12 +186,12 @@ public class MultiplayerState extends BaseAppState {
     }
 
     private void buildChoice(PaddleShockApp app, Container panel) {
-        Label title = panel.addChild(new Label("MULTIPLAYER"));
+        Label title = panel.addChild(new Label(I18n.t("multiplayer.title")));
         title.setFontSize(26);
         title.setColor(Theme.ORANGE);
         title.setInsets(new Insets3f(0, 0, 4, 0));
 
-        Label sub = panel.addChild(new Label("Same network (LAN address) or over the internet via a lobby code."));
+        Label sub = panel.addChild(new Label(I18n.t("multiplayer.subtitle")));
         sub.setFontSize(12);
         sub.setColor(Theme.TEXT_DIM);
         sub.setInsets(new Insets3f(0, 0, 18, 0));
@@ -202,12 +203,12 @@ public class MultiplayerState extends BaseAppState {
         toggleRow.setInsets(new Insets3f(0, 0, 18, 0));
 
         Container toggleText = toggleRow.addChild(new Container(new SpringGridLayout(Axis.Y, Axis.X)));
-        Label toggleLabel = toggleText.addChild(new Label(unranked ? "UNRANKED" : "RANKED"));
+        Label toggleLabel = toggleText.addChild(new Label(unranked ? I18n.t("multiplayer.unranked") : I18n.t("multiplayer.ranked")));
         toggleLabel.setFontSize(15);
         toggleLabel.setColor(Theme.TEXT);
         Label toggleHint = toggleText.addChild(new Label(unranked
-                ? "This match will NOT affect your ranked LP."
-                : "This match counts toward your ranked ladder."));
+                ? I18n.t("multiplayer.unranked_hint")
+                : I18n.t("multiplayer.ranked_hint")));
         toggleHint.setFontSize(11);
         toggleHint.setColor(Theme.TEXT_DIM);
 
@@ -219,7 +220,7 @@ public class MultiplayerState extends BaseAppState {
         divider.setPreferredSize(new Vector3f(CARD_CONTENT_WIDTH, 1, 0));
         divider.setInsets(new Insets3f(0, 0, 18, 0));
 
-        Button hostButton = panel.addChild(new Button("HOST MATCH"));
+        Button hostButton = panel.addChild(new Button(I18n.t("multiplayer.host_match")));
         styleButton(hostButton, Theme.ORANGE, Theme.ON_ACCENT, 18);
         hostButton.setPreferredSize(new Vector3f(CARD_CONTENT_WIDTH, 50, 0));
         hostButton.setInsets(new Insets3f(0, 0, 22, 0));
@@ -232,7 +233,7 @@ public class MultiplayerState extends BaseAppState {
         // (buildJoining, below) exactly as before - that view/state-machine transition is
         // untouched. This button is just the restyled entry point into that same flow, now
         // presented as part of the card rather than a separate loose button.
-        Button joinButton = panel.addChild(new Button("JOIN A MATCH"));
+        Button joinButton = panel.addChild(new Button(I18n.t("multiplayer.join_match")));
         styleButton(joinButton, Theme.PANEL_HOVER, Theme.TEXT, 16);
         joinButton.setPreferredSize(new Vector3f(CARD_CONTENT_WIDTH, 46, 0));
         joinButton.setInsets(new Insets3f(0, 0, 22, 0));
@@ -243,7 +244,7 @@ public class MultiplayerState extends BaseAppState {
             rebuild();
         });
 
-        Button tournamentButton = panel.addChild(new Button("TOURNAMENT"));
+        Button tournamentButton = panel.addChild(new Button(I18n.t("multiplayer.tournament_button")));
         styleButton(tournamentButton, Theme.BLUE, Theme.ON_ACCENT, 16);
         tournamentButton.setPreferredSize(new Vector3f(CARD_CONTENT_WIDTH, 46, 0));
         tournamentButton.addClickCommands(source -> {
@@ -260,7 +261,7 @@ public class MultiplayerState extends BaseAppState {
      *  worth chasing further for a cosmetic flourish). Reuses the same click command as the old
      *  toggle button, so the {@code unranked} field and its effect on hosting are unchanged. */
     private Button buildToggleSwitch(PaddleShockApp app) {
-        Button toggle = new Button(unranked ? "OFF" : "ON");
+        Button toggle = new Button(unranked ? I18n.t("common.off") : I18n.t("common.on"));
         toggle.setBackground(new QuadBackgroundComponent(unranked ? Theme.PANEL_HOVER : Theme.GREEN));
         toggle.setColor(unranked ? Theme.TEXT_DIM : Theme.ON_ACCENT);
         toggle.setFontSize(13);
@@ -278,7 +279,7 @@ public class MultiplayerState extends BaseAppState {
     /** Same pill-shaped toggle-switch visual as {@link #buildToggleSwitch}, wired to
      *  {@link #joinAsSpectator} instead of {@link #unranked}. */
     private Button buildSpectateToggle(PaddleShockApp app) {
-        Button toggle = new Button(joinAsSpectator ? "ON" : "OFF");
+        Button toggle = new Button(joinAsSpectator ? I18n.t("common.on") : I18n.t("common.off"));
         toggle.setBackground(new QuadBackgroundComponent(joinAsSpectator ? Theme.BLUE : Theme.PANEL_HOVER));
         toggle.setColor(joinAsSpectator ? Theme.ON_ACCENT : Theme.TEXT_DIM);
         toggle.setFontSize(13);
@@ -303,7 +304,7 @@ public class MultiplayerState extends BaseAppState {
             try {
                 netHost = app.startHostMatch(0, ranked);
             } catch (SocketException e2) {
-                joinError = "Could not open a UDP port: " + e2.getMessage();
+                joinError = I18n.t("multiplayer.error_udp_port", e2.getMessage());
                 view = View.CHOICE;
                 rebuild();
                 return;
@@ -391,20 +392,20 @@ public class MultiplayerState extends BaseAppState {
 
     private void buildHosting(PaddleShockApp app, Container panel) {
         boolean hostingUnranked = netHost != null && !netHost.isRanked();
-        Label title = panel.addChild(new Label(hostingUnranked ? "HOSTING - UNRANKED" : "HOSTING"));
+        Label title = panel.addChild(new Label(hostingUnranked ? I18n.t("multiplayer.hosting_unranked") : I18n.t("multiplayer.hosting_title")));
         title.setFontSize(26);
         title.setColor(hostingUnranked ? Theme.TEXT_DIM : Theme.ORANGE);
         title.setInsets(new Insets3f(0, 0, 4, 0));
 
         if (hostingUnranked) {
-            Label unrankedBadge = panel.addChild(new Label("Unranked - this match will not affect either player's LP."));
+            Label unrankedBadge = panel.addChild(new Label(I18n.t("multiplayer.hosting_unranked_hint")));
             unrankedBadge.setFontSize(13);
             unrankedBadge.setColor(Theme.GREEN);
             unrankedBadge.setInsets(new Insets3f(0, 0, 8, 0));
         } else {
             RankState rank = preMatchRank.get();
             if (rank != null) {
-                Label rankLabel = panel.addChild(new Label("Your rank: " + rank.formatLabel() + " (" + rank.getLp() + " LP)"));
+                Label rankLabel = panel.addChild(new Label(I18n.t("multiplayer.your_rank", rank.formatLabel(), rank.getLp())));
                 rankLabel.setFontSize(12);
                 rankLabel.setColor(Theme.TEXT_DIM);
                 rankLabel.setInsets(new Insets3f(0, 0, 4, 0));
@@ -412,8 +413,8 @@ public class MultiplayerState extends BaseAppState {
                 if (rank.isInPromoSeries()) {
                     String nextLabel = rank.nextPromoLabel();
                     String promoText = nextLabel != null
-                            ? "Promotion match! Win to advance to " + nextLabel + "."
-                            : "Promotion match! Win to advance.";
+                            ? I18n.t("multiplayer.promo_next", nextLabel)
+                            : I18n.t("multiplayer.promo_generic");
                     Label promoLabel = panel.addChild(new Label(promoText));
                     promoLabel.setFontSize(13);
                     promoLabel.setColor(Theme.ORANGE);
@@ -427,7 +428,7 @@ public class MultiplayerState extends BaseAppState {
         addressLabel.setColor(Theme.TEXT);
         addressLabel.setInsets(new Insets3f(0, 0, 4, 0));
 
-        Label hint = panel.addChild(new Label("Same network? Give them this address."));
+        Label hint = panel.addChild(new Label(I18n.t("multiplayer.same_network_hint")));
         hint.setFontSize(12);
         hint.setColor(Theme.TEXT_DIM);
         hint.setInsets(new Insets3f(0, 0, 10, 0));
@@ -438,22 +439,22 @@ public class MultiplayerState extends BaseAppState {
         boolean punchExpired = hostRef != null && hostRef.isLobbyAttemptFinished() && !hostRef.hasJoiner();
 
         if (lobbyPending) {
-            Label pending = panel.addChild(new Label("Looking up an internet code..."));
+            Label pending = panel.addChild(new Label(I18n.t("multiplayer.looking_up_code")));
             pending.setFontSize(12);
             pending.setColor(Theme.TEXT_DIM);
             pending.setInsets(new Insets3f(0, 0, 14, 0));
         } else if (code != null && punchExpired) {
-            Label expiredLabel = panel.addChild(new Label("Internet code " + code + " expired (no one joined)."));
+            Label expiredLabel = panel.addChild(new Label(I18n.t("multiplayer.code_expired", code)));
             expiredLabel.setFontSize(13);
             expiredLabel.setColor(Theme.TEXT_DIM);
             expiredLabel.setInsets(new Insets3f(0, 0, 14, 0));
         } else if (code != null) {
             Container codeRow = panel.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
             codeRow.setInsets(new Insets3f(0, 0, 4, 0));
-            Label codeLabel = codeRow.addChild(new Label("Internet code: " + code));
+            Label codeLabel = codeRow.addChild(new Label(I18n.t("multiplayer.internet_code", code)));
             codeLabel.setFontSize(20);
             codeLabel.setColor(Theme.BLUE);
-            Button copyButton = codeRow.addChild(new Button("COPY"));
+            Button copyButton = codeRow.addChild(new Button(I18n.t("multiplayer.copy")));
             copyButton.setInsets(new Insets3f(0, 12, 0, 0));
             copyButton.setBackground(new QuadBackgroundComponent(Theme.PANEL_HOVER));
             copyButton.setColor(Theme.TEXT);
@@ -462,7 +463,7 @@ public class MultiplayerState extends BaseAppState {
                 app.getAudioManager().playSfx("button_click.ogg");
                 copyToClipboard(code);
             });
-            Label codeHint = panel.addChild(new Label("Different network? Give them this code instead."));
+            Label codeHint = panel.addChild(new Label(I18n.t("multiplayer.diff_network_hint")));
             codeHint.setFontSize(12);
             codeHint.setColor(Theme.TEXT_DIM);
             codeHint.setInsets(new Insets3f(0, 0, 14, 0));
@@ -474,7 +475,7 @@ public class MultiplayerState extends BaseAppState {
             errorLabel.setColor(Theme.ORANGE);
             errorLabel.setInsets(new Insets3f(0, 0, 14, 0));
         } else if (error != null) {
-            Label errorLabel = panel.addChild(new Label("(Internet code unavailable: " + error + ")"));
+            Label errorLabel = panel.addChild(new Label(I18n.t("multiplayer.code_unavailable", error)));
             errorLabel.setFontSize(11);
             errorLabel.setColor(Theme.TEXT_DIM);
             errorLabel.setInsets(new Insets3f(0, 0, 14, 0));
@@ -482,20 +483,21 @@ public class MultiplayerState extends BaseAppState {
 
         int spectatorCount = hostRef == null ? 0 : hostRef.getSpectatorCount();
 
-        statusLabel = panel.addChild(new Label("Waiting for opponent..."));
+        statusLabel = panel.addChild(new Label(I18n.t("multiplayer.waiting_for_opponent")));
         statusLabel.setFontSize(16);
         statusLabel.setColor(Theme.TEXT);
         statusLabel.setInsets(new Insets3f(0, 0, spectatorCount > 0 ? 4 : 18, 0));
 
         if (spectatorCount > 0) {
-            Label spectatorLabel = panel.addChild(new Label(
-                    spectatorCount + (spectatorCount == 1 ? " spectator watching" : " spectators watching")));
+            Label spectatorLabel = panel.addChild(new Label(spectatorCount == 1
+                    ? I18n.t("multiplayer.spectator_watching_one", spectatorCount)
+                    : I18n.t("multiplayer.spectator_watching_many", spectatorCount)));
             spectatorLabel.setFontSize(11);
             spectatorLabel.setColor(Theme.TEXT_DIM);
             spectatorLabel.setInsets(new Insets3f(0, 0, 18, 0));
         }
 
-        Button cancel = panel.addChild(new Button("CANCEL"));
+        Button cancel = panel.addChild(new Button(I18n.t("multiplayer.cancel")));
         styleButton(cancel, Theme.PANEL_HOVER, Theme.TEXT, 14);
         cancel.addClickCommands(source -> {
             app.getAudioManager().playSfx("button_click.ogg");
@@ -513,7 +515,7 @@ public class MultiplayerState extends BaseAppState {
         if (friendsList.isEmpty()) {
             return;
         }
-        Label title = panel.addChild(new Label("INVITE A FRIEND:"));
+        Label title = panel.addChild(new Label(I18n.t("multiplayer.invite_a_friend")));
         title.setFontSize(12);
         title.setColor(Theme.TEXT_DIM);
         title.setInsets(new Insets3f(0, 0, 6, 0));
@@ -527,13 +529,13 @@ public class MultiplayerState extends BaseAppState {
             nameLabel.setColor(Theme.TEXT);
             nameLabel.setPreferredSize(new Vector3f(CARD_CONTENT_WIDTH - 90, nameLabel.getPreferredSize().y, 0));
 
-            Button invite = row.addChild(new Button("INVITE"));
+            Button invite = row.addChild(new Button(I18n.t("multiplayer.invite")));
             invite.setBackground(new QuadBackgroundComponent(Theme.BLUE));
             invite.setColor(Theme.ON_ACCENT);
             invite.setFontSize(12);
             invite.addClickCommands(source -> {
                 app.getAudioManager().playSfx("button_click.ogg");
-                invite.setText("SENT");
+                invite.setText(I18n.t("multiplayer.sent"));
                 invite.setEnabled(false);
                 String selfId = app.getProfile().getPlayerId();
                 String selfName = app.getSteamManager().getPersonaName().orElseGet(() -> app.getProfile().getDisplayName());
@@ -563,12 +565,12 @@ public class MultiplayerState extends BaseAppState {
     }
 
     private void buildJoining(PaddleShockApp app, Container panel) {
-        Label title = panel.addChild(new Label("JOIN MATCH"));
+        Label title = panel.addChild(new Label(I18n.t("multiplayer.join_match_title")));
         title.setFontSize(26);
         title.setColor(Theme.BLUE);
         title.setInsets(new Insets3f(0, 0, 4, 0));
 
-        Label hint = panel.addChild(new Label("Enter the host's LAN address (IP:port) or their internet code:"));
+        Label hint = panel.addChild(new Label(I18n.t("multiplayer.join_hint")));
         hint.setFontSize(12);
         hint.setColor(Theme.TEXT_DIM);
         hint.setInsets(new Insets3f(0, 0, 8, 0));
@@ -586,10 +588,10 @@ public class MultiplayerState extends BaseAppState {
         Container spectateRow = panel.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
         spectateRow.setInsets(new Insets3f(8, 0, 4, 0));
         Container spectateText = spectateRow.addChild(new Container(new SpringGridLayout(Axis.Y, Axis.X)));
-        Label spectateLabel = spectateText.addChild(new Label("JOIN AS SPECTATOR"));
+        Label spectateLabel = spectateText.addChild(new Label(I18n.t("multiplayer.join_as_spectator")));
         spectateLabel.setFontSize(13);
         spectateLabel.setColor(Theme.TEXT);
-        Label spectateHint = spectateText.addChild(new Label("Watch read-only - you won't control a paddle."));
+        Label spectateHint = spectateText.addChild(new Label(I18n.t("multiplayer.spectator_hint")));
         spectateHint.setFontSize(11);
         spectateHint.setColor(Theme.TEXT_DIM);
         Button spectateToggle = spectateRow.addChild(buildSpectateToggle(app));
@@ -600,7 +602,7 @@ public class MultiplayerState extends BaseAppState {
         statusLabel.setColor(Theme.ORANGE);
         statusLabel.setInsets(new Insets3f(10, 0, 10, 0));
 
-        Button connect = panel.addChild(new Button("CONNECT"));
+        Button connect = panel.addChild(new Button(I18n.t("multiplayer.connect")));
         styleButton(connect, Theme.PANEL_HOVER, Theme.TEXT, 18);
         connect.setPreferredSize(new Vector3f(CARD_CONTENT_WIDTH, 46, 0));
         connect.addClickCommands(source -> {
@@ -608,7 +610,7 @@ public class MultiplayerState extends BaseAppState {
             attemptConnect(app);
         });
 
-        Button back = panel.addChild(new Button("BACK"));
+        Button back = panel.addChild(new Button(I18n.t("multiplayer.back")));
         styleButton(back, Theme.PANEL_HOVER, Theme.TEXT, 14);
         back.setInsets(new Insets3f(8, 0, 0, 0));
         back.addClickCommands(source -> {
@@ -625,7 +627,7 @@ public class MultiplayerState extends BaseAppState {
     private void attemptConnect(PaddleShockApp app) {
         String raw = addressField.getText().trim();
         if (raw.isEmpty()) {
-            joinError = "Enter a LAN address (IP:port) or an internet code.";
+            joinError = I18n.t("multiplayer.error_enter_address");
             statusLabel.setText(joinError);
             return;
         }
@@ -657,7 +659,7 @@ public class MultiplayerState extends BaseAppState {
     private void connectByAddress(PaddleShockApp app, String raw) {
         int colon = raw.lastIndexOf(':');
         if (colon <= 0 || colon == raw.length() - 1) {
-            joinError = "Enter address as IP:port, e.g. 192.168.1.10:" + GameConstants.MULTIPLAYER_DEFAULT_PORT;
+            joinError = I18n.t("multiplayer.error_address_format", GameConstants.MULTIPLAYER_DEFAULT_PORT);
             statusLabel.setText(joinError);
             return;
         }
@@ -666,7 +668,7 @@ public class MultiplayerState extends BaseAppState {
         try {
             port = Integer.parseInt(raw.substring(colon + 1));
         } catch (NumberFormatException e) {
-            joinError = "Bad port number.";
+            joinError = I18n.t("multiplayer.error_bad_port");
             statusLabel.setText(joinError);
             return;
         }
@@ -677,7 +679,7 @@ public class MultiplayerState extends BaseAppState {
             }
             netClient = app.joinMatch(host, port, joinAsSpectator);
         } catch (IOException e) {
-            joinError = "Could not resolve/connect to " + raw + ": " + e.getMessage();
+            joinError = I18n.t("multiplayer.error_connect_failed", raw, e.getMessage());
             statusLabel.setText(joinError);
             return;
         }
@@ -685,7 +687,7 @@ public class MultiplayerState extends BaseAppState {
         joinTimeoutTimer = 0f;
         joinError = null;
         statusLabel.setColor(Theme.TEXT);
-        statusLabel.setText("Connecting...");
+        statusLabel.setText(I18n.t("multiplayer.connecting"));
     }
 
     /** Resolves a lobby code to a host address via AWS (blocking HTTPS calls), off the render
@@ -699,7 +701,7 @@ public class MultiplayerState extends BaseAppState {
         }
         joinError = null;
         statusLabel.setColor(Theme.TEXT);
-        statusLabel.setText("Looking up code...");
+        statusLabel.setText(I18n.t("multiplayer.looking_up_lobby_code"));
 
         int myGeneration = lobbyJoinGeneration.incrementAndGet();
         pendingCodeClient.set(null);
@@ -796,7 +798,7 @@ public class MultiplayerState extends BaseAppState {
                 helloRetryTimer = 0f;
                 joinTimeoutTimer = 0f;
                 statusLabel.setColor(Theme.TEXT);
-                statusLabel.setText("Connecting...");
+                statusLabel.setText(I18n.t("multiplayer.connecting"));
             } else {
                 String error = pendingCodeError.getAndSet(null);
                 if (error != null) {
@@ -809,9 +811,9 @@ public class MultiplayerState extends BaseAppState {
                     if (StunClient.SYMMETRIC_NAT_MESSAGE.equals(error)) {
                         joinError = error;
                     } else if (error.contains("already has a joiner")) {
-                        joinError = "That code already has a joiner - ask the host for a fresh one.";
+                        joinError = I18n.t("multiplayer.error_code_has_joiner");
                     } else {
-                        joinError = "Could not find that code: " + error;
+                        joinError = I18n.t("multiplayer.error_code_not_found", error);
                     }
                     statusLabel.setColor(Theme.ORANGE);
                     statusLabel.setText(joinError);
@@ -832,7 +834,7 @@ public class MultiplayerState extends BaseAppState {
                 netClient = null;
                 app.enterJoinedMatch(handoff);
             } else if (netClient.isRejected()) {
-                joinError = "Host already has an opponent connected.";
+                joinError = I18n.t("multiplayer.error_host_full");
                 statusLabel.setColor(Theme.ORANGE);
                 statusLabel.setText(joinError);
                 netClient.close();
@@ -844,8 +846,7 @@ public class MultiplayerState extends BaseAppState {
                     // offline, the code may be stale, or this network's NAT may not be
                     // traversable even with active punching (Phase D has no guarantee against a
                     // symmetric NAT on either side).
-                    joinError = "Could not connect - the host may be offline, or this connection "
-                            + "couldn't be established over the internet.";
+                    joinError = I18n.t("multiplayer.error_connect_timeout");
                     statusLabel.setColor(Theme.ORANGE);
                     statusLabel.setText(joinError);
                     netClient.close();
@@ -861,7 +862,7 @@ public class MultiplayerState extends BaseAppState {
                         netClient.sendHello();
                     }
                     if (joinTimeoutTimer >= 4f && joinTimeoutTimer - tpf < 4f) {
-                        statusLabel.setText("Still trying... (this can take longer over the internet)");
+                        statusLabel.setText(I18n.t("multiplayer.still_trying"));
                     }
                 }
             }

@@ -18,6 +18,7 @@ public class GameSettings {
     private boolean fullscreen = false;
     private Resolution resolution = Resolution.R_1280x720;
     private AiDifficulty aiDifficulty = AiDifficulty.NORMAL;
+    private Lang language = Lang.EN;
 
     public int getSaveVersion() {
         return saveVersion;
@@ -105,6 +106,14 @@ public class GameSettings {
 
     public void setAiDifficulty(AiDifficulty aiDifficulty) {
         this.aiDifficulty = aiDifficulty == null ? AiDifficulty.NORMAL : aiDifficulty;
+    }
+
+    public Lang getLanguage() {
+        return language == null ? Lang.EN : language;
+    }
+
+    public void setLanguage(Lang language) {
+        this.language = language == null ? Lang.EN : language;
     }
 
     private static float clamp(float value, float min, float max) {

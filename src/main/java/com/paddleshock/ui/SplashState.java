@@ -14,6 +14,7 @@ import com.simsilica.lemur.component.QuadBackgroundComponent;
 import com.simsilica.lemur.Container;
 
 import com.paddleshock.app.PaddleShockApp;
+import com.paddleshock.i18n.I18n;
 
 /** Studio splash: shows the MentorHub Gaming mark, then advances to the main menu. */
 public class SplashState extends BaseAppState implements ActionListener {
@@ -44,7 +45,7 @@ public class SplashState extends BaseAppState implements ActionListener {
         background.setLocalTranslation(0, screenH, 0);
         uiRoot.attachChild(background);
 
-        Label presents = new Label("PRESENTS");
+        Label presents = new Label(I18n.t("splash.presents"));
         presents.setFontSize(14);
         presents.setColor(Theme.TEXT_DIM);
         Vector3f presentsSize = presents.getPreferredSize();
@@ -60,10 +61,10 @@ public class SplashState extends BaseAppState implements ActionListener {
         mark.setLocalTranslation(screenW / 2f - markSize / 2f, markTopY, 1);
         uiRoot.attachChild(mark);
 
-        Label mentorLabel = new Label("MENTORHUB");
+        Label mentorLabel = new Label(I18n.t("splash.wordmark.mentorhub"));
         mentorLabel.setFontSize(30);
         mentorLabel.setColor(Theme.TEXT);
-        Label gamingLabel = new Label(" GAMING");
+        Label gamingLabel = new Label(" " + I18n.t("splash.wordmark.gaming"));
         gamingLabel.setFontSize(30);
         gamingLabel.setColor(Theme.ORANGE);
 
@@ -74,13 +75,13 @@ public class SplashState extends BaseAppState implements ActionListener {
         uiRoot.attachChild(mentorLabel);
         uiRoot.attachChild(gamingLabel);
 
-        Label tagBuild = new Label("games.build()");
+        Label tagBuild = new Label(I18n.t("splash.tag.build"));
         tagBuild.setFontSize(14);
         tagBuild.setColor(new com.jme3.math.ColorRGBA(0.545f, 0.902f, 0.682f, 1f));
-        Label tagAnd = new Label(" && ");
+        Label tagAnd = new Label(" " + I18n.t("splash.tag.and") + " ");
         tagAnd.setFontSize(14);
         tagAnd.setColor(Theme.TEXT_DIM);
-        Label tagDeliver = new Label("systems.deliver()");
+        Label tagDeliver = new Label(I18n.t("splash.tag.deliver"));
         tagDeliver.setFontSize(14);
         tagDeliver.setColor(Theme.ORANGE);
 

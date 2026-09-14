@@ -15,6 +15,7 @@ import com.simsilica.lemur.Label;
 import com.simsilica.lemur.component.SpringGridLayout;
 
 import com.paddleshock.app.PaddleShockApp;
+import com.paddleshock.i18n.I18n;
 import com.paddleshock.data.BallDefinition;
 import com.paddleshock.data.Catalog;
 import com.paddleshock.data.PaddleDefinition;
@@ -111,7 +112,7 @@ public class StoreState extends BaseAppState {
         panel.setBackground(quad(Theme.PANEL));
         panel.setInsets(new Insets3f(20, 26, 20, 26));
 
-        Label title = panel.addChild(new Label("STORE"));
+        Label title = panel.addChild(new Label(I18n.t("store.title")));
         title.setFontSize(22);
         title.setColor(Theme.ORANGE);
         title.setInsets(new Insets3f(0, 0, 2, 0));
@@ -122,16 +123,16 @@ public class StoreState extends BaseAppState {
 
         Container tabs = panel.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
         tabs.setInsets(new Insets3f(0, 0, 12, 0));
-        addTab(tabs, app, "PADDLES", "paddle");
-        addTab(tabs, app, "TABLES", "table");
-        addTab(tabs, app, "BALLS", "ball");
-        addTab(tabs, app, "POWER-UPS", "powerup");
+        addTab(tabs, app, I18n.t("store.tab_paddles"), "paddle");
+        addTab(tabs, app, I18n.t("store.tab_tables"), "table");
+        addTab(tabs, app, I18n.t("store.tab_balls"), "ball");
+        addTab(tabs, app, I18n.t("store.tab_powerups"), "powerup");
 
         Container cardsRow = panel.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
         cardsRow.setInsets(new Insets3f(0, 0, 16, 0));
         populateCards(cardsRow, app, profile);
 
-        Button close = panel.addChild(new Button("CLOSE"));
+        Button close = panel.addChild(new Button(I18n.t("store.close")));
         close.setBackground(quad(Theme.ORANGE));
         close.setColor(Theme.ON_ACCENT);
         close.setFontSize(15);
@@ -162,7 +163,7 @@ public class StoreState extends BaseAppState {
         headerBar.setLocalTranslation(0, screenH, 1);
         uiRoot.attachChild(headerBar);
 
-        Button back = new Button("< BACK");
+        Button back = new Button(I18n.t("store.back"));
         back.setBackground(quad(Theme.PANEL_HOVER));
         back.setColor(Theme.TEXT);
         back.setFontSize(15);
@@ -176,7 +177,7 @@ public class StoreState extends BaseAppState {
         });
         uiRoot.attachChild(back);
 
-        Label title = new Label("STORE");
+        Label title = new Label(I18n.t("store.title"));
         title.setFontSize(26);
         title.setColor(Theme.ORANGE);
         Vector3f titleSize = title.getPreferredSize();
@@ -184,10 +185,10 @@ public class StoreState extends BaseAppState {
         uiRoot.attachChild(title);
 
         Container tabs = new Container(new SpringGridLayout(Axis.X, Axis.Y));
-        addTab(tabs, app, "PADDLES", "paddle");
-        addTab(tabs, app, "TABLES", "table");
-        addTab(tabs, app, "BALLS", "ball");
-        addTab(tabs, app, "POWER-UPS", "powerup");
+        addTab(tabs, app, I18n.t("store.tab_paddles"), "paddle");
+        addTab(tabs, app, I18n.t("store.tab_tables"), "table");
+        addTab(tabs, app, I18n.t("store.tab_balls"), "ball");
+        addTab(tabs, app, I18n.t("store.tab_powerups"), "powerup");
         Vector3f tabsSize = tabs.getPreferredSize();
         tabs.setLocalTranslation((screenW - tabsSize.x) / 2f, screenH - (HEADER_HEIGHT - tabsSize.y) / 2f, 2);
         uiRoot.attachChild(tabs);
@@ -212,7 +213,7 @@ public class StoreState extends BaseAppState {
         dot.setPreferredSize(new Vector3f(10, 10, 0));
         dot.setInsets(new Insets3f(2, 0, 2, 8));
 
-        Label label = pill.addChild(new Label(profile.getCurrency() + " CREDITS"));
+        Label label = pill.addChild(new Label(I18n.t("store.credits", profile.getCurrency())));
         label.setColor(Theme.ORANGE);
         label.setFontSize(16);
         return pill;
@@ -259,21 +260,23 @@ public class StoreState extends BaseAppState {
         switch (selectedCategory) {
             case "paddle" -> {
                 for (PaddleDefinition item : Catalog.PADDLES) {
-                    String[] stats = { "SPEED " + percent(item.getSpeedMultiplier()), "SIZE " + percent(item.getSizeMultiplier()) };
+                    String[] stats = { I18n.t("store.stat_speed", percent(item.getSpeedMultiplier())),
+                            I18n.t("store.stat_size", percent(item.getSizeMultiplier())) };
                     addCard(cardsRow, app, profile, "paddle", item.getId(), item.getDisplayName(),
                             item.getPrice(), item.getColor(), stats);
                 }
             }
             case "table" -> {
                 for (TableDefinition item : Catalog.TABLES) {
-                    String[] stats = { "BOUNCE " + percent(item.getRestitutionMultiplier()) };
+                    String[] stats = { I18n.t("store.stat_bounce", percent(item.getRestitutionMultiplier())) };
                     addCard(cardsRow, app, profile, "table", item.getId(), item.getDisplayName(),
                             item.getPrice(), item.getSurfaceColor(), stats);
                 }
             }
             case "ball" -> {
                 for (BallDefinition item : Catalog.BALLS) {
-                    String[] stats = { "SPEED " + percent(item.getSpeedMultiplier()), "SIZE " + percent(item.getSizeMultiplier()) };
+                    String[] stats = { I18n.t("store.stat_speed", percent(item.getSpeedMultiplier())),
+                            I18n.t("store.stat_size", percent(item.getSizeMultiplier())) };
                     addCard(cardsRow, app, profile, "ball", item.getId(), item.getDisplayName(),
                             item.getPrice(), item.getColor(), stats);
                 }
@@ -310,7 +313,7 @@ public class StoreState extends BaseAppState {
         name.setFontSize(20);
         name.setColor(owned || equipped ? Theme.TEXT : Theme.TEXT_DIM);
 
-        String statusText = equipped ? "EQUIPPED" : owned ? "OWNED" : price + " credits";
+        String statusText = equipped ? I18n.t("store.equipped") : owned ? I18n.t("store.owned") : I18n.t("store.price_credits", price);
         Label status = card.addChild(new Label(statusText));
         status.setInsets(new Insets3f(0, 16, 4, 16));
         status.setFontSize(14);
@@ -328,7 +331,7 @@ public class StoreState extends BaseAppState {
             }
         }
 
-        String actionLabel = equipped ? "EQUIPPED" : owned ? "EQUIP" : "BUY " + price;
+        String actionLabel = equipped ? I18n.t("store.equipped") : owned ? I18n.t("store.equip") : I18n.t("store.buy_price", price);
         ColorRGBA actionBg = equipped ? Theme.GREEN_DIM : owned ? Theme.BLUE : Theme.ORANGE;
         ColorRGBA actionFg = equipped ? Theme.GREEN : Theme.ON_ACCENT;
 
@@ -378,16 +381,16 @@ public class StoreState extends BaseAppState {
         name.setFontSize(20);
         name.setColor(owned ? Theme.TEXT : Theme.TEXT_DIM);
 
-        String statusText = assignedSlot >= 0 ? "KEY " + (assignedSlot + 1)
-                : owned ? "OWNED" : item.getPrice() + " credits";
+        String statusText = assignedSlot >= 0 ? I18n.t("store.key_slot", assignedSlot + 1)
+                : owned ? I18n.t("store.owned") : I18n.t("store.price_credits", item.getPrice());
         Label status = card.addChild(new Label(statusText));
         status.setInsets(new Insets3f(0, 16, 4, 16));
         status.setFontSize(14);
         status.setColor(Theme.TEXT_DIM);
 
         String[] statTags = {
-            "COOLDOWN " + Math.round(item.getCooldownSeconds()) + "s",
-            "DURATION " + Math.round(item.getType().getDuration()) + "s"
+            I18n.t("store.stat_cooldown", Math.round(item.getCooldownSeconds())),
+            I18n.t("store.stat_duration", Math.round(item.getType().getDuration()))
         };
         addStatTags(card, statTags);
 
@@ -400,7 +403,7 @@ public class StoreState extends BaseAppState {
                 winsLabel.setColor(Theme.TEXT_DIM);
             }
 
-            Button buy = card.addChild(new Button("BUY " + item.getPrice()));
+            Button buy = card.addChild(new Button(I18n.t("store.buy_price", item.getPrice())));
             buy.setInsets(new Insets3f(10, 16, 14, 16));
             buy.setBackground(quad(Theme.ORANGE));
             buy.setColor(Theme.ON_ACCENT);
@@ -417,7 +420,7 @@ public class StoreState extends BaseAppState {
             slots.setInsets(new Insets3f(10, 16, 14, 16));
             for (int i = 0; i < 3; i++) {
                 boolean isThisSlot = i == assignedSlot;
-                Button slotButton = slots.addChild(new Button("KEY " + (i + 1)));
+                Button slotButton = slots.addChild(new Button(I18n.t("store.key_slot", i + 1)));
                 slotButton.setBackground(quad(isThisSlot ? Theme.GREEN_DIM : Theme.PANEL_HOVER));
                 slotButton.setColor(isThisSlot ? Theme.GREEN : Theme.TEXT);
                 slotButton.setFontSize(13);
@@ -462,7 +465,7 @@ public class StoreState extends BaseAppState {
         if (wins <= 0) {
             return null;
         }
-        return "~" + wins + (wins == 1 ? " more win to unlock" : " more wins to unlock");
+        return wins == 1 ? I18n.t("store.wins_hint_one", wins) : I18n.t("store.wins_hint_many", wins);
     }
 
     private static String percent(float multiplier) {

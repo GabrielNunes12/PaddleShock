@@ -25,6 +25,7 @@ import com.simsilica.lemur.component.SpringGridLayout;
 
 import com.paddleshock.GameConstants;
 import com.paddleshock.app.PaddleShockApp;
+import com.paddleshock.i18n.I18n;
 import com.paddleshock.net.NetClient;
 import com.paddleshock.net.NetHost;
 import com.paddleshock.net.StunClient;
@@ -104,31 +105,31 @@ public class TournamentState extends BaseAppState {
     // ============================== create / join ==============================
 
     private void buildCreateJoin(PaddleShockApp app, Container panel) {
-        Label title = panel.addChild(new Label("TOURNAMENT"));
+        Label title = panel.addChild(new Label(I18n.t("tournament.title")));
         title.setFontSize(26);
         title.setColor(Theme.BLUE);
         title.setInsets(new Insets3f(0, 0, 4, 0));
 
-        Label sub = panel.addChild(new Label("Create a bracket for you and friends, or join one with a code."));
+        Label sub = panel.addChild(new Label(I18n.t("tournament.subtitle")));
         sub.setFontSize(12);
         sub.setColor(Theme.TEXT_DIM);
         sub.setInsets(new Insets3f(0, 0, 18, 0));
 
-        Label sizeLabel = panel.addChild(new Label("Tournament size"));
+        Label sizeLabel = panel.addChild(new Label(I18n.t("tournament.size_label")));
         sizeLabel.setFontSize(13);
         sizeLabel.setColor(Theme.TEXT);
         sizeLabel.setInsets(new Insets3f(0, 0, 6, 0));
 
         Container sizeRow = panel.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
         sizeRow.setInsets(new Insets3f(0, 0, 14, 0));
-        Button size4 = sizeRow.addChild(new Button("4 PLAYERS"));
+        Button size4 = sizeRow.addChild(new Button(I18n.t("tournament.size_4")));
         styleToggle(size4, selectedMaxPlayers == 4);
         size4.addClickCommands(source -> {
             app.getAudioManager().playSfx("button_click.ogg");
             selectedMaxPlayers = 4;
             rebuild();
         });
-        Button size8 = sizeRow.addChild(new Button("8 PLAYERS"));
+        Button size8 = sizeRow.addChild(new Button(I18n.t("tournament.size_8")));
         size8.setInsets(new Insets3f(0, 0, 0, 10));
         styleToggle(size8, selectedMaxPlayers == 8);
         size8.addClickCommands(source -> {
@@ -137,7 +138,7 @@ public class TournamentState extends BaseAppState {
             rebuild();
         });
 
-        Button create = panel.addChild(new Button("CREATE TOURNAMENT"));
+        Button create = panel.addChild(new Button(I18n.t("tournament.create")));
         styleButton(create, Theme.ORANGE, Theme.ON_ACCENT, 17);
         create.setPreferredSize(new Vector3f(CARD_CONTENT_WIDTH, 48, 0));
         create.setInsets(new Insets3f(0, 0, 20, 0));
@@ -151,7 +152,7 @@ public class TournamentState extends BaseAppState {
         divider.setPreferredSize(new Vector3f(CARD_CONTENT_WIDTH, 1, 0));
         divider.setInsets(new Insets3f(0, 0, 18, 0));
 
-        Label joinHint = panel.addChild(new Label("Have a code?"));
+        Label joinHint = panel.addChild(new Label(I18n.t("tournament.have_code")));
         joinHint.setFontSize(12);
         joinHint.setColor(Theme.TEXT_DIM);
         joinHint.setInsets(new Insets3f(0, 0, 6, 0));
@@ -170,13 +171,13 @@ public class TournamentState extends BaseAppState {
             errorLabel.setInsets(new Insets3f(10, 0, 4, 0));
         }
         if (actionPending) {
-            Label pending = panel.addChild(new Label("Working..."));
+            Label pending = panel.addChild(new Label(I18n.t("tournament.working")));
             pending.setFontSize(12);
             pending.setColor(Theme.TEXT_DIM);
             pending.setInsets(new Insets3f(10, 0, 4, 0));
         }
 
-        Button join = panel.addChild(new Button("JOIN"));
+        Button join = panel.addChild(new Button(I18n.t("tournament.join")));
         styleButton(join, Theme.PANEL_HOVER, Theme.TEXT, 16);
         join.setPreferredSize(new Vector3f(CARD_CONTENT_WIDTH, 46, 0));
         join.setInsets(new Insets3f(12, 0, 0, 0));
@@ -218,7 +219,7 @@ public class TournamentState extends BaseAppState {
                 // players list and pick up the full state in one round trip.
                 result = TournamentClient.joinTournament(newCode, hostPlayerId, hint);
             } catch (IOException e) {
-                error = e.getMessage() == null ? "the tournament service is unreachable" : e.getMessage();
+                error = e.getMessage() == null ? I18n.t("tournament.service_unreachable") : e.getMessage();
             }
             if (actionGeneration.get() != myGeneration) {
                 return; // superseded (screen left, or another action started) - discard
@@ -236,7 +237,7 @@ public class TournamentState extends BaseAppState {
             return;
         }
         if (enteredCode.isEmpty()) {
-            createJoinError = "Enter a tournament code.";
+            createJoinError = I18n.t("tournament.error_enter_code");
             rebuild();
             return;
         }
@@ -254,7 +255,7 @@ public class TournamentState extends BaseAppState {
             try {
                 result = TournamentClient.joinTournament(enteredCode, playerId, hint);
             } catch (IOException e) {
-                error = e.getMessage() == null ? "the tournament service is unreachable" : e.getMessage();
+                error = e.getMessage() == null ? I18n.t("tournament.service_unreachable") : e.getMessage();
             }
             if (actionGeneration.get() != myGeneration) {
                 return;
@@ -269,7 +270,7 @@ public class TournamentState extends BaseAppState {
 
     private static String shortId(String playerId) {
         String id = playerId == null ? "" : playerId.replace("-", "");
-        return "Player-" + (id.length() >= 8 ? id.substring(0, 8) : id).toUpperCase();
+        return I18n.t("tournament.player_prefix") + (id.length() >= 8 ? id.substring(0, 8) : id).toUpperCase();
     }
 
     // ============================== waiting room ==============================
@@ -277,17 +278,17 @@ public class TournamentState extends BaseAppState {
     private void buildWaiting(PaddleShockApp app, Container panel) {
         boolean isHost = state != null && app.getProfile().getPlayerId().equals(state.getHostPlayerId());
 
-        Label title = panel.addChild(new Label("TOURNAMENT LOBBY"));
+        Label title = panel.addChild(new Label(I18n.t("tournament.lobby_title")));
         title.setFontSize(26);
         title.setColor(Theme.BLUE);
         title.setInsets(new Insets3f(0, 0, 4, 0));
 
         Container codeRow = panel.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
         codeRow.setInsets(new Insets3f(0, 0, 4, 0));
-        Label codeLabel = codeRow.addChild(new Label("Code: " + code));
+        Label codeLabel = codeRow.addChild(new Label(I18n.t("tournament.code_label", code)));
         codeLabel.setFontSize(20);
         codeLabel.setColor(Theme.ORANGE);
-        Button copyButton = codeRow.addChild(new Button("COPY"));
+        Button copyButton = codeRow.addChild(new Button(I18n.t("tournament.copy")));
         copyButton.setInsets(new Insets3f(0, 12, 0, 0));
         copyButton.setBackground(new QuadBackgroundComponent(Theme.PANEL_HOVER));
         copyButton.setColor(Theme.TEXT);
@@ -297,7 +298,7 @@ public class TournamentState extends BaseAppState {
             copyToClipboard(code);
         });
 
-        Label hint = panel.addChild(new Label(isHost ? "Share this code so others can join." : "Waiting on the host to start."));
+        Label hint = panel.addChild(new Label(isHost ? I18n.t("tournament.share_code_hint") : I18n.t("tournament.waiting_host_hint")));
         hint.setFontSize(12);
         hint.setColor(Theme.TEXT_DIM);
         hint.setInsets(new Insets3f(0, 0, 16, 0));
@@ -313,25 +314,25 @@ public class TournamentState extends BaseAppState {
             if (i < players.size()) {
                 TournamentClient.PlayerEntry entry = players.get(i);
                 Label slot = row.addChild(new Label(entry.displayName()
-                        + (entry.getPlayerId().equals(state.getHostPlayerId()) ? " (host)" : "")));
+                        + (entry.getPlayerId().equals(state.getHostPlayerId()) ? I18n.t("tournament.host_suffix") : "")));
                 slot.setFontSize(14);
                 slot.setColor(Theme.TEXT);
             } else {
-                Label slot = row.addChild(new Label("(waiting for a player...)"));
+                Label slot = row.addChild(new Label(I18n.t("tournament.waiting_for_player")));
                 slot.setFontSize(14);
                 slot.setColor(Theme.TEXT_DIM2);
             }
         }
 
         if (pollError.get() != null && state == null) {
-            Label errorLabel = panel.addChild(new Label("Couldn't load the lobby: " + pollError.get()));
+            Label errorLabel = panel.addChild(new Label(I18n.t("tournament.error_load_lobby", pollError.get())));
             errorLabel.setFontSize(12);
             errorLabel.setColor(Theme.ORANGE);
             errorLabel.setInsets(new Insets3f(0, 0, 12, 0));
         }
         String startErr = startError.get();
         if (startErr != null) {
-            Label errorLabel = panel.addChild(new Label("Couldn't start: " + startErr));
+            Label errorLabel = panel.addChild(new Label(I18n.t("tournament.error_start", startErr)));
             errorLabel.setFontSize(12);
             errorLabel.setColor(Theme.ORANGE);
             errorLabel.setInsets(new Insets3f(0, 0, 12, 0));
@@ -339,7 +340,7 @@ public class TournamentState extends BaseAppState {
 
         boolean full = players.size() >= max;
         if (isHost && full) {
-            Button start = panel.addChild(new Button("START TOURNAMENT"));
+            Button start = panel.addChild(new Button(I18n.t("tournament.start")));
             styleButton(start, Theme.GREEN, Theme.ON_ACCENT, 17);
             start.setPreferredSize(new Vector3f(CARD_CONTENT_WIDTH, 48, 0));
             start.setInsets(new Insets3f(0, 0, 0, 0));
@@ -348,11 +349,11 @@ public class TournamentState extends BaseAppState {
                 beginStart(app);
             });
         } else if (!full) {
-            Label waiting = panel.addChild(new Label("Waiting for more players..."));
+            Label waiting = panel.addChild(new Label(I18n.t("tournament.waiting_more_players")));
             waiting.setFontSize(13);
             waiting.setColor(Theme.TEXT_DIM);
         } else {
-            Label waiting = panel.addChild(new Label("Full - waiting for the host to start..."));
+            Label waiting = panel.addChild(new Label(I18n.t("tournament.full_waiting_host")));
             waiting.setFontSize(13);
             waiting.setColor(Theme.TEXT_DIM);
         }
@@ -371,7 +372,7 @@ public class TournamentState extends BaseAppState {
                 TournamentClient.State result = TournamentClient.startTournament(tournamentCode, hostPlayerId);
                 pollResult.set(result);
             } catch (IOException e) {
-                startError.set(e.getMessage() == null ? "the tournament service is unreachable" : e.getMessage());
+                startError.set(e.getMessage() == null ? I18n.t("tournament.service_unreachable") : e.getMessage());
             }
             startPending = false;
         }, "tournament-start");
@@ -384,12 +385,12 @@ public class TournamentState extends BaseAppState {
     private void buildBracket(PaddleShockApp app, Container panel) {
         String myId = app.getProfile().getPlayerId();
 
-        Label title = panel.addChild(new Label("BRACKET"));
+        Label title = panel.addChild(new Label(I18n.t("tournament.bracket_title")));
         title.setFontSize(26);
         title.setColor(Theme.BLUE);
         title.setInsets(new Insets3f(0, 0, 4, 0));
 
-        Label codeLabel = panel.addChild(new Label("Code: " + code));
+        Label codeLabel = panel.addChild(new Label(I18n.t("tournament.code_label", code)));
         codeLabel.setFontSize(13);
         codeLabel.setColor(Theme.TEXT_DIM);
         codeLabel.setInsets(new Insets3f(0, 0, 14, 0));
@@ -400,7 +401,7 @@ public class TournamentState extends BaseAppState {
             Container banner = panel.addChild(new Container(new SpringGridLayout(Axis.Y, Axis.X)));
             banner.setBackground(new QuadBackgroundComponent(iWon ? Theme.GREEN_DIM : Theme.ORANGE_DIM));
             banner.setInsets(new Insets3f(10, 14, 10, 14));
-            Label championLabel = banner.addChild(new Label(iWon ? "YOU ARE THE CHAMPION!" : "CHAMPION: " + displayNameFor(champion)));
+            Label championLabel = banner.addChild(new Label(iWon ? I18n.t("tournament.you_are_champion") : I18n.t("tournament.champion_label", displayNameFor(champion))));
             championLabel.setFontSize(18);
             championLabel.setColor(iWon ? Theme.GREEN : Theme.ORANGE);
             banner.setInsets(new Insets3f(0, 0, 16, 0));
@@ -438,7 +439,7 @@ public class TournamentState extends BaseAppState {
             }
         }
         if (rounds.isEmpty()) {
-            Label empty = panel.addChild(new Label("Bracket not generated yet."));
+            Label empty = panel.addChild(new Label(I18n.t("tournament.bracket_not_generated")));
             empty.setFontSize(13);
             empty.setColor(Theme.TEXT_DIM);
             empty.setInsets(new Insets3f(0, 0, 16, 0));
@@ -461,10 +462,10 @@ public class TournamentState extends BaseAppState {
     private String roundName(int index, int total) {
         int remaining = total - index;
         return switch (remaining) {
-            case 1 -> "FINAL";
-            case 2 -> "SEMIFINALS";
-            case 3 -> "QUARTERFINALS";
-            default -> "ROUND " + (index + 1);
+            case 1 -> I18n.t("tournament.round_final");
+            case 2 -> I18n.t("tournament.round_semifinals");
+            case 3 -> I18n.t("tournament.round_quarterfinals");
+            default -> I18n.t("tournament.round_n", index + 1);
         };
     }
 
@@ -505,22 +506,22 @@ public class TournamentState extends BaseAppState {
             boolean isJoiningThis = joiningRoundIndex == roundIndex && joiningMatchIndex == matchIndex;
 
             if (p1 == null || p2 == null) {
-                Label waiting = card.addChild(new Label("waiting for opponent..."));
+                Label waiting = card.addChild(new Label(I18n.t("tournament.match_waiting_opponent")));
                 waiting.setFontSize(11);
                 waiting.setColor(Theme.TEXT_DIM);
                 waiting.setInsets(new Insets3f(6, 0, 0, 0));
             } else if (iAmP1 && lobbyCode == null) {
                 if (isHostingThis && (matchHostPending || matchLobbyCode.get() != null)) {
                     String hosted = matchLobbyCode.get();
-                    String text = matchHostError.get() != null ? "Error: " + matchHostError.get()
-                            : hosted != null ? "Code " + hosted + " - waiting for opponent..."
-                            : "Setting up match...";
+                    String text = matchHostError.get() != null ? I18n.t("tournament.match_error", matchHostError.get())
+                            : hosted != null ? I18n.t("tournament.match_code_waiting", hosted)
+                            : I18n.t("tournament.match_setting_up");
                     Label statusLabel = card.addChild(new Label(text));
                     statusLabel.setFontSize(10);
                     statusLabel.setColor(matchHostError.get() != null ? Theme.ORANGE : Theme.TEXT_DIM);
                     statusLabel.setInsets(new Insets3f(6, 0, 0, 0));
                 } else {
-                    Button hostBtn = card.addChild(new Button("HOST THIS MATCH"));
+                    Button hostBtn = card.addChild(new Button(I18n.t("tournament.host_this_match")));
                     styleSmallButton(hostBtn, Theme.ORANGE, Theme.ON_ACCENT);
                     hostBtn.setInsets(new Insets3f(6, 0, 0, 0));
                     hostBtn.addClickCommands(source -> {
@@ -534,12 +535,12 @@ public class TournamentState extends BaseAppState {
                 // fresh screen visit that finds a match already being hosted) - show the same
                 // "waiting for opponent" message either way rather than falling through to the
                 // generic "waiting..." below.
-                Label statusLabel = card.addChild(new Label("Code " + lobbyCode + " - waiting for opponent..."));
+                Label statusLabel = card.addChild(new Label(I18n.t("tournament.match_code_waiting", lobbyCode)));
                 statusLabel.setFontSize(10);
                 statusLabel.setColor(Theme.TEXT_DIM);
                 statusLabel.setInsets(new Insets3f(6, 0, 0, 0));
             } else if (iAmP2 && lobbyCode != null && !isJoiningThis) {
-                Button joinBtn = card.addChild(new Button("JOIN MATCH"));
+                Button joinBtn = card.addChild(new Button(I18n.t("tournament.join_match")));
                 styleSmallButton(joinBtn, Theme.BLUE, Theme.ON_ACCENT);
                 joinBtn.setInsets(new Insets3f(6, 0, 0, 0));
                 joinBtn.addClickCommands(source -> {
@@ -547,12 +548,12 @@ public class TournamentState extends BaseAppState {
                     beginJoiningBracketMatch(app, roundIndex, matchIndex, lobbyCode);
                 });
             } else if (isJoiningThis) {
-                Label statusLabel = card.addChild(new Label(matchJoinError != null ? matchJoinError : "Connecting..."));
+                Label statusLabel = card.addChild(new Label(matchJoinError != null ? matchJoinError : I18n.t("tournament.connecting")));
                 statusLabel.setFontSize(10);
                 statusLabel.setColor(matchJoinError != null ? Theme.ORANGE : Theme.TEXT_DIM);
                 statusLabel.setInsets(new Insets3f(6, 0, 0, 0));
             } else {
-                Label waiting = card.addChild(new Label(iAmP2 ? "waiting for host to start match..." : "waiting..."));
+                Label waiting = card.addChild(new Label(iAmP2 ? I18n.t("tournament.waiting_host_start_match") : I18n.t("tournament.waiting_generic")));
                 waiting.setFontSize(11);
                 waiting.setColor(Theme.TEXT_DIM);
                 waiting.setInsets(new Insets3f(6, 0, 0, 0));
@@ -569,7 +570,7 @@ public class TournamentState extends BaseAppState {
     }
 
     private void addPlayerRow(Container card, String playerId, String winner) {
-        String label = playerId == null ? "TBD" : displayNameFor(playerId);
+        String label = playerId == null ? I18n.t("tournament.tbd") : displayNameFor(playerId);
         boolean won = playerId != null && playerId.equals(winner);
         boolean lost = winner != null && playerId != null && !playerId.equals(winner);
         Label row = card.addChild(new Label((won ? "* " : "") + label));
@@ -608,7 +609,7 @@ public class TournamentState extends BaseAppState {
             try {
                 matchNetHost = app.startHostMatch(0, false);
             } catch (SocketException e2) {
-                matchHostError.set("Could not open a UDP port: " + e2.getMessage());
+                matchHostError.set(I18n.t("tournament.error_udp_port", e2.getMessage()));
                 rebuild();
                 return;
             }
@@ -624,7 +625,7 @@ public class TournamentState extends BaseAppState {
         NetHost hostRef = matchNetHost;
         if (hostRef.getPublicAddress() == null) {
             matchHostPending = false;
-            matchHostError.set("no public address available for internet play");
+            matchHostError.set(I18n.t("tournament.error_no_public_address"));
             rebuild();
             return;
         }
@@ -652,7 +653,7 @@ public class TournamentState extends BaseAppState {
                 try {
                     TournamentClient.setTournamentMatchLobbyCode(tournamentCode, roundIndex, matchIndex, selfId, lobbyCode);
                 } catch (IOException e) {
-                    matchHostError.set("Could not publish lobby code: " + e.getMessage());
+                    matchHostError.set(I18n.t("tournament.error_publish_code", e.getMessage()));
                 }
                 hostRef.pollAndPunchUntilJoined(lobbyCode);
             }
@@ -674,7 +675,7 @@ public class TournamentState extends BaseAppState {
         try {
             matchNetClient = app.joinMatchByLobbyCode(lobbyCode);
         } catch (IOException e) {
-            matchJoinError = "Could not connect: " + e.getMessage();
+            matchJoinError = I18n.t("tournament.error_could_not_connect", e.getMessage());
         }
         rebuild();
     }
@@ -723,7 +724,7 @@ public class TournamentState extends BaseAppState {
         card.setLocalTranslation((screenW - cardSize.x) / 2f, cardTopY, 1);
         uiRoot.attachChild(card);
 
-        Button back = new Button("BACK");
+        Button back = new Button(I18n.t("tournament.back"));
         styleButton(back, Theme.PANEL_HOVER, Theme.TEXT, 14);
         back.addClickCommands(source -> {
             app.getAudioManager().playSfx("button_click.ogg");
@@ -756,7 +757,7 @@ public class TournamentState extends BaseAppState {
             try {
                 result = TournamentClient.getTournamentState(tournamentCode);
             } catch (IOException e) {
-                error = e.getMessage() == null ? "the tournament service is unreachable" : e.getMessage();
+                error = e.getMessage() == null ? I18n.t("tournament.service_unreachable") : e.getMessage();
             }
             if (pollGeneration.get() != myGeneration) {
                 return; // superseded - discard
@@ -850,14 +851,14 @@ public class TournamentState extends BaseAppState {
                 app.enterJoinedMatch(handoff);
                 return;
             } else if (matchNetClient.isRejected()) {
-                matchJoinError = "Host already has an opponent connected.";
+                matchJoinError = I18n.t("tournament.error_host_full");
                 matchNetClient.close();
                 matchNetClient = null;
                 rebuild();
             } else {
                 matchJoinTimeoutTimer += tpf;
                 if (matchJoinTimeoutTimer >= JOIN_TIMEOUT_SECONDS) {
-                    matchJoinError = "Could not connect to the match host.";
+                    matchJoinError = I18n.t("tournament.error_connect_host_failed");
                     matchNetClient.close();
                     matchNetClient = null;
                     rebuild();

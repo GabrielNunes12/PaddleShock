@@ -27,6 +27,7 @@ import com.simsilica.lemur.component.SpringGridLayout;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.paddleshock.GameConstants;
+import com.paddleshock.i18n.I18n;
 import com.paddleshock.app.GameplayAppState;
 import com.paddleshock.app.PaddleShockApp;
 import com.paddleshock.net.NetClient;
@@ -340,7 +341,7 @@ public class MatchEndState extends BaseAppState {
 
         float bannerWidth = 380;
         attachAngledQuad(centerX - bannerWidth / 2f, topY, 84, 12, bannerWidth, bannerWidth, 0, Theme.PANEL_HOVER, 1);
-        attachText(centerX - bannerWidth / 2f + 30, topY - 30, "CONNECTION LOST", 30, Theme.TEXT);
+        attachText(centerX - bannerWidth / 2f + 30, topY - 30, I18n.t("matchend.connection_lost"), 30, Theme.TEXT);
 
         float scoreY = topY - 84 - 24;
         float scoreWidth = 320;
@@ -348,11 +349,11 @@ public class MatchEndState extends BaseAppState {
         attachScoreboard(centerX - scoreWidth / 2f, scoreWidth, scoreY, 108, playerScore, opponentScore, Theme.TEXT_DIM, Theme.TEXT_DIM);
 
         float consolationY = scoreY - 108 - 20;
-        attachCenteredText(centerX, consolationY, "Your opponent disconnected. No result was recorded.", 15, Theme.TEXT_DIM);
+        attachCenteredText(centerX, consolationY, I18n.t("matchend.connection_lost_desc"), 15, Theme.TEXT_DIM);
 
         Container actions = new Container(new SpringGridLayout(Axis.Y, Axis.X));
-        addMenuButton(actions, "MULTIPLAYER", Theme.ORANGE, Theme.ON_ACCENT, app::showMultiplayer);
-        addMenuButton(actions, "MAIN MENU", Theme.PANEL_HOVER, Theme.TEXT, app::showMainMenu);
+        addMenuButton(actions, I18n.t("matchend.multiplayer"), Theme.ORANGE, Theme.ON_ACCENT, app::showMultiplayer);
+        addMenuButton(actions, I18n.t("matchend.main_menu"), Theme.PANEL_HOVER, Theme.TEXT, app::showMainMenu);
         Vector3f actionsSize = actions.getPreferredSize();
         actions.setLocalTranslation(centerX - actionsSize.x / 2f, consolationY - 24, 2);
         uiRoot.attachChild(actions);
@@ -364,21 +365,21 @@ public class MatchEndState extends BaseAppState {
     private void attachRematchControls(PaddleShockApp app, Container actions) {
         switch (rematchPhase) {
             case REQUESTED_LOCAL -> {
-                Label waiting = actions.addChild(new Label("Waiting for opponent to accept rematch..."));
+                Label waiting = actions.addChild(new Label(I18n.t("matchend.waiting_rematch")));
                 waiting.setFontSize(13);
                 waiting.setColor(Theme.TEXT_DIM);
                 waiting.setInsets(new Insets3f(6, 0, 6, 0));
-                addMenuButton(actions, "CANCEL", Theme.PANEL_HOVER, Theme.TEXT, this::onCancelRematchClicked);
+                addMenuButton(actions, I18n.t("matchend.cancel"), Theme.PANEL_HOVER, Theme.TEXT, this::onCancelRematchClicked);
             }
             case REQUESTED_REMOTE -> {
-                Label prompt = actions.addChild(new Label("Opponent wants a rematch!"));
+                Label prompt = actions.addChild(new Label(I18n.t("matchend.opponent_wants_rematch")));
                 prompt.setFontSize(13);
                 prompt.setColor(Theme.TEXT);
                 prompt.setInsets(new Insets3f(6, 0, 6, 0));
-                addMenuButton(actions, "ACCEPT REMATCH", Theme.ORANGE, Theme.ON_ACCENT, this::onAcceptRematchClicked);
-                addMenuButton(actions, "DECLINE", Theme.PANEL_HOVER, Theme.TEXT, this::onDeclineRematchClicked);
+                addMenuButton(actions, I18n.t("matchend.accept_rematch"), Theme.ORANGE, Theme.ON_ACCENT, this::onAcceptRematchClicked);
+                addMenuButton(actions, I18n.t("matchend.decline"), Theme.PANEL_HOVER, Theme.TEXT, this::onDeclineRematchClicked);
             }
-            case NONE -> addMenuButton(actions, "REMATCH", Theme.ORANGE, Theme.ON_ACCENT, this::onRematchClicked);
+            case NONE -> addMenuButton(actions, I18n.t("matchend.rematch"), Theme.ORANGE, Theme.ON_ACCENT, this::onRematchClicked);
         }
     }
 
@@ -393,7 +394,7 @@ public class MatchEndState extends BaseAppState {
     private void buildWinLayout(PaddleShockApp app, float screenW, float screenH) {
         // Headline banner: bleeds off the left edge, orange fill, dark (ON_ACCENT) text.
         attachAngledQuad(-60, screenH - 84, 148, 0, 660, 660 * 0.86f, 0, Theme.ORANGE, 1);
-        attachText(36, screenH - 124, "YOU WIN", 56, Theme.ON_ACCENT);
+        attachText(36, screenH - 124, I18n.t("matchend.you_win"), 56, Theme.ON_ACCENT);
 
         // Scoreboard tile: winner's number bright, loser's dim.
         attachAngledQuad(40, screenH - 268, 128, 0, 460, 460, 24, Theme.PANEL_HOVER, 1);
@@ -401,7 +402,7 @@ public class MatchEndState extends BaseAppState {
 
         // Reward chip.
         attachAngledQuad(528, screenH - 316, 60, 14, 232, 232, 0, Theme.GREEN, 1);
-        attachText(550, screenH - 335, "+" + rewardEarned + " CREDITS", 20, Theme.ON_ACCENT);
+        attachText(550, screenH - 335, I18n.t("matchend.credits_reward", rewardEarned), 20, Theme.ON_ACCENT);
 
         if (ranked) {
             attachText(40, screenH - 358, rankLineText(), 15, rankLineColor());
@@ -413,8 +414,8 @@ public class MatchEndState extends BaseAppState {
         // Actions: left-anchored, matching the banner's asymmetric composition.
         Container actions = new Container(new SpringGridLayout(Axis.Y, Axis.X));
         attachRematchControls(app, actions);
-        addMenuButton(actions, "STORE", Theme.PANEL_HOVER, Theme.TEXT, app::showStore);
-        addMenuButton(actions, "MAIN MENU", Theme.PANEL_HOVER, Theme.TEXT, app::showMainMenu);
+        addMenuButton(actions, I18n.t("matchend.store"), Theme.PANEL_HOVER, Theme.TEXT, app::showStore);
+        addMenuButton(actions, I18n.t("matchend.main_menu"), Theme.PANEL_HOVER, Theme.TEXT, app::showMainMenu);
         actions.setLocalTranslation(40, screenH - 460, 2);
         uiRoot.attachChild(actions);
     }
@@ -426,7 +427,7 @@ public class MatchEndState extends BaseAppState {
 
         float bannerWidth = 340;
         attachAngledQuad(centerX - bannerWidth / 2f, topY, 84, 12, bannerWidth, bannerWidth, 0, Theme.PANEL_HOVER, 1);
-        attachText(centerX - bannerWidth / 2f + 44, topY - 30, "DEFEAT", 36, Theme.TEXT);
+        attachText(centerX - bannerWidth / 2f + 44, topY - 30, I18n.t("matchend.defeat"), 36, Theme.TEXT);
 
         float scoreY = topY - 84 - 24;
         float scoreWidth = 320;
@@ -434,7 +435,7 @@ public class MatchEndState extends BaseAppState {
         attachScoreboard(centerX - scoreWidth / 2f, scoreWidth, scoreY, 108, playerScore, opponentScore, Theme.TEXT_DIM, Theme.TEXT);
 
         float consolationY = scoreY - 108 - 20;
-        attachCenteredText(centerX, consolationY, "First to " + GameConstants.WIN_SCORE + " wins. Try again!", 16, Theme.TEXT_DIM);
+        attachCenteredText(centerX, consolationY, I18n.t("matchend.try_again", GameConstants.WIN_SCORE), 16, Theme.TEXT_DIM);
 
         float actionsY = consolationY - 24;
         if (ranked) {
@@ -448,7 +449,7 @@ public class MatchEndState extends BaseAppState {
 
         Container actions = new Container(new SpringGridLayout(Axis.Y, Axis.X));
         attachRematchControls(app, actions);
-        addMenuButton(actions, "MAIN MENU", Theme.PANEL_HOVER, Theme.TEXT, app::showMainMenu);
+        addMenuButton(actions, I18n.t("matchend.main_menu"), Theme.PANEL_HOVER, Theme.TEXT, app::showMainMenu);
         Vector3f actionsSize = actions.getPreferredSize();
         actions.setLocalTranslation(centerX - actionsSize.x / 2f, actionsY, 2);
         uiRoot.attachChild(actions);
@@ -458,30 +459,30 @@ public class MatchEndState extends BaseAppState {
      *  a placeholder while the background lookup/report call is still in flight or failed. */
     private String rankLineText() {
         if (!rankLookupDone) {
-            return "Updating rank...";
+            return I18n.t("matchend.updating_rank");
         }
         RankState rank = rankResult.get();
         if (rank == null) {
-            return "(rank unavailable - offline?)";
+            return I18n.t("matchend.rank_unavailable");
         }
         // Spelled out rather than a "+"/"-" sign: at this HUD font's small size a "+" glyph is
         // easy to misread as a dash, which would silently flip the apparent meaning.
         int lpChange = rank.getLpChange();
-        String delta = lpChange == 0 ? "no change"
-                : lpChange > 0 ? lpChange + " gained" : (-lpChange) + " lost";
+        String delta = lpChange == 0 ? I18n.t("matchend.rank_no_change")
+                : lpChange > 0 ? I18n.t("matchend.rank_gained", lpChange) : I18n.t("matchend.rank_lost", -lpChange);
         String suffix = switch (rank.getPromoSeriesResult() == null ? "" : rank.getPromoSeriesResult()) {
-            case "started" -> " - PROMO SERIES!";
-            case "ongoing" -> " - promo series continues";
+            case "started" -> I18n.t("matchend.promo_started");
+            case "ongoing" -> I18n.t("matchend.promo_ongoing");
             case "won" -> "";
-            case "lost" -> " - promos failed, keep grinding";
+            case "lost" -> I18n.t("matchend.promo_lost");
             default -> "";
         };
         if (rank.wasPromoted()) {
-            suffix = " - PROMOTED!";
+            suffix = I18n.t("matchend.promoted");
         } else if (rank.wasDemoted()) {
-            suffix = " - demoted";
+            suffix = I18n.t("matchend.demoted");
         }
-        return rank.formatLabel() + " - " + rank.getLp() + " LP (" + delta + ")" + suffix;
+        return I18n.t("matchend.rank_line", rank.formatLabel(), rank.getLp(), delta, suffix);
     }
 
     private ColorRGBA rankLineColor() {
@@ -510,7 +511,7 @@ public class MatchEndState extends BaseAppState {
         cursorX += 24f;
         attachText(cursorX, textY, right, 48, rightColor);
 
-        attachCenteredText(centerX, tileTopY - tileHeight + 22, "FINAL SCORE", 11, Theme.TEXT_DIM);
+        attachCenteredText(centerX, tileTopY - tileHeight + 22, I18n.t("matchend.final_score"), 11, Theme.TEXT_DIM);
     }
 
     private void addMenuButton(Container menu, String label, ColorRGBA bg, ColorRGBA fg, Runnable action) {
