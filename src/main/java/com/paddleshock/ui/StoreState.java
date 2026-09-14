@@ -108,10 +108,8 @@ public class StoreState extends BaseAppState {
         title.setInsets(new Insets3f(0, 0, 2, 0));
 
         PlayerProfile profile = app.getProfile();
-        Label currency = panel.addChild(new Label(profile.getCurrency() + " credits"));
-        currency.setFontSize(14);
-        currency.setColor(Theme.TEXT_DIM);
-        currency.setInsets(new Insets3f(0, 0, 12, 0));
+        Container creditsPill = panel.addChild(buildCreditsPill(profile));
+        creditsPill.setInsets(new Insets3f(0, 0, 12, 0));
 
         Container tabs = panel.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
         tabs.setInsets(new Insets3f(0, 0, 12, 0));
@@ -155,17 +153,26 @@ public class StoreState extends BaseAppState {
         headerBar.setLocalTranslation(0, screenH, 1);
         uiRoot.attachChild(headerBar);
 
-        Label paddleLabel = new Label("PADDLE");
-        paddleLabel.setFontSize(26);
-        paddleLabel.setColor(Theme.TEXT);
-        paddleLabel.setLocalTranslation(28, screenH - 30, 2);
-        uiRoot.attachChild(paddleLabel);
+        Button back = new Button("< BACK");
+        back.setBackground(quad(Theme.PANEL_HOVER));
+        back.setColor(Theme.TEXT);
+        back.setFontSize(15);
+        back.setInsets(new Insets3f(8, 10, 8, 10));
+        Vector3f backSize = back.getPreferredSize();
+        back.setLocalTranslation(28, screenH - (HEADER_HEIGHT - backSize.y) / 2f, 2);
+        back.addClickCommands(source -> {
+            app.getAudioManager().playSfx("button_click.ogg");
+            setEnabled(false);
+            backAction.run();
+        });
+        uiRoot.attachChild(back);
 
-        Label shockLabel = new Label("SHOCK");
-        shockLabel.setFontSize(26);
-        shockLabel.setColor(Theme.ORANGE);
-        shockLabel.setLocalTranslation(28 + paddleLabel.getPreferredSize().x, screenH - 30, 2);
-        uiRoot.attachChild(shockLabel);
+        Label title = new Label("STORE");
+        title.setFontSize(26);
+        title.setColor(Theme.ORANGE);
+        Vector3f titleSize = title.getPreferredSize();
+        title.setLocalTranslation(28 + backSize.x + 20, screenH - (HEADER_HEIGHT - titleSize.y) / 2f, 2);
+        uiRoot.attachChild(title);
 
         Container tabs = new Container(new SpringGridLayout(Axis.X, Axis.Y));
         addTab(tabs, app, "PADDLES", "paddle");
@@ -177,20 +184,38 @@ public class StoreState extends BaseAppState {
         uiRoot.attachChild(tabs);
 
         PlayerProfile profile = app.getProfile();
-        Label currency = new Label(profile.getCurrency() + " credits");
-        currency.setFontSize(18);
-        currency.setColor(Theme.ORANGE);
-        currency.setBackground(quad(Theme.PANEL_HOVER));
-        Vector3f currencySize = currency.getPreferredSize();
-        currency.setLocalTranslation(screenW - currencySize.x - 40, screenH - (HEADER_HEIGHT - currencySize.y) / 2f, 2);
-        uiRoot.attachChild(currency);
+        Container creditsPill = buildCreditsPill(profile);
+        Vector3f pillSize = creditsPill.getPreferredSize();
+        creditsPill.setLocalTranslation(screenW - pillSize.x - 28, screenH - (HEADER_HEIGHT - pillSize.y) / 2f, 2);
+        uiRoot.attachChild(creditsPill);
     }
 
+    /** A pill-shaped credits badge: a small orange accent dot plus "N CREDITS" text, on a dim
+     *  orange-tinted background. Used in both the store and match-setup headers for a consistent
+     *  "currency" affordance. */
+    private Container buildCreditsPill(PlayerProfile profile) {
+        Container pill = new Container(new SpringGridLayout(Axis.X, Axis.Y));
+        pill.setBackground(quad(Theme.ORANGE_DIM));
+        pill.setInsets(new Insets3f(8, 14, 8, 14));
+
+        Container dot = pill.addChild(new Container());
+        dot.setBackground(quad(Theme.ORANGE));
+        dot.setPreferredSize(new Vector3f(10, 10, 0));
+        dot.setInsets(new Insets3f(2, 0, 2, 8));
+
+        Label label = pill.addChild(new Label(profile.getCurrency() + " CREDITS"));
+        label.setColor(Theme.ORANGE);
+        label.setFontSize(16);
+        return pill;
+    }
+
+    /** Restyled as a pill-shaped toggle: active tab is a filled orange pill, inactive tabs are
+     *  flat PANEL pills - same click behavior (switches {@link #selectedCategory}) as before. */
     private void addTab(Container tabs, PaddleShockApp app, String label, String category) {
         Button tab = tabs.addChild(new Button(label));
-        tab.setInsets(new Insets3f(4, 6, 4, 6));
         boolean active = category.equals(selectedCategory);
-        tab.setBackground(quad(active ? Theme.ORANGE : Theme.PANEL_HOVER));
+        tab.setInsets(new Insets3f(8, 16, 8, 16));
+        tab.setBackground(quad(active ? Theme.ORANGE : Theme.PANEL));
         tab.setColor(active ? Theme.ON_ACCENT : Theme.TEXT_DIM);
         tab.setFontSize(16);
         tab.addClickCommands(source -> {
@@ -215,21 +240,21 @@ public class StoreState extends BaseAppState {
         switch (selectedCategory) {
             case "paddle" -> {
                 for (PaddleDefinition item : Catalog.PADDLES) {
-                    String stats = "SPEED " + percent(item.getSpeedMultiplier()) + "   SIZE " + percent(item.getSizeMultiplier());
+                    String[] stats = { "SPEED " + percent(item.getSpeedMultiplier()), "SIZE " + percent(item.getSizeMultiplier()) };
                     addCard(cardsRow, app, profile, "paddle", item.getId(), item.getDisplayName(),
                             item.getPrice(), item.getColor(), stats);
                 }
             }
             case "table" -> {
                 for (TableDefinition item : Catalog.TABLES) {
-                    String stats = "BOUNCE " + percent(item.getRestitutionMultiplier());
+                    String[] stats = { "BOUNCE " + percent(item.getRestitutionMultiplier()) };
                     addCard(cardsRow, app, profile, "table", item.getId(), item.getDisplayName(),
                             item.getPrice(), item.getSurfaceColor(), stats);
                 }
             }
             case "ball" -> {
                 for (BallDefinition item : Catalog.BALLS) {
-                    String stats = "SPEED " + percent(item.getSpeedMultiplier()) + "   SIZE " + percent(item.getSizeMultiplier());
+                    String[] stats = { "SPEED " + percent(item.getSpeedMultiplier()), "SIZE " + percent(item.getSizeMultiplier()) };
                     addCard(cardsRow, app, profile, "ball", item.getId(), item.getDisplayName(),
                             item.getPrice(), item.getColor(), stats);
                 }
@@ -244,7 +269,7 @@ public class StoreState extends BaseAppState {
     }
 
     private void addCard(Container cardsRow, PaddleShockApp app, PlayerProfile profile, String category,
-            String id, String displayName, int price, ColorRGBA tint, String statsLine) {
+            String id, String displayName, int price, ColorRGBA tint, String[] statTags) {
 
         boolean owned = profile.owns(category, id);
         boolean equipped = owned && profile.getEquippedId(category).equals(id);
@@ -253,8 +278,7 @@ public class StoreState extends BaseAppState {
                 : owned ? mix(Theme.PANEL, Theme.BLUE, 0.10f)
                 : Theme.PANEL;
 
-        Container card = cardsRow.addChild(new Container(new SpringGridLayout(Axis.Y, Axis.X)));
-        card.setInsets(new Insets3f(0, 12, 0, 12));
+        Container card = newBorderedCard(cardsRow);
         card.setBackground(quad(cardColor));
         card.setPreferredSize(new Vector3f(cardWidth, cardHeight, 0));
 
@@ -273,10 +297,7 @@ public class StoreState extends BaseAppState {
         status.setFontSize(14);
         status.setColor(Theme.TEXT_DIM);
 
-        Label stats = card.addChild(new Label(statsLine));
-        stats.setInsets(new Insets3f(4, 16, 14, 16));
-        stats.setFontSize(13);
-        stats.setColor(Theme.TEXT_DIM);
+        addStatTags(card, statTags);
 
         if (!owned) {
             String hint = winsHint(price, profile.getCurrency());
@@ -289,12 +310,13 @@ public class StoreState extends BaseAppState {
         }
 
         String actionLabel = equipped ? "EQUIPPED" : owned ? "EQUIP" : "BUY " + price;
-        ColorRGBA actionColor = equipped ? Theme.GREEN : owned ? Theme.BLUE : Theme.ORANGE;
+        ColorRGBA actionBg = equipped ? Theme.GREEN_DIM : owned ? Theme.BLUE : Theme.ORANGE;
+        ColorRGBA actionFg = equipped ? Theme.GREEN : Theme.ON_ACCENT;
 
         Button action = card.addChild(new Button(actionLabel));
         action.setInsets(new Insets3f(10, 16, 14, 16));
-        action.setBackground(quad(actionColor));
-        action.setColor(Theme.ON_ACCENT);
+        action.setBackground(quad(actionBg));
+        action.setColor(actionFg);
         action.setFontSize(15);
         action.setPreferredSize(new Vector3f(cardWidth - 32, 40, 0));
         action.setEnabled(!equipped);
@@ -324,8 +346,7 @@ public class StoreState extends BaseAppState {
                 : owned ? mix(Theme.PANEL, Theme.BLUE, 0.10f)
                 : Theme.PANEL;
 
-        Container card = cardsRow.addChild(new Container(new SpringGridLayout(Axis.Y, Axis.X)));
-        card.setInsets(new Insets3f(0, 12, 0, 12));
+        Container card = newBorderedCard(cardsRow);
         card.setBackground(quad(cardColor));
         card.setPreferredSize(new Vector3f(cardWidth, cardHeight, 0));
 
@@ -345,12 +366,11 @@ public class StoreState extends BaseAppState {
         status.setFontSize(14);
         status.setColor(Theme.TEXT_DIM);
 
-        String statsLine = "COOLDOWN " + Math.round(item.getCooldownSeconds()) + "s   DURATION "
-                + Math.round(item.getType().getDuration()) + "s";
-        Label stats = card.addChild(new Label(statsLine));
-        stats.setInsets(new Insets3f(4, 16, 14, 16));
-        stats.setFontSize(13);
-        stats.setColor(Theme.TEXT_DIM);
+        String[] statTags = {
+            "COOLDOWN " + Math.round(item.getCooldownSeconds()) + "s",
+            "DURATION " + Math.round(item.getType().getDuration()) + "s"
+        };
+        addStatTags(card, statTags);
 
         if (!owned) {
             String hint = winsHint(item.getPrice(), profile.getCurrency());
@@ -379,8 +399,8 @@ public class StoreState extends BaseAppState {
             for (int i = 0; i < 3; i++) {
                 boolean isThisSlot = i == assignedSlot;
                 Button slotButton = slots.addChild(new Button("KEY " + (i + 1)));
-                slotButton.setBackground(quad(isThisSlot ? Theme.GREEN : Theme.PANEL_HOVER));
-                slotButton.setColor(isThisSlot ? Theme.ON_ACCENT : Theme.TEXT);
+                slotButton.setBackground(quad(isThisSlot ? Theme.GREEN_DIM : Theme.PANEL_HOVER));
+                slotButton.setColor(isThisSlot ? Theme.GREEN : Theme.TEXT);
                 slotButton.setFontSize(13);
                 slotButton.setPreferredSize(new Vector3f((cardWidth - 32) / 3f, 36, 0));
                 int slotIndex = i;
@@ -394,24 +414,13 @@ public class StoreState extends BaseAppState {
         }
     }
 
+    /** Just a decorative bottom stripe now - BACK lives in the header (see {@link #buildHeader}). */
     private void buildFooter(PaddleShockApp app, float screenW) {
         Container footerBar = new Container();
         footerBar.setBackground(quad(Theme.PANEL));
         footerBar.setPreferredSize(new Vector3f(screenW, FOOTER_HEIGHT, 0));
         footerBar.setLocalTranslation(0, FOOTER_HEIGHT, 1);
         uiRoot.attachChild(footerBar);
-
-        Button back = new Button("< BACK");
-        back.setBackground(quad(Theme.PANEL_HOVER));
-        back.setColor(Theme.TEXT);
-        back.setFontSize(15);
-        back.setLocalTranslation(32, FOOTER_HEIGHT - 12, 2);
-        back.addClickCommands(source -> {
-            app.getAudioManager().playSfx("button_click.ogg");
-            setEnabled(false);
-            backAction.run();
-        });
-        uiRoot.attachChild(back);
     }
 
     /**
@@ -451,6 +460,38 @@ public class StoreState extends BaseAppState {
 
     private static com.simsilica.lemur.component.QuadBackgroundComponent quad(ColorRGBA color) {
         return new com.simsilica.lemur.component.QuadBackgroundComponent(color);
+    }
+
+    /**
+     * Adds a new card container to {@code cardsRow}, wrapped in a thin {@code Theme.PANEL_LINE}
+     * border. The border is faked with two nested containers: an outer one painted with the
+     * border color whose only child (the actual card) has a small inset, so the border color
+     * peeks out around the card's edge - a common borderless-toolkit trick, avoids needing a
+     * texture asset for a real 9-patch border. Returns the inner card container to populate.
+     */
+    private Container newBorderedCard(Container cardsRow) {
+        Container border = cardsRow.addChild(new Container(new SpringGridLayout(Axis.Y, Axis.X)));
+        border.setBackground(quad(Theme.PANEL_LINE));
+        border.setInsets(new Insets3f(0, 12, 0, 12));
+
+        Container card = new Container(new SpringGridLayout(Axis.Y, Axis.X));
+        card.setInsets(new Insets3f(2, 2, 2, 2));
+        border.addChild(card);
+        return card;
+    }
+
+    /** Renders each stat as a small pill-shaped tag in a row (e.g. "SPEED 110%"), instead of one
+     *  plain stacked line of text. */
+    private void addStatTags(Container card, String[] statTags) {
+        Container tagsRow = card.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
+        tagsRow.setInsets(new Insets3f(4, 16, 14, 16));
+        for (String tag : statTags) {
+            Label tagLabel = tagsRow.addChild(new Label(tag));
+            tagLabel.setInsets(new Insets3f(3, 8, 3, 8));
+            tagLabel.setBackground(quad(Theme.BACKGROUND_2));
+            tagLabel.setColor(Theme.TEXT_DIM);
+            tagLabel.setFontSize(11);
+        }
     }
 
     @Override

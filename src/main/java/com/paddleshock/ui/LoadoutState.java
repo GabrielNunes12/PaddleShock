@@ -7,11 +7,13 @@ import java.util.function.Function;
 import com.jme3.app.Application;
 import com.jme3.app.SimpleApplication;
 import com.jme3.app.state.BaseAppState;
+import com.jme3.math.ColorRGBA;
 import com.jme3.math.Vector3f;
 import com.jme3.scene.Node;
 import com.simsilica.lemur.Axis;
 import com.simsilica.lemur.Button;
 import com.simsilica.lemur.Container;
+import com.simsilica.lemur.HAlignment;
 import com.simsilica.lemur.Insets3f;
 import com.simsilica.lemur.Label;
 import com.simsilica.lemur.component.QuadBackgroundComponent;
@@ -34,12 +36,17 @@ import com.paddleshock.settings.AiDifficulty;
  */
 public class LoadoutState extends BaseAppState {
 
+    private static final float HEADER_HEIGHT = 92f;
+    private static final float TILE_WIDTH = 176f;
+    private static final float TILE_HEIGHT = 82f;
+    private static final float SWATCH_STRIP_HEIGHT = 10f;
+
     private final Node uiRoot = new Node("loadoutUi");
 
     /** True while the store modal is open on top of this screen, so its own buttons go inert. */
     private boolean modalOpen = false;
 
-    private Label currencyLabel;
+    private Label creditsLabel;
     private Label paddleLabel;
     private Label tableLabel;
     private Label ballLabel;
@@ -66,25 +73,21 @@ public class LoadoutState extends BaseAppState {
         background.setLocalTranslation(0, screenH, 0);
         uiRoot.attachChild(background);
 
+        buildHeader(app, screenW, screenH);
+
         Container panel = new Container(new SpringGridLayout(Axis.Y, Axis.X));
         panel.setBackground(new QuadBackgroundComponent(Theme.PANEL));
         panel.setInsets(new Insets3f(24, 32, 24, 32));
 
-        Label title = panel.addChild(new Label("MATCH SETUP"));
-        title.setFontSize(26);
-        title.setColor(Theme.ORANGE);
-        title.setInsets(new Insets3f(0, 0, 4, 0));
-
-        currencyLabel = panel.addChild(new Label(""));
-        currencyLabel.setFontSize(14);
-        currencyLabel.setColor(Theme.TEXT_DIM);
-        currencyLabel.setInsets(new Insets3f(0, 0, 18, 0));
-
         Container equipRow = panel.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
         equipRow.setInsets(new Insets3f(0, 0, 8, 0));
-        paddleLabel = addTile(equipRow, "PADDLE");
-        tableLabel = addTile(equipRow, "TABLE");
-        ballLabel = addTile(equipRow, "BALL");
+        PlayerProfile profile = app.getProfile();
+        PaddleDefinition equippedPaddle = Catalog.findPaddle(profile.getEquippedId("paddle")).orElse(null);
+        TableDefinition equippedTable = Catalog.findTable(profile.getEquippedId("table")).orElse(null);
+        BallDefinition equippedBall = Catalog.findBall(profile.getEquippedId("ball")).orElse(null);
+        paddleLabel = addEquipTile(equipRow, "PADDLE", equippedPaddle == null ? Theme.PANEL_LINE : equippedPaddle.getColor());
+        tableLabel = addEquipTile(equipRow, "TABLE", equippedTable == null ? Theme.PANEL_LINE : equippedTable.getSurfaceColor());
+        ballLabel = addEquipTile(equipRow, "BALL", equippedBall == null ? Theme.PANEL_LINE : equippedBall.getColor());
 
         // Levels are free and picked right here - no store trip needed, unlike the gear above.
         Label levelTitle = panel.addChild(new Label("LEVEL"));
@@ -97,10 +100,7 @@ public class LoadoutState extends BaseAppState {
         levelButtons = new Button[Catalog.LEVELS.size()];
         for (int i = 0; i < Catalog.LEVELS.size(); i++) {
             LevelDefinition levelDef = Catalog.LEVELS.get(i);
-            Button levelButton = levelRow.addChild(new Button(levelDef.getDisplayName().toUpperCase()));
-            levelButton.setInsets(new Insets3f(4, 6, 4, 6));
-            levelButton.setFontSize(13);
-            levelButton.setPreferredSize(new Vector3f(160, 40, 0));
+            Button levelButton = addLevelCard(levelRow, levelDef);
             levelButton.addClickCommands(source -> {
                 if (modalOpen) {
                     return;
@@ -118,8 +118,9 @@ public class LoadoutState extends BaseAppState {
         aiTitle.setColor(Theme.TEXT_DIM);
         aiTitle.setInsets(new Insets3f(14, 0, 6, 0));
 
-        Container aiRow = panel.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
-        aiRow.setInsets(new Insets3f(0, 0, 8, 0));
+        Container aiCard = newBorderedCard(panel);
+        Container aiRow = aiCard.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
+        aiRow.setInsets(new Insets3f(10, 10, 10, 10));
         Button aiMinus = aiRow.addChild(new Button("-"));
         aiMinus.setBackground(new QuadBackgroundComponent(Theme.PANEL_HOVER));
         aiMinus.setColor(Theme.TEXT);
@@ -136,7 +137,7 @@ public class LoadoutState extends BaseAppState {
         aiDifficultyLabel.setFontSize(14);
         aiDifficultyLabel.setColor(Theme.TEXT);
         aiDifficultyLabel.setPreferredSize(new Vector3f(140, 40, 0));
-        aiDifficultyLabel.setTextHAlignment(com.simsilica.lemur.HAlignment.Center);
+        aiDifficultyLabel.setTextHAlignment(HAlignment.Center);
 
         Button aiPlus = aiRow.addChild(new Button("+"));
         aiPlus.setBackground(new QuadBackgroundComponent(Theme.PANEL_HOVER));
@@ -158,13 +159,13 @@ public class LoadoutState extends BaseAppState {
         Container powerUpRow = panel.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
         powerUpRow.setInsets(new Insets3f(0, 0, 8, 0));
         for (int i = 0; i < 3; i++) {
-            powerUpLabels[i] = addTile(powerUpRow, "KEY " + (i + 1));
+            powerUpLabels[i] = addPowerUpSlotCard(powerUpRow, i + 1);
         }
 
         Button storeButton = panel.addChild(new Button("OPEN STORE"));
         storeButton.setInsets(new Insets3f(16, 0, 8, 0));
-        storeButton.setBackground(new QuadBackgroundComponent(Theme.BLUE));
-        storeButton.setColor(Theme.ON_ACCENT);
+        storeButton.setBackground(new QuadBackgroundComponent(Theme.BLUE_DIM));
+        storeButton.setColor(Theme.BLUE);
         storeButton.setFontSize(16);
         storeButton.setPreferredSize(new Vector3f(340, 46, 0));
         storeButton.addClickCommands(source -> {
@@ -210,31 +211,137 @@ public class LoadoutState extends BaseAppState {
         refreshLabels(app.getProfile());
 
         Vector3f panelSize = panel.getPreferredSize();
-        panel.setLocalTranslation((screenW - panelSize.x) / 2f, (screenH + panelSize.y) / 2f, 1);
+        panel.setLocalTranslation((screenW - panelSize.x) / 2f, (screenH - HEADER_HEIGHT + panelSize.y) / 2f, 1);
         uiRoot.attachChild(panel);
     }
 
-    /** A small readout tile: a caption above a value, matching the store card's muted styling. */
-    private Label addTile(Container row, String caption) {
-        Container tile = row.addChild(new Container(new SpringGridLayout(Axis.Y, Axis.X)));
-        tile.setInsets(new Insets3f(0, 8, 0, 8));
-        tile.setBackground(new QuadBackgroundComponent(Theme.PANEL_HOVER));
-        tile.setPreferredSize(new Vector3f(170, 64, 0));
+    /** Top bar mirroring the store screen's header: BACK, the screen title, and a credits pill
+     *  in the top-right corner. */
+    private void buildHeader(PaddleShockApp app, float screenW, float screenH) {
+        Container headerBar = new Container();
+        headerBar.setBackground(new QuadBackgroundComponent(Theme.PANEL));
+        headerBar.setPreferredSize(new Vector3f(screenW, HEADER_HEIGHT, 0));
+        headerBar.setLocalTranslation(0, screenH, 1);
+        uiRoot.attachChild(headerBar);
 
-        Label captionLabel = tile.addChild(new Label(caption));
+        Button back = new Button("< BACK");
+        back.setBackground(new QuadBackgroundComponent(Theme.PANEL_HOVER));
+        back.setColor(Theme.TEXT);
+        back.setFontSize(15);
+        back.setInsets(new Insets3f(8, 10, 8, 10));
+        Vector3f backSize = back.getPreferredSize();
+        back.setLocalTranslation(28, screenH - (HEADER_HEIGHT - backSize.y) / 2f, 2);
+        back.addClickCommands(source -> {
+            if (modalOpen) {
+                return;
+            }
+            app.getAudioManager().playSfx("button_click.ogg");
+            app.showMainMenu();
+        });
+        uiRoot.attachChild(back);
+
+        Label title = new Label("MATCH SETUP");
+        title.setFontSize(24);
+        title.setColor(Theme.ORANGE);
+        Vector3f titleSize = title.getPreferredSize();
+        title.setLocalTranslation(28 + backSize.x + 20, screenH - (HEADER_HEIGHT - titleSize.y) / 2f, 2);
+        uiRoot.attachChild(title);
+
+        Container pill = new Container(new SpringGridLayout(Axis.X, Axis.Y));
+        pill.setBackground(new QuadBackgroundComponent(Theme.ORANGE_DIM));
+        pill.setInsets(new Insets3f(8, 14, 8, 14));
+
+        Container dot = pill.addChild(new Container());
+        dot.setBackground(new QuadBackgroundComponent(Theme.ORANGE));
+        dot.setPreferredSize(new Vector3f(10, 10, 0));
+        dot.setInsets(new Insets3f(2, 0, 2, 8));
+
+        creditsLabel = pill.addChild(new Label(""));
+        creditsLabel.setColor(Theme.ORANGE);
+        creditsLabel.setFontSize(16);
+
+        Vector3f pillSize = pill.getPreferredSize();
+        pill.setLocalTranslation(screenW - pillSize.x - 28, screenH - (HEADER_HEIGHT - pillSize.y) / 2f, 2);
+        uiRoot.attachChild(pill);
+    }
+
+    /**
+     * Wraps a new child of {@code parent} in a thin {@code Theme.PANEL_LINE} border, the same
+     * "nested container with a small inset" trick used by the store screen's cards. Returns the
+     * inner container (background {@code Theme.PANEL}) to populate.
+     */
+    private Container newBorderedCard(Container parent) {
+        Container border = parent.addChild(new Container(new SpringGridLayout(Axis.Y, Axis.X)));
+        border.setBackground(new QuadBackgroundComponent(Theme.PANEL_LINE));
+        border.setInsets(new Insets3f(0, 8, 8, 8));
+
+        Container card = new Container(new SpringGridLayout(Axis.Y, Axis.X));
+        card.setBackground(new QuadBackgroundComponent(Theme.PANEL));
+        card.setInsets(new Insets3f(2, 2, 2, 2));
+        border.addChild(card);
+        return card;
+    }
+
+    /** A small equipment-slot card: a color swatch strip, a dim caption ("PADDLE"), and the
+     *  equipped item's name below it - the value label is returned so callers can update it. */
+    private Label addEquipTile(Container row, String caption, ColorRGBA swatchColor) {
+        Container card = newBorderedCard(row);
+        card.setPreferredSize(new Vector3f(TILE_WIDTH, TILE_HEIGHT, 0));
+
+        Container swatch = card.addChild(new Container());
+        swatch.setBackground(new QuadBackgroundComponent(swatchColor));
+        swatch.setPreferredSize(new Vector3f(TILE_WIDTH, SWATCH_STRIP_HEIGHT, 0));
+
+        Label captionLabel = card.addChild(new Label(caption));
         captionLabel.setFontSize(11);
-        captionLabel.setColor(Theme.TEXT_DIM);
+        captionLabel.setColor(Theme.TEXT_DIM2);
         captionLabel.setInsets(new Insets3f(8, 10, 2, 10));
 
-        Label valueLabel = tile.addChild(new Label(""));
+        Label valueLabel = card.addChild(new Label(""));
         valueLabel.setFontSize(14);
         valueLabel.setColor(Theme.TEXT);
         valueLabel.setInsets(new Insets3f(0, 10, 8, 10));
         return valueLabel;
     }
 
+    /** A small preview card for one selectable level: a swatch (the level's sky color), the
+     *  level's name, and (when selected) a green checkmark. Built as a {@link Button} so it stays
+     *  directly clickable, matching the plain-tab button it replaces. */
+    private Button addLevelCard(Container row, LevelDefinition levelDef) {
+        Button card = row.addChild(new Button(levelDef.getDisplayName().toUpperCase()));
+        card.setIcon(new QuadBackgroundComponent(levelDef.getSkyColor(), 6, 6));
+        card.setInsets(new Insets3f(4, 6, 4, 6));
+        card.setFontSize(13);
+        card.setPreferredSize(new Vector3f(TILE_WIDTH, 44, 0));
+        return card;
+    }
+
+    /** A numbered power-up slot card: a small "N" chip plus the assigned power-up's name, or a
+     *  dim "Empty slot" label - the value label is returned so callers can update it. */
+    private Label addPowerUpSlotCard(Container row, int slotNumber) {
+        Container card = newBorderedCard(row);
+        card.setPreferredSize(new Vector3f(TILE_WIDTH, TILE_HEIGHT, 0));
+
+        Container chipRow = card.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
+        chipRow.setInsets(new Insets3f(8, 10, 4, 10));
+
+        Container chip = chipRow.addChild(new Container());
+        chip.setBackground(new QuadBackgroundComponent(Theme.PANEL_HOVER));
+        chip.setPreferredSize(new Vector3f(22, 22, 0));
+        Label chipLabel = chip.addChild(new Label(Integer.toString(slotNumber)));
+        chipLabel.setFontSize(12);
+        chipLabel.setColor(Theme.TEXT);
+        chipLabel.setTextHAlignment(HAlignment.Center);
+        chipLabel.setPreferredSize(new Vector3f(22, 22, 0));
+
+        Label valueLabel = card.addChild(new Label(""));
+        valueLabel.setFontSize(13);
+        valueLabel.setInsets(new Insets3f(2, 10, 8, 10));
+        return valueLabel;
+    }
+
     private void refreshLabels(PlayerProfile profile) {
-        currencyLabel.setText(profile.getCurrency() + " credits");
+        creditsLabel.setText(profile.getCurrency() + " CREDITS");
         aiDifficultyLabel.setText(((PaddleShockApp) getApplication()).getGameSettings().getAiDifficulty().getDisplayName());
 
         paddleLabel.setText(nameOf(Catalog.findPaddle(profile.getEquippedId("paddle")), PaddleDefinition::getDisplayName));
@@ -246,8 +353,8 @@ public class LoadoutState extends BaseAppState {
         for (int i = 0; i < powerUpLabels.length; i++) {
             String id = loadout.get(i);
             if (id.isEmpty()) {
-                powerUpLabels[i].setText("EMPTY");
-                powerUpLabels[i].setColor(Theme.TEXT_DIM);
+                powerUpLabels[i].setText("Empty slot");
+                powerUpLabels[i].setColor(Theme.TEXT_DIM2);
             } else {
                 Optional<PowerUpDefinition> def = Catalog.findPowerUp(id);
                 powerUpLabels[i].setText(def.map(PowerUpDefinition::getDisplayName).orElse("?").toUpperCase());
@@ -273,8 +380,10 @@ public class LoadoutState extends BaseAppState {
         String equippedId = profile.getEquippedId("level");
         for (int i = 0; i < levelButtons.length; i++) {
             boolean equipped = Catalog.LEVELS.get(i).getId().equals(equippedId);
-            levelButtons[i].setBackground(new QuadBackgroundComponent(equipped ? Theme.GREEN : Theme.PANEL_HOVER));
-            levelButtons[i].setColor(equipped ? Theme.ON_ACCENT : Theme.TEXT);
+            String baseName = Catalog.LEVELS.get(i).getDisplayName().toUpperCase();
+            levelButtons[i].setText(equipped ? "✓ " + baseName : baseName);
+            levelButtons[i].setBackground(new QuadBackgroundComponent(equipped ? Theme.GREEN_DIM : Theme.PANEL_HOVER));
+            levelButtons[i].setColor(equipped ? Theme.GREEN : Theme.TEXT);
         }
     }
 
