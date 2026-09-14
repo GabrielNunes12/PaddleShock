@@ -25,6 +25,12 @@ public final class SaveManager {
     private SaveManager() {
     }
 
+    /** The local per-player data directory (also home to {@code crashes/} and {@code netcode.log} -
+     *  see {@code com.paddleshock.diagnostics}) so those stay next to the save data they diagnose. */
+    public static Path getDataDir() {
+        return SAVE_DIR;
+    }
+
     public static PlayerProfile loadProfile() {
         return load(PROFILE_FILE, PlayerProfile.class, PlayerProfile::new, PlayerProfile::migrateIfNeeded);
     }

@@ -10,6 +10,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.paddleshock.data.Catalog;
 import com.paddleshock.data.PowerUpDefinition;
+import com.paddleshock.diagnostics.NetLog;
 import com.paddleshock.sim.PaddleInput;
 
 /**
@@ -109,6 +110,7 @@ public class NetHost implements AutoCloseable {
             }
         } catch (IOException e) {
             // malformed packet - ignore, next one may be fine
+            NetLog.log("NetHost received a malformed packet from " + from, e);
         }
     }
 
@@ -327,6 +329,7 @@ public class NetHost implements AutoCloseable {
                 joinerAddressText = LobbyClient.poll(lobbyCode);
             } catch (IOException e) {
                 joinerAddressText = null; // transient - keep retrying until the deadline
+                NetLog.log("lobby poll failed for code " + lobbyCode, e);
             }
             if (joinerAddressText != null) {
                 break;

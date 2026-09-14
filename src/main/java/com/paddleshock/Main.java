@@ -6,6 +6,7 @@ import java.awt.Toolkit;
 import com.jme3.system.AppSettings;
 import com.paddleshock.app.PaddleShockApp;
 import com.paddleshock.data.SaveManager;
+import com.paddleshock.diagnostics.CrashReporter;
 import com.paddleshock.settings.GameSettings;
 
 public final class Main {
@@ -14,6 +15,10 @@ public final class Main {
     }
 
     public static void main(String[] args) {
+        // Install the global crash handler before anything else that could throw, so even a
+        // startup failure gets captured to a local crash file - see com.paddleshock.diagnostics.
+        CrashReporter.install();
+
         PaddleShockApp app = new PaddleShockApp();
         GameSettings savedSettings = SaveManager.loadSettings();
 
