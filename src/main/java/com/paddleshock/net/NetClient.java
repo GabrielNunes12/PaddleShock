@@ -156,6 +156,7 @@ public class NetClient implements AutoCloseable {
                     relayedRankResult.set(NetProtocol.decodeRankResult(data));
                     lastHostPacketAt = System.currentTimeMillis();
                 }
+                case NetProtocol.TYPE_KEEPALIVE -> lastHostPacketAt = System.currentTimeMillis();
                 default -> {
                     // unknown/malformed - ignore
                 }
@@ -219,6 +220,13 @@ public class NetClient implements AutoCloseable {
 
     public void sendRematchDecline() {
         sendRaw(NetProtocol.encodeHandshake(NetProtocol.TYPE_REMATCH_DECLINE));
+    }
+
+    /** See {@link NetProtocol#TYPE_KEEPALIVE} - {@code MatchEndState} calls this periodically so
+     *  {@link #isHostTimedOut()} doesn't fire just because the match ended and nothing else is
+     *  being sent while the result screen is up. */
+    public void sendKeepAlive() {
+        sendRaw(NetProtocol.encodeHandshake(NetProtocol.TYPE_KEEPALIVE));
     }
 
     public boolean isRematchRequestedByPeer() {

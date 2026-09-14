@@ -102,6 +102,7 @@ public class NetHost implements AutoCloseable {
                     rematchDeclinedByJoiner = true;
                     noteJoinerPacket(from);
                 }
+                case NetProtocol.TYPE_KEEPALIVE -> noteJoinerPacket(from);
                 default -> {
                     // unknown/malformed - ignore
                 }
@@ -206,6 +207,16 @@ public class NetHost implements AutoCloseable {
         InetSocketAddress to = joinerAddress;
         if (to != null) {
             sendRaw(to, NetProtocol.encodeHandshake(NetProtocol.TYPE_REMATCH_DECLINE));
+        }
+    }
+
+    /** See {@link NetProtocol#TYPE_KEEPALIVE} - {@code MatchEndState} calls this periodically so
+     *  {@link #isJoinerTimedOut()} doesn't fire just because the match ended and nothing else is
+     *  being sent while the result screen is up. */
+    public void sendKeepAlive() {
+        InetSocketAddress to = joinerAddress;
+        if (to != null) {
+            sendRaw(to, NetProtocol.encodeHandshake(NetProtocol.TYPE_KEEPALIVE));
         }
     }
 

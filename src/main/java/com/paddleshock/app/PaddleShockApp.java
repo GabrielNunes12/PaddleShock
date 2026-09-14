@@ -180,6 +180,7 @@ public class PaddleShockApp extends SimpleApplication {
     /** Shows the HOST/JOIN LAN multiplayer screen (wired up from the main menu's MULTIPLAYER button). */
     public void showMultiplayer() {
         mainMenuState.setEnabled(false);
+        matchEndState.setEnabled(false);
         multiplayerState.setEnabled(true);
     }
 

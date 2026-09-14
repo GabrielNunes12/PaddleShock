@@ -73,7 +73,14 @@ public class MatchEndState extends BaseAppState {
     private enum RematchPhase { NONE, REQUESTED_LOCAL, REQUESTED_REMOTE }
     private RematchPhase rematchPhase = RematchPhase.NONE;
     private float rematchTimer;
-    private static final float REMATCH_TIMEOUT_SECONDS = 6f;
+    private static final float REMATCH_TIMEOUT_SECONDS = 20f;
+
+    /** How often to ping the peer while this screen is up, well under {@code DISCONNECT_TIMEOUT_MS}
+     *  (5s) - see {@link NetProtocol#TYPE_KEEPALIVE}. Nothing else is sent once a match ends, so
+     *  without this a player who just reads the result for a few seconds before clicking REMATCH
+     *  would have the peer look falsely disconnected. */
+    private static final float KEEPALIVE_INTERVAL_SECONDS = 1.5f;
+    private float keepAliveTimer;
 
     /** Sets the outcome to display next time this state is enabled (a non-ranked match - single
      *  player vs AI, or a non-ranked forfeit win). */
@@ -86,6 +93,7 @@ public class MatchEndState extends BaseAppState {
         this.connectionLost = false;
         this.extraNotice = null;
         this.rematchPhase = RematchPhase.NONE;
+        this.keepAliveTimer = 0f;
     }
 
     /** Same as {@link #setResult}, but for a ranked multiplayer match - shows a "looking up
@@ -147,6 +155,16 @@ public class MatchEndState extends BaseAppState {
         NetHost host = gp.getNetHost();
         NetClient client = gp.getNetClient();
 
+        keepAliveTimer += tpf;
+        if (keepAliveTimer >= KEEPALIVE_INTERVAL_SECONDS) {
+            keepAliveTimer = 0f;
+            if (host != null) {
+                host.sendKeepAlive();
+            } else {
+                client.sendKeepAlive();
+            }
+        }
+
         switch (rematchPhase) {
             case NONE -> {
                 boolean requestedByPeer = host != null ? host.isRematchRequestedByPeer() : client.isRematchRequestedByPeer();
@@ -166,6 +184,18 @@ public class MatchEndState extends BaseAppState {
                 if (accepted || mutualRequest) {
                     startRematch(app, host, client);
                 } else if (declined || rematchTimer > REMATCH_TIMEOUT_SECONDS) {
+                    // On a real decline the peer already knows; on our own timeout it doesn't -
+                    // tell it explicitly so a peer that accepts a moment later gets a clean
+                    // "declined" on their own screen instead of silently sending into a connection
+                    // that already moved on (which used to surface as a confusing false
+                    // "opponent disconnected").
+                    if (!declined) {
+                        if (host != null) {
+                            host.sendRematchDecline();
+                        } else {
+                            client.sendRematchDecline();
+                        }
+                    }
                     resetRematchFlags(host, client);
                     rematchPhase = RematchPhase.NONE;
                     app.showMultiplayer();

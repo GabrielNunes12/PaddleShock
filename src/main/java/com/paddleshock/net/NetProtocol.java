@@ -60,6 +60,12 @@ public final class NetProtocol {
      *  the joiner's own authoritative post-match {@code RankState} (as returned by the Lambda),
      *  so the joiner can show the real result instead of guessing via {@code withDeltaFrom}. */
     public static final byte TYPE_RANK_RESULT = 9;
+    /** Either side, sent periodically while {@code MatchEndState} is showing a still-live
+     *  multiplayer connection (before either player has clicked REMATCH). Keeps the passive
+     *  "time since last packet" disconnect check from spuriously tripping just because a player
+     *  spent a while reading the result screen without generating any real traffic - unlike
+     *  during gameplay, nothing else is sent once the match is over. Payload-less. */
+    public static final byte TYPE_KEEPALIVE = 10;
 
     /** Max UDP payload we ever send; comfortably above the largest (snapshot) message. */
     public static final int MAX_PACKET_SIZE = 256;
