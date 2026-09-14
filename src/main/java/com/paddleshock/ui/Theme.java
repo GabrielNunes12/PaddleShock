@@ -12,12 +12,20 @@ public final class Theme {
     public static final ColorRGBA PANEL = new ColorRGBA(0.137f, 0.149f, 0.180f, 1f);
     public static final ColorRGBA PANEL_HOVER = new ColorRGBA(0.180f, 0.196f, 0.235f, 1f);
 
+    /** Hairline border color for card outlines (PROFILE/SETTINGS redesign) - a step up from
+     *  PANEL_HOVER so a 1-2px border actually reads against the card fill. */
+    public static final ColorRGBA PANEL_LINE = new ColorRGBA(0.243f, 0.263f, 0.310f, 1f);
+
     public static final ColorRGBA TEXT = new ColorRGBA(0.961f, 0.965f, 0.973f, 1f);
     public static final ColorRGBA TEXT_DIM = new ColorRGBA(0.545f, 0.565f, 0.612f, 1f);
 
     public static final ColorRGBA ORANGE = new ColorRGBA(0.910f, 0.510f, 0.227f, 1f);
     public static final ColorRGBA BLUE = new ColorRGBA(0.310f, 0.514f, 0.788f, 1f);
     public static final ColorRGBA GREEN = new ColorRGBA(0.310f, 0.749f, 0.561f, 1f);
+
+    /** Muted/dark green used as a restrained "win" background chip (match history icon/pill) -
+     *  a fill for GREEN text/icons to sit on, not a loud alert color. */
+    public static final ColorRGBA GREEN_DIM = new ColorRGBA(0.161f, 0.235f, 0.204f, 1f);
 
     /** Text color used on top of the bright accent buttons (orange/blue/green). */
     public static final ColorRGBA ON_ACCENT = BACKGROUND;
