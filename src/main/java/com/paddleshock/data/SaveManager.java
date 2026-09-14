@@ -16,7 +16,7 @@ import com.paddleshock.settings.GameSettings;
 /** Loads/saves {@link PlayerProfile} and {@link GameSettings}, AES-GCM encrypted, under the user's home dir. */
 public final class SaveManager {
 
-    private static final Path SAVE_DIR = Path.of(System.getProperty("user.home"), ".paddleshock");
+    static final Path SAVE_DIR = Path.of(System.getProperty("user.home"), ".paddleshock");
     private static final Path PROFILE_FILE = SAVE_DIR.resolve("profile.dat");
     private static final Path SETTINGS_FILE = SAVE_DIR.resolve("settings.dat");
 
@@ -49,11 +49,12 @@ public final class SaveManager {
     private static <T> T load(Path file, Class<T> type, Supplier<T> fallback, Consumer<T> migrator) {
         Path backup = backupPathFor(file);
 
-        T loaded = tryLoad(file, type);
+        TryLoadResult<T> loaded = tryLoad(file, type);
         if (loaded != null) {
             System.out.println("Loaded " + file + " (fresh).");
-            migrator.accept(loaded);
-            return loaded;
+            migrator.accept(loaded.value());
+            migrateKeyIfNeeded(file, loaded);
+            return loaded.value();
         }
 
         if (Files.exists(file)) {
@@ -61,11 +62,12 @@ public final class SaveManager {
             System.err.println("Primary save " + file + " could not be loaded; attempting backup " + backup);
         }
 
-        T recovered = tryLoad(backup, type);
+        TryLoadResult<T> recovered = tryLoad(backup, type);
         if (recovered != null) {
             System.out.println("Recovered " + file + " from backup " + backup + ".");
-            migrator.accept(recovered);
-            return recovered;
+            migrator.accept(recovered.value());
+            migrateKeyIfNeeded(file, recovered);
+            return recovered.value();
         }
 
         if (Files.exists(file) || Files.exists(backup)) {
@@ -77,23 +79,43 @@ public final class SaveManager {
         return freshDefault;
     }
 
-    /** Returns the deserialized object, or null if the file doesn't exist or fails to load cleanly. */
-    private static <T> T tryLoad(Path file, Class<T> type) {
+    /**
+     * If {@code loaded} was only decryptable using the old shared/hardcoded key (i.e. this is the
+     * first load since upgrading to per-install keys), immediately re-saves it to {@code file} so
+     * it's now encrypted with this install's key, making the migration a one-time cost.
+     */
+    private static <T> void migrateKeyIfNeeded(Path file, TryLoadResult<T> loaded) {
+        if (loaded.needsKeyMigration()) {
+            System.out.println("Re-encrypting " + file + " with this install's key (was under the legacy shared key).");
+            save(file, loaded.value());
+        }
+    }
+
+    /** Returns the deserialized object (plus whether the legacy key had to be used), or null if
+     *  the file doesn't exist or fails to load cleanly under either key. */
+    private static <T> TryLoadResult<T> tryLoad(Path file, Class<T> type) {
         try {
             if (!Files.exists(file)) {
                 return null;
             }
             byte[] encrypted = Files.readAllBytes(file);
-            String json = SaveCrypto.decrypt(encrypted);
-            if (json == null) {
+            SaveCrypto.DecryptResult result = SaveCrypto.decrypt(encrypted);
+            if (result == null) {
                 System.err.println("Save file " + file + " failed its integrity check (tampered or corrupted).");
                 return null;
             }
-            return GSON.fromJson(json, type);
+            T value = GSON.fromJson(result.json(), type);
+            return new TryLoadResult<>(value, result.usedLegacyKey());
         } catch (IOException | JsonSyntaxException e) {
             System.err.println("Failed to read/parse " + file + ": " + e.getMessage());
             return null;
         }
+    }
+
+    /** value: the deserialized object. needsKeyMigration: true if decrypting it required falling
+     *  back to the old shared/hardcoded key, meaning the caller should re-save it under this
+     *  install's key so the fallback isn't needed again next time. */
+    private record TryLoadResult<T>(T value, boolean needsKeyMigration) {
     }
 
     /**
