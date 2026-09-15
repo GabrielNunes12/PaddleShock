@@ -128,9 +128,11 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
 
     private BitmapText scoreText;
 
-    /** Live "P : O" readout on the Classic Court scoreboard prop; null on every other level (the
-     *  prop only exists there) and for the entire duration of any non-classic match. */
-    private ScoreboardDisplay scoreboardDisplay;
+    /** Live "P : O" readouts on the Classic Court scoreboard prop(s); empty on every other level
+     *  (the prop only exists there). One prop near the player's own end in every mode; a second
+     *  near the opponent's end too when there's a real opponent to read it (multiplayer/
+     *  spectator) - skipped in {@link Mode#SINGLE_PLAYER} since the AI has no use for one. */
+    private final List<ScoreboardDisplay> scoreboardDisplays = new ArrayList<>(2);
 
     private final Vector3f screenRightWorld = new Vector3f();
     private final Vector3f screenUpWorld = new Vector3f();
@@ -379,11 +381,19 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
 
         switch (level.getId()) {
             case "level_classic" -> {
-                Spatial scoreboard = loadProp("Models/Decor/scoreboard.glb", 2.4f, leftX + 3.5f, -3f, 0.3f);
-                decor.attachChild(scoreboard);
                 decor.attachChild(loadProp("Models/Decor/bench.glb", 0.7f, rightX, -2f, -0.35f));
-                scoreboardDisplay = new ScoreboardDisplay(
-                        getApplication().getAssetManager(), decor, scoreboard);
+
+                // Near the player's own end, beside the table (not overlapping its surface),
+                // angled to face this camera - useful even vs. AI, since the human player is
+                // the one reading it.
+                addScoreboard(decor, leftX, -2f, 0.5f);
+
+                // A second one near the far end, for when there's a real opponent on the other
+                // side to read it (multiplayer, or a spectator watching both) - the AI has no
+                // use for one, so skip it in single-player.
+                if (mode != Mode.SINGLE_PLAYER) {
+                    addScoreboard(decor, leftX, 2f, 0.65f);
+                }
             }
             case "level_neon" -> {
                 decor.attachChild(loadProp("Models/Decor/arcade_machine.glb", 2.0f, rightX, -3f, FastMath.QUARTER_PI * 0.6f));
@@ -405,6 +415,15 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             }
         }
         return decor;
+    }
+
+    /** Loads a scoreboard prop at the given spot beside the table and attaches its live digit
+     *  readout, tracked in {@link #scoreboardDisplays} so {@link #updateScoreText} keeps every
+     *  instance in sync. */
+    private void addScoreboard(Node decor, float x, float z, float rotationY) {
+        Spatial scoreboard = loadProp("Models/Decor/scoreboard.glb", 2.4f, x, z, rotationY);
+        decor.attachChild(scoreboard);
+        scoreboardDisplays.add(new ScoreboardDisplay(getApplication().getAssetManager(), decor, scoreboard));
     }
 
     /** Loads a decor model, scales it to a target height, and places it beside the table. */
@@ -537,8 +556,8 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             }
             default -> throw new IllegalStateException("Unhandled mode: " + mode);
         }
-        if (scoreboardDisplay != null) {
-            scoreboardDisplay.update(mine, opponent);
+        for (ScoreboardDisplay display : scoreboardDisplays) {
+            display.update(mine, opponent);
         }
     }
 
