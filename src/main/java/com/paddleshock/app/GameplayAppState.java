@@ -42,6 +42,7 @@ import com.paddleshock.entities.Arena;
 import com.paddleshock.entities.Ball;
 import com.paddleshock.entities.Paddle;
 import com.paddleshock.entities.PaddleModel;
+import com.paddleshock.entities.ScoreboardDisplay;
 import com.paddleshock.entities.Table;
 import com.paddleshock.entities.TextureSet;
 import com.paddleshock.i18n.I18n;
@@ -126,6 +127,10 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     private Integer pendingPlayerPowerUpSlot;
 
     private BitmapText scoreText;
+
+    /** Live "P : O" readout on the Classic Court scoreboard prop; null on every other level (the
+     *  prop only exists there) and for the entire duration of any non-classic match. */
+    private ScoreboardDisplay scoreboardDisplay;
 
     private final Vector3f screenRightWorld = new Vector3f();
     private final Vector3f screenUpWorld = new Vector3f();
@@ -374,8 +379,11 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
 
         switch (level.getId()) {
             case "level_classic" -> {
-                decor.attachChild(loadProp("Models/Decor/scoreboard.glb", 2.4f, leftX, -3f, 0.35f));
+                Spatial scoreboard = loadProp("Models/Decor/scoreboard.glb", 2.4f, leftX + 3.5f, -3f, 0.3f);
+                decor.attachChild(scoreboard);
                 decor.attachChild(loadProp("Models/Decor/bench.glb", 0.7f, rightX, -2f, -0.35f));
+                scoreboardDisplay = new ScoreboardDisplay(
+                        getApplication().getAssetManager(), decor, scoreboard);
             }
             case "level_neon" -> {
                 decor.attachChild(loadProp("Models/Decor/arcade_machine.glb", 2.0f, rightX, -3f, FastMath.QUARTER_PI * 0.6f));
@@ -502,14 +510,35 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     }
 
     private void updateScoreText() {
+        int mine;
+        int opponent;
         switch (mode) {
-            case SINGLE_PLAYER -> scoreText.setText(I18n.t("gameplay.score_single_player",
-                    matchSimulation.getPlayerScore(), matchSimulation.getOpponentScore()));
-            case HOST -> scoreText.setText(I18n.t("gameplay.score_host",
-                    matchSimulation.getPlayerScore(), matchSimulation.getOpponentScore()));
-            case JOINER -> scoreText.setText(I18n.t("gameplay.score_joiner", joinerDisplayScore, hostDisplayScore));
-            // Read-only view: neither side is "you" - name both players plainly instead.
-            case SPECTATOR -> scoreText.setText(I18n.t("gameplay.score_spectator", hostDisplayScore, joinerDisplayScore));
+            case SINGLE_PLAYER -> {
+                mine = matchSimulation.getPlayerScore();
+                opponent = matchSimulation.getOpponentScore();
+                scoreText.setText(I18n.t("gameplay.score_single_player", mine, opponent));
+            }
+            case HOST -> {
+                mine = matchSimulation.getPlayerScore();
+                opponent = matchSimulation.getOpponentScore();
+                scoreText.setText(I18n.t("gameplay.score_host", mine, opponent));
+            }
+            case JOINER -> {
+                mine = joinerDisplayScore;
+                opponent = hostDisplayScore;
+                scoreText.setText(I18n.t("gameplay.score_joiner", mine, opponent));
+            }
+            // Read-only view: neither side is "you" - name both players plainly instead, and
+            // show the scoreboard prop in host-then-joiner order to match.
+            case SPECTATOR -> {
+                mine = hostDisplayScore;
+                opponent = joinerDisplayScore;
+                scoreText.setText(I18n.t("gameplay.score_spectator", mine, opponent));
+            }
+            default -> throw new IllegalStateException("Unhandled mode: " + mode);
+        }
+        if (scoreboardDisplay != null) {
+            scoreboardDisplay.update(mine, opponent);
         }
     }
 
