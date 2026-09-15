@@ -6,6 +6,7 @@ import java.util.Optional;
 import com.jme3.math.ColorRGBA;
 
 import com.paddleshock.entities.BallModel;
+import com.paddleshock.entities.PaddleModel;
 import com.paddleshock.entities.TextureSet;
 import com.paddleshock.powerups.PowerUpType;
 
@@ -14,11 +15,11 @@ public final class Catalog {
 
     public static final List<PaddleDefinition> PADDLES = List.of(
             new PaddleDefinition("paddle_classic", "Classic", 0,
-                    1.0f, 1.0f, new ColorRGBA(0.2f, 0.6f, 1f, 1f), TextureSet.PLASTIC),
+                    1.0f, 1.0f, new ColorRGBA(0.2f, 0.6f, 1f, 1f), TextureSet.PLASTIC, PaddleModel.CLASSIC),
             new PaddleDefinition("paddle_turbo", "Turbo", 150,
-                    1.35f, 0.8f, new ColorRGBA(1f, 0.8f, 0.1f, 1f), TextureSet.METAL),
+                    1.35f, 0.8f, new ColorRGBA(1f, 0.8f, 0.1f, 1f), TextureSet.METAL, PaddleModel.TURBO),
             new PaddleDefinition("paddle_wall", "The Wall", 150,
-                    0.75f, 1.4f, new ColorRGBA(0.6f, 0.6f, 0.62f, 1f), TextureSet.CONCRETE));
+                    0.75f, 1.4f, new ColorRGBA(0.6f, 0.6f, 0.62f, 1f), TextureSet.CONCRETE, PaddleModel.WALL));
 
     public static final List<TableDefinition> TABLES = List.of(
             new TableDefinition("table_classic", "Classic", 0,
@@ -32,7 +33,7 @@ public final class Catalog {
             new BallDefinition("ball_classic", "Classic", 0,
                     1.0f, 1.0f, ColorRGBA.White, TextureSet.RUBBER, BallModel.CLASSIC),
             new BallDefinition("ball_pellet", "Pellet", 150,
-                    1.3f, 0.7f, new ColorRGBA(1f, 0.3f, 0.3f, 1f), TextureSet.METAL, BallModel.NONE),
+                    1.3f, 0.7f, new ColorRGBA(1f, 0.3f, 0.3f, 1f), TextureSet.METAL, BallModel.PELLET),
             new BallDefinition("ball_beach", "Beach Ball", 150,
                     0.7f, 1.6f, new ColorRGBA(0.3f, 0.8f, 1f, 1f), TextureSet.PLASTIC, BallModel.BEACH));
 

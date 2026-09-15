@@ -14,6 +14,7 @@ import com.paddleshock.data.PowerUpDefinition;
 import com.paddleshock.entities.Ball;
 import com.paddleshock.entities.BallModel;
 import com.paddleshock.entities.Paddle;
+import com.paddleshock.entities.PaddleModel;
 import com.paddleshock.entities.Table;
 import com.paddleshock.entities.TextureSet;
 import com.paddleshock.powerups.PowerUpType;
@@ -51,9 +52,9 @@ class MatchSimulationTest {
     @BeforeEach
     void setUp() {
         ball = new Ball(assetManager, ColorRGBA.White, TextureSet.RUBBER, BallModel.NONE, 1f, 1f, 1f, 1f, 0f);
-        playerPaddle = new Paddle(assetManager, ColorRGBA.White, TextureSet.PLASTIC,
+        playerPaddle = new Paddle(assetManager, ColorRGBA.White, TextureSet.PLASTIC, PaddleModel.CLASSIC,
                 GameConstants.PADDLE_PLAYER_Z, 1f, 1f);
-        opponentPaddle = new Paddle(assetManager, ColorRGBA.White, TextureSet.PLASTIC,
+        opponentPaddle = new Paddle(assetManager, ColorRGBA.White, TextureSet.PLASTIC, PaddleModel.CLASSIC,
                 GameConstants.PADDLE_OPPONENT_Z, 1f, 1f);
         table = new Table(assetManager, ColorRGBA.White, TextureSet.MARBLE, 1f);
         sim = new MatchSimulation(ball, playerPaddle, opponentPaddle, table);

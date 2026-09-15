@@ -41,6 +41,7 @@ import com.paddleshock.data.TableDefinition;
 import com.paddleshock.entities.Arena;
 import com.paddleshock.entities.Ball;
 import com.paddleshock.entities.Paddle;
+import com.paddleshock.entities.PaddleModel;
 import com.paddleshock.entities.Table;
 import com.paddleshock.entities.TextureSet;
 import com.paddleshock.i18n.I18n;
@@ -325,11 +326,12 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         gameNode.attachChild(table.getNode());
 
         playerPaddle = new Paddle(getApplication().getAssetManager(), paddleDef.getColor(), paddleDef.getTextureSet(),
-                GameConstants.PADDLE_PLAYER_Z, paddleDef.getSpeedMultiplier(), paddleDef.getSizeMultiplier());
+                paddleDef.getPaddleModel(), GameConstants.PADDLE_PLAYER_Z, paddleDef.getSpeedMultiplier(),
+                paddleDef.getSizeMultiplier());
         gameNode.attachChild(playerPaddle.getNode());
 
         opponentPaddle = new Paddle(getApplication().getAssetManager(), new ColorRGBA(1f, 0.35f, 0.3f, 1f),
-                TextureSet.PLASTIC, GameConstants.PADDLE_OPPONENT_Z, 1f, 1f);
+                TextureSet.PLASTIC, PaddleModel.CLASSIC, GameConstants.PADDLE_OPPONENT_Z, 1f, 1f);
         gameNode.attachChild(opponentPaddle.getNode());
 
         // The level's own bounce energy stacks with the table's, so e.g. a bouncy table in the
@@ -347,12 +349,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         }
         resolveLoadout(profile);
 
-        if ("level_classic".equals(level.getId())) {
-            gameNode.attachChild(buildSideDecor());
-            gameNode.attachChild(buildTrophyDecor());
-        } else {
-            gameNode.attachChild(buildThemedDecor());
-        }
+        gameNode.attachChild(buildThemedDecor());
     }
 
     /** Resolves the player's 3 store-configured power-up slots into their catalog definitions. */
@@ -369,30 +366,17 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         }
     }
 
-    /** A miniature ping-pong table (with its own tiny paddles/net/ball) as a display piece beside the real table. */
-    private Spatial buildSideDecor() {
-        Spatial decor = getApplication().getAssetManager().loadModel("Models/Decor/pingpong.glb");
-        decor.setLocalScale(3f);
-        decor.rotate(0, FastMath.QUARTER_PI * 0.6f, 0);
-        decor.setLocalTranslation(GameConstants.TABLE_HALF_WIDTH + 2f, 0f, -3f);
-        return decor;
-    }
-
-    /** A trophy display piece on the opposite side of the table from the mini ping-pong table. */
-    private Spatial buildTrophyDecor() {
-        Spatial trophy = getApplication().getAssetManager().loadModel("Models/Decor/trophy.glb");
-        scaleToHeight(trophy, 1.4f);
-        trophy.setLocalTranslation(-GameConstants.TABLE_HALF_WIDTH - 2f, 0f, -3f);
-        return trophy;
-    }
-
-    /** Themed side decor for every non-classic level, replacing the ping-pong table/trophy pair. */
+    /** Themed side decor per level. */
     private Node buildThemedDecor() {
         Node decor = new Node("themedDecor");
         float rightX = GameConstants.TABLE_HALF_WIDTH + 2f;
         float leftX = -GameConstants.TABLE_HALF_WIDTH - 2f;
 
         switch (level.getId()) {
+            case "level_classic" -> {
+                decor.attachChild(loadProp("Models/Decor/scoreboard.glb", 2.4f, leftX, -3f, 0.35f));
+                decor.attachChild(loadProp("Models/Decor/bench.glb", 0.7f, rightX, -2f, -0.35f));
+            }
             case "level_neon" -> {
                 decor.attachChild(loadProp("Models/Decor/arcade_machine.glb", 2.0f, rightX, -3f, FastMath.QUARTER_PI * 0.6f));
                 decor.attachChild(loadProp("Models/Decor/arcade_machine.glb", 2.0f, leftX, -3f, -FastMath.QUARTER_PI * 0.6f));

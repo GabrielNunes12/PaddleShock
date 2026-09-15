@@ -14,9 +14,9 @@ import com.paddleshock.GameConstants;
 /** A single paddle: an imported table-tennis paddle mesh, tinted/textured per catalog item. */
 public class Paddle {
 
-    private static final String MODEL_PATH = "Models/Paddle/paddle.glb";
-
-    /** Uniform scale bringing the source model (~2 units wide, ~3.6 tall) down to game scale. */
+    /** Uniform scale bringing the source model (~2 units wide, ~3.6 tall) down to game scale. Every
+     *  {@link PaddleModel} shares the same handle-bottom origin convention as the classic mesh, so
+     *  this one scale/pivot works unchanged for all of them. */
     private static final float MODEL_SCALE = 0.4f;
 
     private final Node node;
@@ -29,13 +29,13 @@ public class Paddle {
     private float buffSpeedMultiplier = 1f;
     private float buffRadiusMultiplier = 1f;
 
-    public Paddle(AssetManager assetManager, ColorRGBA color, TextureSet textureSet, float homeZ,
-            float baseSpeedMultiplier, float baseRadiusMultiplier) {
+    public Paddle(AssetManager assetManager, ColorRGBA color, TextureSet textureSet,
+            PaddleModel paddleModel, float homeZ, float baseSpeedMultiplier, float baseRadiusMultiplier) {
         this.homeZ = homeZ;
         this.baseSpeedMultiplier = baseSpeedMultiplier;
         this.baseRadiusMultiplier = baseRadiusMultiplier;
 
-        Spatial model = assetManager.loadModel(MODEL_PATH);
+        Spatial model = assetManager.loadModel(paddleModel.getPath());
         Material material = TexturedMaterials.create(assetManager, textureSet.getColorMap(),
                 textureSet.getNormalMap(), color);
         model.depthFirstTraversal(spatial -> {

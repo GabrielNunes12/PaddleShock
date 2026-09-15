@@ -5,7 +5,8 @@ public enum BallModel {
     CLASSIC("Models/Ball/classic.glb", true),
     /** Beach ball ships its own colorful panel materials; don't override them with a tint. */
     BEACH("Models/Ball/beach.glb", false),
-    /** No good real-model candidate found yet (the golf ball export was corrupted); use a plain sphere. */
+    PELLET("Models/Ball/pellet.glb", true),
+    /** No good real-model candidate found yet; use a plain sphere. */
     NONE(null, true);
 
     private final String path;
