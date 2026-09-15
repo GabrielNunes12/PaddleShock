@@ -81,11 +81,13 @@ public final class ScoreboardDisplay {
             vertices[i] = rotation.mult(scaled).addLocal(translation);
         }
 
-        // U-flipped (1,0 / 0,0 / 0,1 / 1,1): this camera consistently sees the panel from the
-        // side that reads as the mesh's "back" for a quad wound this way, mirroring the text -
-        // flipping U here corrects that without touching the vertex winding/culling.
+        // U-flipped and V-flipped relative to the "obvious" (0,0)/(1,0)/(1,1)/(0,1) mapping:
+        // this camera sees the panel from the side that reads as the mesh's "back" for a quad
+        // wound this way (mirroring the text left-right), and AWTLoader's un-flipped row order
+        // put the source image's top row at V=0 (the bottom of the quad), flipping it upside
+        // down too. Both axes flipped here corrects both without touching vertex winding/culling.
         Vector2f[] texCoords = {
-            new Vector2f(1, 0), new Vector2f(0, 0), new Vector2f(0, 1), new Vector2f(1, 1),
+            new Vector2f(1, 1), new Vector2f(0, 1), new Vector2f(0, 0), new Vector2f(1, 0),
         };
 
         Mesh mesh = new Mesh();

@@ -383,16 +383,19 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             case "level_classic" -> {
                 decor.attachChild(loadProp("Models/Decor/bench.glb", 0.7f, rightX, -2f, -0.35f));
 
-                // Near the player's own end, beside the table (not overlapping its surface),
-                // angled to face this camera - useful even vs. AI, since the human player is
-                // the one reading it.
-                addScoreboard(decor, leftX, -2f, 0.5f);
+                // Near the player's own end, beside the table (not overlapping its surface). The
+                // model's own front already faces world +Z by design (toward this camera at
+                // (0,7,11)) with NO extra rotation - useful even vs. AI, since the human player
+                // is the one reading it.
+                addScoreboard(decor, leftX, -2f, 0f);
 
                 // A second one near the far end, for when there's a real opponent on the other
                 // side to read it (multiplayer, or a spectator watching both) - the AI has no
-                // use for one, so skip it in single-player.
+                // use for one, so skip it in single-player. Still unrotated: "front faces +Z"
+                // points back toward this same camera regardless of how far down the court the
+                // prop sits.
                 if (mode != Mode.SINGLE_PLAYER) {
-                    addScoreboard(decor, leftX, 2f, 0.65f);
+                    addScoreboard(decor, leftX, 2f, 0f);
                 }
             }
             case "level_neon" -> {
