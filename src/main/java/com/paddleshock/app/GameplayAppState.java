@@ -384,18 +384,19 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                 decor.attachChild(loadProp("Models/Decor/bench.glb", 0.7f, rightX, -2f, -0.35f));
 
                 // Near the player's own end, beside the table (not overlapping its surface). The
-                // model's own front already faces world +Z by design (toward this camera at
-                // (0,7,11)) with NO extra rotation - useful even vs. AI, since the human player
-                // is the one reading it.
-                addScoreboard(decor, leftX, -2f, 0f);
+                // model's front (the recessed black display panel) faces its own local +Z - see
+                // ScoreboardDisplay's measured panel constants - but the single-player/host
+                // camera sits at z=-11 (see setUpCamera()), i.e. on the -Z side, so this one
+                // needs a 180-degree turn to present that front to it instead of the plain back.
+                addScoreboard(decor, leftX, -2f, FastMath.PI, true);
 
-                // A second one near the far end, for when there's a real opponent on the other
-                // side to read it (multiplayer, or a spectator watching both) - the AI has no
-                // use for one, so skip it in single-player. Still unrotated: "front faces +Z"
-                // points back toward this same camera regardless of how far down the court the
-                // prop sits.
+                // A second one near the far end (close to the opponent's own paddle position),
+                // for a real opponent to read from their own end - only meaningful in a real
+                // match, so skipped in single-player. A joiner's camera is mirrored to the
+                // OPPOSITE end (z=+11, see setUpCamera()'s Mode.JOINER branch), which sits on
+                // the +Z side of this board - exactly where its front already faces unrotated.
                 if (mode != Mode.SINGLE_PLAYER) {
-                    addScoreboard(decor, leftX, 2f, 0f);
+                    addScoreboard(decor, leftX, 2f, 0f, false);
                 }
             }
             case "level_neon" -> {
@@ -422,11 +423,13 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
 
     /** Loads a scoreboard prop at the given spot beside the table and attaches its live digit
      *  readout, tracked in {@link #scoreboardDisplays} so {@link #updateScoreText} keeps every
-     *  instance in sync. */
-    private void addScoreboard(Node decor, float x, float z, float rotationY) {
+     *  instance in sync. {@code mirrored} must be true for the 180-degree-rotated (far/opponent-
+     *  facing) board - see {@link ScoreboardDisplay}'s constructor. */
+    private void addScoreboard(Node decor, float x, float z, float rotationY, boolean mirrored) {
         Spatial scoreboard = loadProp("Models/Decor/scoreboard.glb", 2.4f, x, z, rotationY);
         decor.attachChild(scoreboard);
-        scoreboardDisplays.add(new ScoreboardDisplay(getApplication().getAssetManager(), decor, scoreboard));
+        scoreboardDisplays.add(
+                new ScoreboardDisplay(getApplication().getAssetManager(), decor, scoreboard, mirrored));
     }
 
     /** Loads a decor model, scales it to a target height, and places it beside the table. */

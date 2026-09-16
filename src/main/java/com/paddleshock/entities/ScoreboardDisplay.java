@@ -27,8 +27,9 @@ import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 
 /** A live "P : O" digit readout for the Classic Court scoreboard prop (see
- *  {@code Models/Decor/scoreboard.glb}), redrawn whenever the score changes. The prop's own baked
- *  "10 : 07" digits are static art, so this overlays a small textured quad in front of them.
+ *  {@code Models/Decor/scoreboard.glb}), redrawn whenever the score changes. The model is the
+ *  housing only (stand, posts, blank black panel) - it no longer ships baked digits, so this
+ *  quad is the entire readout, not an overlay covering up static art.
  *
  * <p>The quad is a SIBLING of the loaded scoreboard model (attached to the same node the
  * scoreboard model itself was attached to), not a child of it and not transformed via its own
@@ -46,13 +47,18 @@ public final class ScoreboardDisplay {
     private static final int TEX_H = 96;
 
     // Native-space (pre-scale) offset/size of the panel quad, expressed in the scoreboard
-    // model's own local coordinate system - tuned by eye against the actual model, not measured
-    // from its source file.
-    private static final float PANEL_WIDTH = 1.4f;
-    private static final float PANEL_HEIGHT = 0.6f;
-    private static final float PANEL_CENTER_X = 1.15f;
-    private static final float PANEL_CENTER_Y = 1.8f;
-    private static final float PANEL_Z_OFFSET = 1.2f;
+    // model's own local coordinate system - measured directly from the model source (usable
+    // black panel is 2.660 wide x 1.260 tall, centered at X 0.000 / Y 2.550, front surface at
+    // Z 0.135) by blenderguy-0d, not eyeballed. Sized a bit inside the panel's full bounds
+    // rather than filling it edge to edge.
+    private static final float PANEL_WIDTH = 2.3f;
+    private static final float PANEL_HEIGHT = 0.85f;
+    private static final float PANEL_CENTER_X = 0.0f;
+    private static final float PANEL_CENTER_Y = 2.52f;
+    // Measured front surface is Z 0.135; padded well past it (rather than the bare minimum) so
+    // the quad clears the panel with margin instead of relying on razor-thin, precision-
+    // sensitive separation.
+    private static final float PANEL_Z_OFFSET = 0.4f;
 
     private final Material material;
     private int lastLeft = Integer.MIN_VALUE;
@@ -61,8 +67,14 @@ public final class ScoreboardDisplay {
     /** @param attachParent sibling parent to attach the quad to (the same node the scoreboard
      *          model itself was attached to) - NOT the scoreboard model itself.
      *  @param scoreboardModel the already-positioned scoreboard model, read only for its
-     *          translation/rotation/scale so the quad lines up with it in world space. */
-    public ScoreboardDisplay(AssetManager assetManager, Node attachParent, Spatial scoreboardModel) {
+     *          translation/rotation/scale so the quad lines up with it in world space.
+     *  @param mirrored the scoreboard rotated 180&deg; (the far/opponent-facing one) reads its
+     *          text left-right mirrored with the same UV mapping the near one uses correctly -
+     *          confirmed empirically with a real 2-instance host/joiner match, not something
+     *          worth re-deriving the exact cause of. Pass {@code true} for that one to flip U
+     *          the other way and correct it. */
+    public ScoreboardDisplay(AssetManager assetManager, Node attachParent, Spatial scoreboardModel,
+            boolean mirrored) {
         float halfW = PANEL_WIDTH / 2f;
         float halfH = PANEL_HEIGHT / 2f;
         Vector3f[] localCorners = {
@@ -81,13 +93,14 @@ public final class ScoreboardDisplay {
             vertices[i] = rotation.mult(scaled).addLocal(translation);
         }
 
-        // U-flipped and V-flipped relative to the "obvious" (0,0)/(1,0)/(1,1)/(0,1) mapping:
-        // this camera sees the panel from the side that reads as the mesh's "back" for a quad
-        // wound this way (mirroring the text left-right), and AWTLoader's un-flipped row order
-        // put the source image's top row at V=0 (the bottom of the quad), flipping it upside
-        // down too. Both axes flipped here corrects both without touching vertex winding/culling.
+        // V always flipped: AWTLoader's un-flipped row order puts the source image's top row at
+        // V=0 (the bottom of the quad), flipping it upside down otherwise - true regardless of
+        // which way the prop is rotated. U flips the other way for the 180-degree-rotated
+        // (mirrored) board - see the constructor's @param mirrored.
+        float u0 = mirrored ? 0 : 1;
+        float u1 = mirrored ? 1 : 0;
         Vector2f[] texCoords = {
-            new Vector2f(1, 1), new Vector2f(0, 1), new Vector2f(0, 0), new Vector2f(1, 0),
+            new Vector2f(u0, 1), new Vector2f(u1, 1), new Vector2f(u1, 0), new Vector2f(u0, 0),
         };
 
         Mesh mesh = new Mesh();
