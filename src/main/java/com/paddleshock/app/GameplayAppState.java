@@ -14,7 +14,6 @@ import com.jme3.input.controls.MouseButtonTrigger;
 import com.jme3.light.AmbientLight;
 import com.jme3.light.DirectionalLight;
 import com.jme3.math.ColorRGBA;
-import com.jme3.math.FastMath;
 import com.jme3.math.Vector3f;
 import com.jme3.scene.Node;
 import com.jme3.scene.Spatial;
@@ -306,7 +305,8 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         }
         resolveLoadout(profile);
 
-        gameNode.attachChild(buildThemedDecor());
+        gameNode.attachChild(SceneDecorBuilder.build(getApplication().getAssetManager(), level.getId(),
+                mode != Mode.SINGLE_PLAYER, scoreboardDisplays));
 
         replayController = new ReplayController(ball, playerPaddle, opponentPaddle, app.getInputManager());
     }
@@ -323,82 +323,6 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                 aiPowerUpLoadout[i] = Catalog.findPowerUp(AI_POWERUP_IDS[i]).orElse(null);
             }
         }
-    }
-
-    /** Themed side decor per level. */
-    private Node buildThemedDecor() {
-        Node decor = new Node("themedDecor");
-        float rightX = GameConstants.TABLE_HALF_WIDTH + 2f;
-        float leftX = -GameConstants.TABLE_HALF_WIDTH - 2f;
-
-        switch (level.getId()) {
-            case "level_classic" -> {
-                decor.attachChild(loadProp("Models/Decor/bench.glb", 0.7f, rightX, -2f, -0.35f));
-
-                // Near the player's own end, beside the table (not overlapping its surface). The
-                // model's front (the recessed black display panel) faces its own local +Z - see
-                // ScoreboardDisplay's measured panel constants - but the single-player/host
-                // camera sits at z=-11 (see setUpCamera()), i.e. on the -Z side, so this one
-                // needs a 180-degree turn to present that front to it instead of the plain back.
-                addScoreboard(decor, leftX, -2f, FastMath.PI, true);
-
-                // A second one near the far end (close to the opponent's own paddle position),
-                // for a real opponent to read from their own end - only meaningful in a real
-                // match, so skipped in single-player. A joiner's camera is mirrored to the
-                // OPPOSITE end (z=+11, see setUpCamera()'s Mode.JOINER branch), which sits on
-                // the +Z side of this board - exactly where its front already faces unrotated.
-                if (mode != Mode.SINGLE_PLAYER) {
-                    addScoreboard(decor, leftX, 2f, 0f, false);
-                }
-            }
-            case "level_neon" -> {
-                decor.attachChild(loadProp("Models/Decor/arcade_machine.glb", 2.0f, rightX, -3f, FastMath.QUARTER_PI * 0.6f));
-                decor.attachChild(loadProp("Models/Decor/arcade_machine.glb", 2.0f, leftX, -3f, -FastMath.QUARTER_PI * 0.6f));
-            }
-            case "level_sunset" -> {
-                // Smaller and pushed further out/back than the other props - the raw models read
-                // oversized and crowded the frame at the same size/spot the others use.
-                decor.attachChild(loadProp("Models/Decor/palm_tree.glb", 2.6f, rightX + 1.5f, 1f, 0f));
-                decor.attachChild(loadProp("Models/Decor/beach_umbrella.glb", 1.7f, leftX - 1.5f, 1f, 0f));
-            }
-            case "level_space" -> {
-                decor.attachChild(loadProp("Models/Decor/satellite_dish.glb", 1.8f, rightX, -3f, 0f));
-                decor.attachChild(loadProp("Models/Decor/satellite_dish.glb", 1.8f, leftX, -3f, FastMath.PI));
-            }
-            default -> {
-                // No themed decor defined; the level falls back to an empty side (shouldn't happen
-                // for any catalog level today).
-            }
-        }
-        return decor;
-    }
-
-    /** Loads a scoreboard prop at the given spot beside the table and attaches its live digit
-     *  readout, tracked in {@link #scoreboardDisplays} so {@link #updateScoreText} keeps every
-     *  instance in sync. {@code mirrored} must be true for the 180-degree-rotated (far/opponent-
-     *  facing) board - see {@link ScoreboardDisplay}'s constructor. */
-    private void addScoreboard(Node decor, float x, float z, float rotationY, boolean mirrored) {
-        Spatial scoreboard = loadProp("Models/Decor/scoreboard.glb", 2.4f, x, z, rotationY);
-        decor.attachChild(scoreboard);
-        scoreboardDisplays.add(
-                new ScoreboardDisplay(getApplication().getAssetManager(), decor, scoreboard, mirrored));
-    }
-
-    /** Loads a decor model, scales it to a target height, and places it beside the table. */
-    private Spatial loadProp(String modelPath, float targetHeight, float x, float z, float rotationY) {
-        Spatial model = getApplication().getAssetManager().loadModel(modelPath);
-        scaleToHeight(model, targetHeight);
-        model.rotate(0, rotationY, 0);
-        model.setLocalTranslation(x, 0f, z);
-        return model;
-    }
-
-    /** Scales a loaded model (whose own baked-in size varies per source file) to a target height. */
-    private void scaleToHeight(Spatial spatial, float targetHeight) {
-        spatial.updateModelBound();
-        com.jme3.bounding.BoundingVolume bound = spatial.getWorldBound();
-        float nativeHeight = bound instanceof com.jme3.bounding.BoundingBox box ? box.getYExtent() * 2f : 1f;
-        spatial.setLocalScale(targetHeight / nativeHeight);
     }
 
     private void setUpHud(SimpleApplication simpleApp) {
