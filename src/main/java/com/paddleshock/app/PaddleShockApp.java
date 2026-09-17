@@ -25,10 +25,8 @@ import com.paddleshock.net.InviteClient;
 import com.paddleshock.net.InviteService;
 import com.paddleshock.net.NetClient;
 import com.paddleshock.net.NetHost;
-import com.paddleshock.net.NetProtocol;
 import com.paddleshock.net.RankClient;
 import com.paddleshock.net.RankService;
-import com.paddleshock.net.RankState;
 import com.paddleshock.net.TournamentClient;
 import com.paddleshock.net.TournamentService;
 import com.paddleshock.settings.GameSettings;
@@ -57,9 +55,10 @@ public class PaddleShockApp extends SimpleApplication {
     private final TournamentService tournamentService = new TournamentClient();
 
     private PlayerProfile profile;
-    /** This player's rank as of just before the current joined match started - see
-     *  {@link #enterJoinedMatch} / {@link #endRankedJoinerMatch}. */
-    private volatile RankState preMatchRank;
+    /** Owns the ranked-ladder report/relay/forfeit orchestration - see its class docs for why
+     *  that's pulled out of this class. Constructed in {@link #simpleInitApp} once {@link
+     *  #matchEndState} exists. */
+    private RankedMatchCoordinator rankedMatchCoordinator;
     private GameSettings gameSettings;
     private AudioManager audioManager;
     private SteamManager steamManager;
@@ -136,6 +135,9 @@ public class PaddleShockApp extends SimpleApplication {
         profileState = new ProfileState();
         tournamentState = new TournamentState();
         friendsState = new FriendsState();
+
+        rankedMatchCoordinator = new RankedMatchCoordinator(rankService, matchEndState,
+                this::endMatchCommon, this::recordMatchHistory);
 
         stateManager.attach(splashState);
         stateManager.attach(mainMenuState);
@@ -404,27 +406,13 @@ public class PaddleShockApp extends SimpleApplication {
         stateManager.attach(gameplayState);
         audioManager.playRandomMatchMusic();
 
-        preMatchRank = null;
+        rankedMatchCoordinator.clearPreMatchRank();
         if (!ranked) {
             // Unranked match (the host chose UNRANKED) - no ladder call needed, endMatch handles
             // match-end the same way single-player does.
             return;
         }
-        // Snapshot this player's rank now, before the match: the joiner has no way to learn its
-        // own LP delta from the host's report the way endRankedHostMatch does directly (that
-        // response is never relayed back over the game's own protocol) - endRankedJoinerMatch
-        // computes the delta itself by diffing against this baseline instead.
-        String playerId = profile.getPlayerId();
-        Thread thread = new Thread(() -> {
-            try {
-                preMatchRank = rankService.getRank(playerId);
-            } catch (IOException e) {
-                preMatchRank = null; // endRankedJoinerMatch falls back to "no delta shown"
-                NetLog.log("rank-prefetch failed for player " + playerId, e);
-            }
-        }, "rank-prefetch");
-        thread.setDaemon(true);
-        thread.start();
+        rankedMatchCoordinator.beginRankPrefetch(profile.getPlayerId());
     }
 
     public GameplayAppState getGameplayState() {
@@ -541,41 +529,7 @@ public class PaddleShockApp extends SimpleApplication {
      *  own authoritative result is relayed back over the still-open connection so it can show the
      *  real number instead of guessing via {@code withDeltaFrom} - see {@link #endRankedJoinerMatch}. */
     public void endRankedHostMatch(boolean playerWon, int playerScore, int opponentScore, NetHost netHost) {
-        int reward = endMatchCommon(playerWon, playerScore, opponentScore);
-        matchEndState.setRankedResult(playerWon, reward, playerScore, opponentScore);
-        matchEndState.setEnabled(true);
-
-        String joinerPlayerId = netHost == null ? "" : netHost.getJoinerPlayerId();
-        if (joinerPlayerId == null || joinerPlayerId.isEmpty()) {
-            matchEndState.reportRankResult(null);
-            recordMatchHistory("Ranked", playerScore, opponentScore, playerWon, 0, null);
-            return;
-        }
-        String hostPlayerId = profile.getPlayerId();
-        String lobbyCode = netHost.getLobbyCode();
-        Thread thread = new Thread(() -> {
-            RankState result = null;
-            try {
-                String matchId = java.util.UUID.randomUUID().toString();
-                RankClient.MatchReportResult report =
-                        rankService.reportMatchResult(matchId, hostPlayerId, joinerPlayerId, playerWon, lobbyCode);
-                result = report.getHost();
-                // Relay the joiner's own authoritative result back over the still-open connection
-                // so it can show the real number instead of guessing via withDeltaFrom - see
-                // endRankedJoinerMatch. Best-effort: if the joiner already disconnected, NetHost
-                // silently drops this and the joiner's own fallback kicks in.
-                netHost.sendRankResult(report.getJoiner());
-            } catch (IOException e) {
-                // offline, or the rank service is unreachable - the match itself already
-                // completed normally, so just show "rank unavailable" rather than fail anything.
-                NetLog.log("ranked match report failed (host)", e);
-            }
-            matchEndState.reportRankResult(result);
-            recordMatchHistory("Ranked", playerScore, opponentScore, playerWon,
-                    result == null ? 0 : result.getLpChange(), joinerPlayerId);
-        }, "rank-report");
-        thread.setDaemon(true);
-        thread.start();
+        rankedMatchCoordinator.endRankedHostMatch(playerWon, playerScore, opponentScore, netHost, profile.getPlayerId());
     }
 
     /** Same as {@link #endRankedHostMatch}, but for a mid-match joiner disconnect/timeout: the
@@ -583,43 +537,7 @@ public class PaddleShockApp extends SimpleApplication {
      *  joiner connected with a player id at all) and shows a real "opponent disconnected" notice
      *  rather than a plain win screen. */
     public void endRankedHostMatchByForfeit(int playerScore, int opponentScore, NetHost netHost, boolean wasRanked) {
-        int reward = endMatchCommon(true, playerScore, opponentScore);
-        String joinerPlayerId = netHost == null ? "" : netHost.getJoinerPlayerId();
-        boolean ranked = wasRanked && joinerPlayerId != null && !joinerPlayerId.isEmpty();
-
-        if (ranked) {
-            matchEndState.setRankedResult(true, reward, playerScore, opponentScore);
-        } else {
-            matchEndState.setResult(true, reward, playerScore, opponentScore);
-        }
-        matchEndState.setExtraNotice("Opponent disconnected - win awarded by forfeit");
-        matchEndState.setEnabled(true);
-
-        if (!ranked) {
-            // Still an unranked LAN/lobby match with a known opponent (the joiner sent an id in
-            // HELLO, just wasn't playing ranked) - record it against the rival tracker too.
-            recordMatchHistory("LAN Host", playerScore, opponentScore, true, 0, joinerPlayerId);
-            return;
-        }
-        String hostPlayerId = profile.getPlayerId();
-        String lobbyCode = netHost.getLobbyCode();
-        Thread thread = new Thread(() -> {
-            RankState result = null;
-            try {
-                String matchId = java.util.UUID.randomUUID().toString();
-                // The joiner is gone - no relay is possible or needed; it never shows a ranked
-                // result at all for a timeout (see handleJoinerConnectionLost).
-                result = rankService.reportMatchResult(matchId, hostPlayerId, joinerPlayerId, true, lobbyCode).getHost();
-            } catch (IOException e) {
-                // offline, or the rank service is unreachable - the forfeit itself still stands.
-                NetLog.log("ranked forfeit report failed (host)", e);
-            }
-            matchEndState.reportRankResult(result);
-            recordMatchHistory("Ranked", playerScore, opponentScore, true,
-                    result == null ? 0 : result.getLpChange(), joinerPlayerId);
-        }, "rank-report-forfeit");
-        thread.setDaemon(true);
-        thread.start();
+        rankedMatchCoordinator.endRankedHostMatchByForfeit(playerScore, opponentScore, netHost, wasRanked, profile.getPlayerId());
     }
 
     /** A joiner whose host vanished mid-match: show a real "connection lost" dead end instead of
@@ -653,98 +571,7 @@ public class PaddleShockApp extends SimpleApplication {
      *  host already reported the result for both players, so this just re-fetches this player's
      *  own updated rank for display. */
     public void endRankedJoinerMatch(boolean playerWon, int playerScore, int opponentScore, NetClient netClient) {
-        int reward = endMatchCommon(playerWon, playerScore, opponentScore);
-        matchEndState.setRankedResult(playerWon, reward, playerScore, opponentScore);
-        matchEndState.setEnabled(true);
-
-        String playerId = profile.getPlayerId();
-        // The host's ranked-ladder playerId, learned from WELCOME (see NetProtocol.TYPE_WELCOME /
-        // NetClient#getHostPlayerId) - "" for an older host that didn't send one, in which case
-        // recordMatchHistory simply skips the rival update.
-        String hostOpponentPlayerId = netClient == null ? null : netClient.getHostPlayerId();
-        Thread thread = new Thread(() -> {
-            // Prefer the host's own relayed authoritative result (see NetHost.sendRankResult /
-            // endRankedHostMatch) - it's the actual Lambda response, not a guess. Only fall back
-            // to the guess-based diff below if the relay never arrives (the host's report call
-            // failed entirely, or the connection dropped right after match-end).
-            RankState relayed = waitForRelayedRankResult(netClient);
-            if (relayed != null) {
-                matchEndState.reportRankResult(relayed);
-                recordMatchHistory("Ranked", playerScore, opponentScore, playerWon, relayed.getLpChange(), hostOpponentPlayerId);
-                return;
-            }
-
-            RankState fetched = null;
-            try {
-                // enterJoinedMatch's own prefetch thread may genuinely not have finished yet -
-                // an unrealistically fast match (or just an unlucky HTTP round trip) can outrun
-                // it. Wait briefly for it rather than treating "not yet set" as "unavailable" and
-                // silently showing a 0 delta for a real rank change.
-                RankState baseline = waitForPreMatchRank();
-                int baselineGames = baseline == null ? -1 : baseline.getWins() + baseline.getLosses();
-
-                // The host's own reportMatchResult call runs independently on a different
-                // machine, triggered by the same match-over event this side just reacted to -
-                // it may not have finished writing yet either. Poll briefly for this player's
-                // game count to actually move rather than risk showing the stale pre-match state.
-                for (int attempt = 0; attempt < 6; attempt++) {
-                    fetched = rankService.getRank(playerId);
-                    if (baselineGames < 0 || fetched.getWins() + fetched.getLosses() != baselineGames) {
-                        break;
-                    }
-                    fetched = null;
-                    Thread.sleep(400);
-                }
-                if (fetched == null) {
-                    fetched = rankService.getRank(playerId); // gave up waiting - show whatever's there
-                }
-                RankState delta = fetched.withDeltaFrom(baseline);
-                matchEndState.reportRankResult(delta);
-                recordMatchHistory("Ranked", playerScore, opponentScore, playerWon, delta.getLpChange(), hostOpponentPlayerId);
-            } catch (IOException e) {
-                matchEndState.reportRankResult(null); // offline, or the rank service is unreachable
-                recordMatchHistory("Ranked", playerScore, opponentScore, playerWon, 0, hostOpponentPlayerId);
-                NetLog.log("ranked rank-fetch failed (joiner)", e);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                matchEndState.reportRankResult(null);
-                recordMatchHistory("Ranked", playerScore, opponentScore, playerWon, 0, hostOpponentPlayerId);
-            }
-        }, "rank-fetch");
-        thread.setDaemon(true);
-        thread.start();
-    }
-
-    /** Polls for the host's relayed {@code TYPE_RANK_RESULT} for a few seconds, or gives up and
-     *  returns {@code null} (the caller then falls back to the guess-based diff). Runs on the
-     *  calling background thread, never the render thread. */
-    private RankState waitForRelayedRankResult(NetClient netClient) {
-        if (netClient == null) {
-            return null;
-        }
-        for (int i = 0; i < 15; i++) { // ~3s at 200ms
-            NetProtocol.RankResultMessage msg = netClient.pollRelayedRankResult();
-            if (msg != null) {
-                return RankState.fromRelay(msg.tier(), msg.division(), msg.lp(), msg.wins(), msg.losses(),
-                        msg.lpChange(), msg.promoted(), msg.demoted(), msg.promoSeriesResult());
-            }
-            try {
-                Thread.sleep(200);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return null;
-            }
-        }
-        return null;
-    }
-
-    /** Blocks (on the calling background thread - never the render thread) up to ~2s for
-     *  {@link #enterJoinedMatch}'s rank prefetch to land, in case the match ended before it did. */
-    private RankState waitForPreMatchRank() throws InterruptedException {
-        for (int i = 0; i < 10 && preMatchRank == null; i++) {
-            Thread.sleep(200);
-        }
-        return preMatchRank;
+        rankedMatchCoordinator.endRankedJoinerMatch(playerWon, playerScore, opponentScore, netClient, profile.getPlayerId());
     }
 
     private int endMatchCommon(boolean playerWon, int playerScore, int opponentScore) {
