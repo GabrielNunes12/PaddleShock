@@ -13,19 +13,11 @@ import com.jme3.input.controls.KeyTrigger;
 import com.jme3.input.controls.MouseButtonTrigger;
 import com.jme3.light.AmbientLight;
 import com.jme3.light.DirectionalLight;
-import com.jme3.material.Material;
-import com.jme3.material.RenderState;
-import com.jme3.material.RenderState.BlendMode;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.FastMath;
 import com.jme3.math.Vector3f;
-import com.jme3.renderer.queue.RenderQueue.Bucket;
-import com.jme3.scene.Geometry;
-import com.jme3.scene.Mesh;
 import com.jme3.scene.Node;
 import com.jme3.scene.Spatial;
-import com.jme3.scene.VertexBuffer.Type;
-import com.jme3.util.BufferUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -73,9 +65,6 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
 
     private static final String ACTION_PAUSE = "PS_Pause";
     private static final String ACTION_REPLAY_SKIP = "PS_ReplaySkip";
-    private static final float POWERUP_BOX_SIZE = 64f;
-    private static final float POWERUP_BOX_GAP = 12f;
-    private static final ColorRGBA POWERUP_BOX_COOLDOWN_COLOR = new ColorRGBA(0.180f, 0.196f, 0.235f, 1f);
 
     private final Node gameNode = new Node("gameplayRoot");
     private final Node hudNode = new Node("gameplayHud");
@@ -97,11 +86,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
      *  via {@link #aiPowerUpMinInterval}/{@link #aiPowerUpMaxInterval}. */
     private static final String[] AI_POWERUP_IDS = {"powerup_speed_boost", "powerup_slow_opponent"};
     private final PowerUpDefinition[] aiPowerUpLoadout = new PowerUpDefinition[AI_POWERUP_IDS.length];
-    private final Geometry[] powerUpBoxes = new Geometry[3];
-    private final BitmapText[] powerUpKeyTexts = new BitmapText[3];
-    private final BitmapText[] powerUpIconTexts = new BitmapText[3];
-    private final BitmapText[] powerUpCooldownTexts = new BitmapText[3];
-    private final BitmapText[] powerUpNameTexts = new BitmapText[3];
+    private final PowerUpHud powerUpHud = new PowerUpHud();
     /** Only meaningful in {@link Mode#SINGLE_PLAYER} - resolved from the player's chosen
      *  {@link com.paddleshock.settings.AiDifficulty} in {@link #initialize}. */
     private float aiMaxSpeed;
@@ -154,22 +139,10 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
      *  rematch can detect a fresh disconnect. */
     private boolean disconnectHandled = false;
 
-    /** Joiner-side only: how long {@code netClient.isHostTimedOut()} has been continuously true -
-     *  reset the instant a fresh packet arrives from the host (which flips {@code isHostTimedOut()}
-     *  back to false on its own, since it's just "time since last packet"). While this is below
-     *  {@link #JOINER_RECONNECT_WINDOW_SECONDS}, {@link #updateJoiner} keeps re-sending HELLO (see
-     *  {@link #JOINER_RECONNECT_HELLO_INTERVAL_SECONDS}) instead of giving up immediately - a
-     *  transient NAT remap (Wi-Fi blip, mobile handoff) is common enough to deserve a real chance
-     *  to self-heal rather than an instant dead-end (see {@code NetHost#handleHello}'s matching
-     *  reconnect-by-player-id acceptance). Only past this window does {@link #handleHostDisconnected}
-     *  actually fire. */
-    private float joinerReconnectElapsedSeconds;
-    private float joinerReconnectHelloTimer;
-    private static final float JOINER_RECONNECT_HELLO_INTERVAL_SECONDS = 1f;
-    /** A few seconds beyond {@link NetClient#DISCONNECT_TIMEOUT_MS} (which has already elapsed by
-     *  the time this window even starts) - long enough to give a real transient blip a chance to
-     *  self-heal, short enough that a genuinely dead host still dead-ends in a reasonable time. */
-    private static final float JOINER_RECONNECT_WINDOW_SECONDS = 8f;
+    /** Joiner/spectator-side only: tracks {@code netClient.isHostTimedOut()} across frames and
+     *  drives the bounded reconnect-attempt window before {@link #handleHostDisconnected} actually
+     *  fires - see {@link ReconnectWatcher}. */
+    private final ReconnectWatcher reconnectWatcher = new ReconnectWatcher();
 
     /** Records+plays back recent renderable match state as an instant replay right after the
      *  match ends, before handing off to {@code PaddleShockApp}'s normal match-end flow. Runs for
@@ -453,45 +426,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         }
 
         float boxTopY = simpleApp.getCamera().getHeight() - 64;
-        for (int i = 0; i < powerUpLoadout.length; i++) {
-            PowerUpDefinition def = powerUpLoadout[i];
-            if (def == null) {
-                continue;
-            }
-            float boxX = 20 + i * (POWERUP_BOX_SIZE + POWERUP_BOX_GAP);
-            powerUpBoxes[i] = attachPowerUpBox(boxX, boxTopY, def.getType().getColor());
-
-            BitmapText keyText = new BitmapText(font);
-            keyText.setSize(13);
-            keyText.setColor(Theme.TEXT);
-            keyText.setText(Integer.toString(i + 1));
-            keyText.setLocalTranslation(boxX + 6, boxTopY - 2, 2);
-            hudNode.attachChild(keyText);
-            powerUpKeyTexts[i] = keyText;
-
-            BitmapText iconText = new BitmapText(font);
-            iconText.setSize(28);
-            iconText.setColor(Theme.ON_ACCENT);
-            iconText.setText(def.getDisplayName().substring(0, 1).toUpperCase());
-            iconText.setLocalTranslation(boxX + POWERUP_BOX_SIZE / 2f - 9, boxTopY - POWERUP_BOX_SIZE / 2f + 15, 2);
-            hudNode.attachChild(iconText);
-            powerUpIconTexts[i] = iconText;
-
-            BitmapText cooldownText = new BitmapText(font);
-            cooldownText.setSize(20);
-            cooldownText.setColor(Theme.TEXT);
-            cooldownText.setLocalTranslation(boxX + POWERUP_BOX_SIZE / 2f - 8, boxTopY - POWERUP_BOX_SIZE / 2f + 11, 3);
-            hudNode.attachChild(cooldownText);
-            powerUpCooldownTexts[i] = cooldownText;
-
-            BitmapText nameText = new BitmapText(font);
-            nameText.setSize(12);
-            nameText.setColor(Theme.TEXT_DIM);
-            nameText.setText(def.getDisplayName().toUpperCase());
-            nameText.setLocalTranslation(boxX, boxTopY - POWERUP_BOX_SIZE - 6, 0);
-            hudNode.attachChild(nameText);
-            powerUpNameTexts[i] = nameText;
-        }
+        powerUpHud.build(simpleApp.getAssetManager(), hudNode, font, boxTopY, powerUpLoadout);
         updatePowerUpHud();
     }
 
@@ -528,53 +463,10 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         }
     }
 
-    /** A flat square, filled with the power-up's own color, used as its HUD slot icon. */
-    private Geometry attachPowerUpBox(float x, float topY, ColorRGBA color) {
-        Vector3f[] vertices = {
-            new Vector3f(0, 0, 0),
-            new Vector3f(POWERUP_BOX_SIZE, 0, 0),
-            new Vector3f(POWERUP_BOX_SIZE, -POWERUP_BOX_SIZE, 0),
-            new Vector3f(0, -POWERUP_BOX_SIZE, 0),
-        };
-
-        Mesh mesh = new Mesh();
-        mesh.setBuffer(Type.Position, 3, BufferUtils.createFloatBuffer(vertices));
-        mesh.setBuffer(Type.Index, 3, new short[] {0, 1, 2, 0, 2, 3});
-        mesh.updateBound();
-
-        Material material = new Material(getApplication().getAssetManager(), "Common/MatDefs/Misc/Unshaded.j3md");
-        material.setColor("Color", color);
-        material.getAdditionalRenderState().setBlendMode(BlendMode.Alpha);
-        material.getAdditionalRenderState().setFaceCullMode(RenderState.FaceCullMode.Off);
-
-        Geometry geometry = new Geometry("powerUpBox", mesh);
-        geometry.setMaterial(material);
-        geometry.setQueueBucket(Bucket.Gui);
-        geometry.setLocalTranslation(x, topY, 0);
-        hudNode.attachChild(geometry);
-        return geometry;
-    }
-
-    /** Grays a slot's box out and counts its cooldown down once used; back to full color when ready. */
+    /** Grays a slot's box out and counts its cooldown down once used; back to full color when
+     *  ready - see {@link PowerUpHud#update}. */
     private void updatePowerUpHud() {
-        for (int i = 0; i < powerUpBoxes.length; i++) {
-            Geometry box = powerUpBoxes[i];
-            PowerUpDefinition def = powerUpLoadout[i];
-            if (box == null || def == null) {
-                continue;
-            }
-            float remaining = matchSimulation == null ? 0f
-                    : matchSimulation.getPowerUpManager().getPlayerCooldownRemaining(def.getType());
-            boolean onCooldown = remaining > 0f;
-
-            box.getMaterial().setColor("Color", onCooldown ? POWERUP_BOX_COOLDOWN_COLOR : def.getType().getColor());
-            powerUpIconTexts[i].setCullHint(onCooldown ? Spatial.CullHint.Always : Spatial.CullHint.Never);
-            powerUpCooldownTexts[i].setCullHint(onCooldown ? Spatial.CullHint.Never : Spatial.CullHint.Always);
-            if (onCooldown) {
-                powerUpCooldownTexts[i].setText(Integer.toString((int) Math.ceil(remaining)));
-            }
-            powerUpNameTexts[i].setColor(onCooldown ? Theme.TEXT_DIM : Theme.TEXT);
-        }
+        powerUpHud.update(powerUpLoadout, matchSimulation == null ? null : matchSimulation.getPowerUpManager());
     }
 
     private void registerPauseKey(InputManager inputManager) {
@@ -799,30 +691,13 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     }
 
     private void updateJoiner(float tpf) {
-        if (netClient.isHostTimedOut()) {
-            joinerReconnectElapsedSeconds += tpf;
-            if (joinerReconnectElapsedSeconds >= JOINER_RECONNECT_WINDOW_SECONDS) {
-                // Bounded automatic reconnect attempts didn't get a WELCOME back in time - this is
-                // a genuinely dead/unreachable host, not just a transient blip. Fall through to the
-                // permanent dead-end exactly as before this feature existed.
-                handleHostDisconnected();
-                return;
-            }
-            // Still within the reconnect window: keep re-sending HELLO to the same host
-            // address/port on the SAME NetClient (same socket, same player id) - reusing the exact
-            // retry pattern MultiplayerState already uses while first connecting. If the host
-            // accepts it (see NetHost#handleHello's reconnect-by-player-id path) a fresh WELCOME/
-            // snapshot will arrive and isHostTimedOut() flips back to false on its own next frame,
-            // resuming the match with no further action needed here.
-            joinerReconnectHelloTimer += tpf;
-            if (joinerReconnectHelloTimer >= JOINER_RECONNECT_HELLO_INTERVAL_SECONDS) {
-                joinerReconnectHelloTimer = 0f;
-                netClient.sendHello();
-            }
+        // Reusing the exact retry pattern MultiplayerState already uses while first connecting: if
+        // the host accepts a resent HELLO (see NetHost#handleHello's reconnect-by-player-id path) a
+        // fresh WELCOME/snapshot will arrive and isHostTimedOut() flips back to false on its own
+        // next frame, resuming the match with no further action needed here.
+        if (reconnectWatcher.handle(tpf, netClient.isHostTimedOut(), netClient::sendHello, this::handleHostDisconnected)) {
             return;
         }
-        joinerReconnectElapsedSeconds = 0f;
-        joinerReconnectHelloTimer = 0f;
 
         PaddleInput localTickInput = computeLocalPaddleInput(tpf);
         PowerUpDefinition activated = inputGatherer.consumeNetworkActivation(powerUpLoadout);
@@ -840,21 +715,9 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
      *  spectator no-op, and {@code NetClient.isSpectator()} being what selects this mode in the
      *  first place), so it never calls {@link #computeLocalPaddleInput} at all. */
     private void updateSpectator(float tpf) {
-        if (netClient.isHostTimedOut()) {
-            joinerReconnectElapsedSeconds += tpf;
-            if (joinerReconnectElapsedSeconds >= JOINER_RECONNECT_WINDOW_SECONDS) {
-                handleHostDisconnected();
-                return;
-            }
-            joinerReconnectHelloTimer += tpf;
-            if (joinerReconnectHelloTimer >= JOINER_RECONNECT_HELLO_INTERVAL_SECONDS) {
-                joinerReconnectHelloTimer = 0f;
-                netClient.sendHello();
-            }
+        if (reconnectWatcher.handle(tpf, netClient.isHostTimedOut(), netClient::sendHello, this::handleHostDisconnected)) {
             return;
         }
-        joinerReconnectElapsedSeconds = 0f;
-        joinerReconnectHelloTimer = 0f;
 
         NetProtocol.SnapshotMessage snapshot = netClient.getLatestSnapshot();
         if (snapshot != null) {
@@ -1074,8 +937,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         hostDisplayScore = 0;
         lastAppliedSnapshot = null;
         disconnectHandled = false;
-        joinerReconnectElapsedSeconds = 0f;
-        joinerReconnectHelloTimer = 0f;
+        reconnectWatcher.reset();
         updateScoreText();
     }
 
