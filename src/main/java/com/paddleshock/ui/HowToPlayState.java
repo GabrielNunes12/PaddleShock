@@ -15,7 +15,8 @@ import com.simsilica.lemur.Label;
 import com.simsilica.lemur.component.QuadBackgroundComponent;
 import com.simsilica.lemur.component.SpringGridLayout;
 
-import com.paddleshock.app.PaddleShockApp;
+import com.paddleshock.app.Navigator;
+import com.paddleshock.app.PlayerContext;
 import com.paddleshock.i18n.I18n;
 
 /**
@@ -23,7 +24,7 @@ import com.paddleshock.i18n.I18n;
  * brand-new player. Shown automatically once, right after the splash screen, on a save that has
  * never seen it ({@link com.paddleshock.data.PlayerProfile#hasSeenTutorial()}); also reachable any
  * time afterward from the main menu. Viewing it (either way) marks the profile as having seen it,
- * via {@link PaddleShockApp#showHowToPlay}.
+ * via {@link Navigator#showHowToPlay}.
  *
  * <p>Laid out as a 2x2 grid of bordered cards (one per topic) instead of a stacked list - each
  * card carries a small colored icon-chip next to its heading, tinted to roughly match the topic
@@ -45,10 +46,10 @@ public class HowToPlayState extends BaseAppState {
         // Built fresh in rebuild() every time the screen is shown.
     }
 
-    private void rebuild(PaddleShockApp app) {
+    private void rebuild(PlayerContext app) {
         uiRoot.detachAllChildren();
 
-        SimpleApplication simpleApp = (SimpleApplication) app;
+        SimpleApplication simpleApp = (SimpleApplication) getApplication();
         float screenW = simpleApp.getCamera().getWidth();
         float screenH = simpleApp.getCamera().getHeight();
 
@@ -168,7 +169,7 @@ public class HowToPlayState extends BaseAppState {
 
     @Override
     protected void onEnable() {
-        rebuild((PaddleShockApp) getApplication());
+        rebuild((PlayerContext) getApplication());
         ((SimpleApplication) getApplication()).getGuiNode().attachChild(uiRoot);
         getApplication().getInputManager().setCursorVisible(true);
     }

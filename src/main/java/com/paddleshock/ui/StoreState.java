@@ -14,7 +14,7 @@ import com.simsilica.lemur.Insets3f;
 import com.simsilica.lemur.Label;
 import com.simsilica.lemur.component.SpringGridLayout;
 
-import com.paddleshock.app.PaddleShockApp;
+import com.paddleshock.app.PlayerContext;
 import com.paddleshock.i18n.I18n;
 import com.paddleshock.data.BallDefinition;
 import com.paddleshock.data.Catalog;
@@ -68,10 +68,10 @@ public class StoreState extends BaseAppState {
         // Built fresh in rebuild() every time the screen is shown or a category/purchase changes.
     }
 
-    private void rebuild(PaddleShockApp app) {
+    private void rebuild(PlayerContext app) {
         uiRoot.detachAllChildren();
 
-        SimpleApplication simpleApp = (SimpleApplication) app;
+        SimpleApplication simpleApp = (SimpleApplication) getApplication();
         float screenW = simpleApp.getCamera().getWidth();
         float screenH = simpleApp.getCamera().getHeight();
 
@@ -99,7 +99,7 @@ public class StoreState extends BaseAppState {
     }
 
     /** A dimmed backdrop plus a single centered panel holding tabs, cards and a close button. */
-    private void buildModal(PaddleShockApp app, float screenW, float screenH) {
+    private void buildModal(PlayerContext app, float screenW, float screenH) {
         Container overlay = new Container();
         com.simsilica.lemur.component.QuadBackgroundComponent overlayBg = quad(Theme.BACKGROUND);
         overlayBg.setAlpha(0.82f);
@@ -156,7 +156,7 @@ public class StoreState extends BaseAppState {
         uiRoot.attachChild(background);
     }
 
-    private void buildHeader(PaddleShockApp app, float screenW, float screenH) {
+    private void buildHeader(PlayerContext app, float screenW, float screenH) {
         Container headerBar = new Container();
         headerBar.setBackground(quad(Theme.PANEL));
         headerBar.setPreferredSize(new Vector3f(screenW, HEADER_HEIGHT, 0));
@@ -221,7 +221,7 @@ public class StoreState extends BaseAppState {
 
     /** Restyled as a pill-shaped toggle: active tab is a filled orange pill, inactive tabs are
      *  flat PANEL pills - same click behavior (switches {@link #selectedCategory}) as before. */
-    private void addTab(Container tabs, PaddleShockApp app, String label, String category) {
+    private void addTab(Container tabs, PlayerContext app, String label, String category) {
         Button tab = tabs.addChild(new Button(label));
         boolean active = category.equals(selectedCategory);
         tab.setInsets(new Insets3f(8, 16, 8, 16));
@@ -245,7 +245,7 @@ public class StoreState extends BaseAppState {
         };
     }
 
-    private void buildCards(PaddleShockApp app, float screenW, float screenH) {
+    private void buildCards(PlayerContext app, float screenW, float screenH) {
         Container cardsRow = new Container(new SpringGridLayout(Axis.X, Axis.Y));
         PlayerProfile profile = app.getProfile();
         populateCards(cardsRow, app, profile);
@@ -256,7 +256,7 @@ public class StoreState extends BaseAppState {
         uiRoot.attachChild(cardsRow);
     }
 
-    private void populateCards(Container cardsRow, PaddleShockApp app, PlayerProfile profile) {
+    private void populateCards(Container cardsRow, PlayerContext app, PlayerProfile profile) {
         switch (selectedCategory) {
             case "paddle" -> {
                 for (PaddleDefinition item : Catalog.PADDLES) {
@@ -290,7 +290,7 @@ public class StoreState extends BaseAppState {
         }
     }
 
-    private void addCard(Container cardsRow, PaddleShockApp app, PlayerProfile profile, String category,
+    private void addCard(Container cardsRow, PlayerContext app, PlayerProfile profile, String category,
             String id, String displayName, int price, ColorRGBA tint, String[] statTags) {
 
         boolean owned = profile.owns(category, id);
@@ -355,7 +355,7 @@ public class StoreState extends BaseAppState {
         });
     }
 
-    private void addPowerUpCard(Container cardsRow, PaddleShockApp app, PlayerProfile profile, PowerUpDefinition item) {
+    private void addPowerUpCard(Container cardsRow, PlayerContext app, PlayerProfile profile, PowerUpDefinition item) {
         boolean owned = profile.ownsPowerUp(item.getId());
         int assignedSlot = -1;
         for (int i = 0; i < 3; i++) {
@@ -437,7 +437,7 @@ public class StoreState extends BaseAppState {
     }
 
     /** Just a decorative bottom stripe now - BACK lives in the header (see {@link #buildHeader}). */
-    private void buildFooter(PaddleShockApp app, float screenW) {
+    private void buildFooter(PlayerContext app, float screenW) {
         Container footerBar = new Container();
         footerBar.setBackground(quad(Theme.PANEL));
         footerBar.setPreferredSize(new Vector3f(screenW, FOOTER_HEIGHT, 0));
@@ -523,7 +523,7 @@ public class StoreState extends BaseAppState {
 
     @Override
     protected void onEnable() {
-        rebuild((PaddleShockApp) getApplication());
+        rebuild((PlayerContext) getApplication());
         // Pushed well above the Z range any other screen uses, so a modal open on top of
         // match setup always wins the GUI bucket's back-to-front draw (and pick) order.
         uiRoot.setLocalTranslation(0, 0, modal ? 50f : 0f);

@@ -44,8 +44,10 @@ import com.paddleshock.ui.SplashState;
 import com.paddleshock.ui.StoreState;
 import com.paddleshock.ui.TournamentState;
 
-/** App shell: owns save data and switches between the menu/gameplay app states. */
-public class PaddleShockApp extends SimpleApplication {
+/** App shell: owns save data and switches between the menu/gameplay app states. Implements
+ *  {@link Navigator}/{@link PlayerContext} so UI states can depend on those narrow contracts
+ *  instead of this concrete class - see their docs. */
+public class PaddleShockApp extends SimpleApplication implements Navigator, PlayerContext {
 
     // Composition root for these four services - see the class docs on RankService/InviteService/
     // TournamentService/ProfileStore for why they're interfaces rather than static classes.

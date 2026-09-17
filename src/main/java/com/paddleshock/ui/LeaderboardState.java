@@ -18,7 +18,8 @@ import com.simsilica.lemur.Label;
 import com.simsilica.lemur.component.QuadBackgroundComponent;
 import com.simsilica.lemur.component.SpringGridLayout;
 
-import com.paddleshock.app.PaddleShockApp;
+import com.paddleshock.app.Navigator;
+import com.paddleshock.app.PlayerContext;
 import com.paddleshock.i18n.I18n;
 import com.paddleshock.net.RankClient;
 import com.paddleshock.net.RankClient.LeaderboardEntry;
@@ -64,7 +65,7 @@ public class LeaderboardState extends BaseAppState {
         fetchPending.set(true);
         int myGeneration = fetchGeneration.incrementAndGet();
 
-        PaddleShockApp app = (PaddleShockApp) getApplication();
+        PlayerContext app = (PlayerContext) getApplication();
         Thread thread = new Thread(() -> {
             List<LeaderboardEntry> entries = null;
             String error = null;
@@ -95,8 +96,7 @@ public class LeaderboardState extends BaseAppState {
 
     private void rebuild() {
         uiRoot.detachAllChildren();
-        PaddleShockApp app = (PaddleShockApp) getApplication();
-        SimpleApplication simpleApp = (SimpleApplication) app;
+        SimpleApplication simpleApp = (SimpleApplication) getApplication();
         float screenW = simpleApp.getCamera().getWidth();
         float screenH = simpleApp.getCamera().getHeight();
 
@@ -130,8 +130,8 @@ public class LeaderboardState extends BaseAppState {
         styleButton(back, Theme.PANEL_HOVER, Theme.TEXT, 14);
         back.setInsets(new Insets3f(18, 0, 0, 0));
         back.addClickCommands(source -> {
-            app.getAudioManager().playSfx("button_click.ogg");
-            app.showMainMenu();
+            ((PlayerContext) getApplication()).getAudioManager().playSfx("button_click.ogg");
+            ((Navigator) getApplication()).showMainMenu();
         });
 
         Vector3f panelSize = panel.getPreferredSize();
@@ -162,7 +162,7 @@ public class LeaderboardState extends BaseAppState {
         Button retry = panel.addChild(new Button(I18n.t("leaderboard.retry")));
         styleButton(retry, Theme.BLUE, Theme.ON_ACCENT, 15);
         retry.addClickCommands(source -> {
-            ((PaddleShockApp) getApplication()).getAudioManager().playSfx("button_click.ogg");
+            ((PlayerContext) getApplication()).getAudioManager().playSfx("button_click.ogg");
             beginFetch();
             rebuild();
         });

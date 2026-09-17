@@ -22,7 +22,8 @@ import com.simsilica.lemur.Label;
 import com.simsilica.lemur.component.QuadBackgroundComponent;
 import com.simsilica.lemur.component.SpringGridLayout;
 
-import com.paddleshock.app.PaddleShockApp;
+import com.paddleshock.app.Navigator;
+import com.paddleshock.app.PlayerContext;
 import com.paddleshock.i18n.I18n;
 import com.paddleshock.net.InviteClient;
 
@@ -60,23 +61,22 @@ public class MainMenuState extends BaseAppState {
         // Built fresh in rebuild() every time the screen is shown.
     }
 
-    private void rebuild(PaddleShockApp app) {
+    private void rebuild(SimpleApplication simpleApp) {
         uiRoot.detachAllChildren();
 
-        SimpleApplication simpleApp = (SimpleApplication) app;
         float screenW = simpleApp.getCamera().getWidth();
         float screenH = simpleApp.getCamera().getHeight();
 
         float leftWidth = screenW * 0.38f;
         float rightWidth = screenW - leftWidth;
 
-        buildLeftHero(app, leftWidth, screenH);
-        buildRightNav(app, leftWidth, rightWidth, screenH);
+        buildLeftHero(leftWidth, screenH);
+        buildRightNav(leftWidth, rightWidth, screenH);
     }
 
     /** Left hero panel: wordmark, tagline, and the big PLAY VS AI CTA - everything a brand-new
      *  player needs to get into a match with zero extra clicks. */
-    private void buildLeftHero(PaddleShockApp app, float leftWidth, float screenH) {
+    private void buildLeftHero(float leftWidth, float screenH) {
         Container heroPanel = new Container();
         heroPanel.setBackground(new QuadBackgroundComponent(Theme.BACKGROUND_2));
         heroPanel.setPreferredSize(new Vector3f(leftWidth, screenH, 0));
@@ -120,15 +120,15 @@ public class MainMenuState extends BaseAppState {
         playVsAi.setFontSize(20);
         playVsAi.setPreferredSize(new Vector3f(ctaWidth, ctaHeight, 0));
         playVsAi.addClickCommands(source -> {
-            app.getAudioManager().playSfx("button_click.ogg");
-            app.showLoadout();
+            ((PlayerContext) getApplication()).getAudioManager().playSfx("button_click.ogg");
+            ((Navigator) getApplication()).showLoadout();
         });
         uiRoot.attachChild(playVsAi);
         playVsAi.setLocalTranslation(32, taglineY - 40, 2);
     }
 
     /** Right panel: the other six destinations as bordered nav-card rows. */
-    private void buildRightNav(PaddleShockApp app, float leftWidth, float rightWidth, float screenH) {
+    private void buildRightNav(float leftWidth, float rightWidth, float screenH) {
         Container rightPanel = new Container();
         rightPanel.setBackground(new QuadBackgroundComponent(Theme.BACKGROUND));
         rightPanel.setPreferredSize(new Vector3f(rightWidth, screenH, 0));
@@ -137,16 +137,17 @@ public class MainMenuState extends BaseAppState {
 
         float cardWidth = rightWidth - 96;
 
+        Navigator nav1 = (Navigator) getApplication();
         Container nav = new Container(new SpringGridLayout(Axis.Y, Axis.X));
         nav.setBackground(new QuadBackgroundComponent(Theme.BACKGROUND));
-        addNavCard(nav, I18n.t("menu.multiplayer"), Theme.BLUE_DIM, cardWidth, app::showMultiplayer);
-        addNavCard(nav, I18n.t("menu.leaderboard"), Theme.ORANGE_DIM, cardWidth, app::showLeaderboard);
-        addNavCard(nav, I18n.t("menu.profile"), Theme.GREEN_DIM, cardWidth, app::showProfile);
-        addNavCard(nav, I18n.t("menu.friends"), Theme.PANEL_HOVER, cardWidth, app::showFriends);
-        addNavCard(nav, I18n.t("menu.store"), Theme.PANEL_HOVER, cardWidth, app::showStore);
-        addNavCard(nav, I18n.t("menu.settings"), Theme.PANEL_HOVER, cardWidth, () -> app.showOptions(app::showMainMenu));
-        addNavCard(nav, I18n.t("menu.how_to_play"), Theme.PANEL_HOVER, cardWidth, () -> app.showHowToPlay(app::showMainMenu));
-        addNavCard(nav, I18n.t("menu.quit"), Theme.PANEL_HOVER, cardWidth, app::stop);
+        addNavCard(nav, I18n.t("menu.multiplayer"), Theme.BLUE_DIM, cardWidth, nav1::showMultiplayer);
+        addNavCard(nav, I18n.t("menu.leaderboard"), Theme.ORANGE_DIM, cardWidth, nav1::showLeaderboard);
+        addNavCard(nav, I18n.t("menu.profile"), Theme.GREEN_DIM, cardWidth, nav1::showProfile);
+        addNavCard(nav, I18n.t("menu.friends"), Theme.PANEL_HOVER, cardWidth, nav1::showFriends);
+        addNavCard(nav, I18n.t("menu.store"), Theme.PANEL_HOVER, cardWidth, nav1::showStore);
+        addNavCard(nav, I18n.t("menu.settings"), Theme.PANEL_HOVER, cardWidth, () -> nav1.showOptions(nav1::showMainMenu));
+        addNavCard(nav, I18n.t("menu.how_to_play"), Theme.PANEL_HOVER, cardWidth, () -> nav1.showHowToPlay(nav1::showMainMenu));
+        addNavCard(nav, I18n.t("menu.quit"), Theme.PANEL_HOVER, cardWidth, () -> getApplication().stop());
 
         Vector3f navSize = nav.getPreferredSize();
         nav.setLocalTranslation(leftWidth + 48, (screenH + navSize.y) / 2f, 1);
@@ -181,7 +182,7 @@ public class MainMenuState extends BaseAppState {
         navButton.setColor(Theme.TEXT);
         navButton.setFontSize(16);
         navButton.addClickCommands(source -> {
-            ((PaddleShockApp) getApplication()).getAudioManager().playSfx("button_click.ogg");
+            ((PlayerContext) getApplication()).getAudioManager().playSfx("button_click.ogg");
             action.run();
         });
 
@@ -198,7 +199,7 @@ public class MainMenuState extends BaseAppState {
         List<InviteClient.Invite> invites = pendingInvites.get();
         if (!inviteBannerShown && invites != null && !invites.isEmpty()) {
             inviteBannerShown = true;
-            rebuildInviteBanner((PaddleShockApp) getApplication(), invites);
+            rebuildInviteBanner((SimpleApplication) getApplication(), invites);
         }
     }
 
@@ -208,12 +209,12 @@ public class MainMenuState extends BaseAppState {
     private void beginInvitePoll() {
         invitePollPending.set(true);
         int myGeneration = invitePollGeneration.incrementAndGet();
-        PaddleShockApp app = (PaddleShockApp) getApplication();
-        String playerId = app.getProfile().getPlayerId();
+        PlayerContext ctx = (PlayerContext) getApplication();
+        String playerId = ctx.getProfile().getPlayerId();
         Thread thread = new Thread(() -> {
             List<InviteClient.Invite> invites = null;
             try {
-                invites = app.getInviteService().getInvites(playerId);
+                invites = ctx.getInviteService().getInvites(playerId);
             } catch (IOException e) {
                 // offline, or the invite service is unreachable - just means no banner this poll.
             }
@@ -231,9 +232,8 @@ public class MainMenuState extends BaseAppState {
      *  ACCEPT per invite (jumps straight into Multiplayer's JOINING flow via
      *  {@code PaddleShockApp.acceptInvite}) and a single DISMISS that clears all of them (calls
      *  {@code dismissInvites}). Never interrupts/blocks the menu underneath it. */
-    private void rebuildInviteBanner(PaddleShockApp app, List<InviteClient.Invite> invites) {
+    private void rebuildInviteBanner(SimpleApplication simpleApp, List<InviteClient.Invite> invites) {
         inviteBannerRoot.detachAllChildren();
-        SimpleApplication simpleApp = (SimpleApplication) app;
         float screenW = simpleApp.getCamera().getWidth();
         float screenH = simpleApp.getCamera().getHeight();
 
@@ -253,8 +253,8 @@ public class MainMenuState extends BaseAppState {
         dismissAll.setColor(Theme.TEXT_DIM);
         dismissAll.setFontSize(12);
         dismissAll.addClickCommands(source -> {
-            app.getAudioManager().playSfx("button_click.ogg");
-            dismissInvites(app);
+            ((PlayerContext) getApplication()).getAudioManager().playSfx("button_click.ogg");
+            dismissInvites();
         });
 
         for (InviteClient.Invite invite : invites) {
@@ -274,9 +274,9 @@ public class MainMenuState extends BaseAppState {
             accept.setFontSize(12);
             String lobbyCode = invite.getLobbyCode();
             accept.addClickCommands(source -> {
-                app.getAudioManager().playSfx("button_click.ogg");
-                dismissInvitesFireAndForget(app);
-                app.acceptInvite(lobbyCode);
+                ((PlayerContext) getApplication()).getAudioManager().playSfx("button_click.ogg");
+                dismissInvitesFireAndForget();
+                ((Navigator) getApplication()).acceptInvite(lobbyCode);
             });
         }
 
@@ -288,17 +288,18 @@ public class MainMenuState extends BaseAppState {
     /** DISMISS button on the banner: clears the banner immediately (optimistic - no need to wait
      *  on the network for a purely cosmetic dismissal) and calls {@code dismissInvites}
      *  best-effort in the background. */
-    private void dismissInvites(PaddleShockApp app) {
+    private void dismissInvites() {
         inviteBannerRoot.detachAllChildren();
         pendingInvites.set(null);
-        dismissInvitesFireAndForget(app);
+        dismissInvitesFireAndForget();
     }
 
-    private void dismissInvitesFireAndForget(PaddleShockApp app) {
-        String playerId = app.getProfile().getPlayerId();
+    private void dismissInvitesFireAndForget() {
+        PlayerContext ctx = (PlayerContext) getApplication();
+        String playerId = ctx.getProfile().getPlayerId();
         Thread thread = new Thread(() -> {
             try {
-                app.getInviteService().dismissInvites(playerId);
+                ctx.getInviteService().dismissInvites(playerId);
             } catch (IOException e) {
                 // best-effort - worst case the same invites reappear on a later poll.
             }
@@ -314,7 +315,7 @@ public class MainMenuState extends BaseAppState {
 
     @Override
     protected void onEnable() {
-        rebuild((PaddleShockApp) getApplication());
+        rebuild((SimpleApplication) getApplication());
         ((SimpleApplication) getApplication()).getGuiNode().attachChild(uiRoot);
         ((SimpleApplication) getApplication()).getGuiNode().attachChild(inviteBannerRoot);
         getApplication().getInputManager().setCursorVisible(true);

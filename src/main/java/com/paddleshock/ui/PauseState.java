@@ -14,7 +14,8 @@ import com.simsilica.lemur.Label;
 import com.simsilica.lemur.component.QuadBackgroundComponent;
 import com.simsilica.lemur.component.SpringGridLayout;
 
-import com.paddleshock.app.PaddleShockApp;
+import com.paddleshock.app.Navigator;
+import com.paddleshock.app.PlayerContext;
 import com.paddleshock.i18n.I18n;
 
 public class PauseState extends BaseAppState {
@@ -26,10 +27,9 @@ public class PauseState extends BaseAppState {
         // Built fresh in rebuild() every time the screen is shown.
     }
 
-    private void rebuild(PaddleShockApp app) {
+    private void rebuild(SimpleApplication simpleApp) {
         uiRoot.detachAllChildren();
 
-        SimpleApplication simpleApp = (SimpleApplication) app;
         float screenW = simpleApp.getCamera().getWidth();
         float screenH = simpleApp.getCamera().getHeight();
 
@@ -50,9 +50,10 @@ public class PauseState extends BaseAppState {
         title.setColor(Theme.TEXT);
         title.setInsets(new Insets3f(0, 0, 16, 0));
 
-        addMenuButton(panel, I18n.t("pause.resume"), Theme.ORANGE, Theme.ON_ACCENT, app::resumeMatch);
-        addMenuButton(panel, I18n.t("pause.options"), Theme.PANEL_HOVER, Theme.TEXT, () -> app.showOptions(app::showPause));
-        addMenuButton(panel, I18n.t("pause.quit_to_menu"), Theme.PANEL_HOVER, Theme.TEXT, app::quitToMainMenu);
+        Navigator nav = (Navigator) getApplication();
+        addMenuButton(panel, I18n.t("pause.resume"), Theme.ORANGE, Theme.ON_ACCENT, nav::resumeMatch);
+        addMenuButton(panel, I18n.t("pause.options"), Theme.PANEL_HOVER, Theme.TEXT, () -> nav.showOptions(nav::showPause));
+        addMenuButton(panel, I18n.t("pause.quit_to_menu"), Theme.PANEL_HOVER, Theme.TEXT, nav::quitToMainMenu);
 
         Vector3f panelSize = panel.getPreferredSize();
         panel.setLocalTranslation((screenW - panelSize.x) / 2f, (screenH + panelSize.y) / 2f, 1);
@@ -67,7 +68,7 @@ public class PauseState extends BaseAppState {
         button.setFontSize(16);
         button.setPreferredSize(new Vector3f(260, 44, 0));
         button.addClickCommands(source -> {
-            ((PaddleShockApp) getApplication()).getAudioManager().playSfx("button_click.ogg");
+            ((PlayerContext) getApplication()).getAudioManager().playSfx("button_click.ogg");
             action.run();
         });
     }
@@ -79,7 +80,7 @@ public class PauseState extends BaseAppState {
 
     @Override
     protected void onEnable() {
-        rebuild((PaddleShockApp) getApplication());
+        rebuild((SimpleApplication) getApplication());
         ((SimpleApplication) getApplication()).getGuiNode().attachChild(uiRoot);
         getApplication().getInputManager().setCursorVisible(true);
     }

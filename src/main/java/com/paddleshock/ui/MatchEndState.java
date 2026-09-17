@@ -29,7 +29,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import com.paddleshock.GameConstants;
 import com.paddleshock.i18n.I18n;
 import com.paddleshock.app.GameplayAppState;
-import com.paddleshock.app.PaddleShockApp;
+import com.paddleshock.app.Navigator;
+import com.paddleshock.app.PlayerContext;
 import com.paddleshock.net.NetClient;
 import com.paddleshock.net.NetHost;
 import com.paddleshock.net.RankState;
@@ -136,7 +137,7 @@ public class MatchEndState extends BaseAppState {
     public void update(float tpf) {
         if (ranked && !rankShown && rankLookupDone) {
             rankShown = true;
-            rebuild((PaddleShockApp) getApplication());
+            rebuild((Navigator) getApplication());
         }
         pollRematch(tpf);
     }
@@ -148,8 +149,9 @@ public class MatchEndState extends BaseAppState {
         if (connectionLost) {
             return;
         }
-        PaddleShockApp app = (PaddleShockApp) getApplication();
-        GameplayAppState gp = app.getGameplayState();
+        PlayerContext ctx = (PlayerContext) getApplication();
+        Navigator nav = (Navigator) getApplication();
+        GameplayAppState gp = ctx.getGameplayState();
         if (gp == null || gp.getMode() == GameplayAppState.Mode.SINGLE_PLAYER) {
             return;
         }
@@ -171,7 +173,7 @@ public class MatchEndState extends BaseAppState {
                 boolean requestedByPeer = host != null ? host.isRematchRequestedByPeer() : client.isRematchRequestedByPeer();
                 if (requestedByPeer) {
                     rematchPhase = RematchPhase.REQUESTED_REMOTE;
-                    rebuild(app);
+                    rebuild(nav);
                 }
             }
             case REQUESTED_LOCAL -> {
@@ -183,7 +185,7 @@ public class MatchEndState extends BaseAppState {
                 boolean mutualRequest = host != null ? host.isRematchRequestedByPeer() : client.isRematchRequestedByPeer();
                 rematchTimer += tpf;
                 if (accepted || mutualRequest) {
-                    startRematch(app, host, client);
+                    startRematch(ctx, host, client);
                 } else if (declined || rematchTimer > REMATCH_TIMEOUT_SECONDS) {
                     // On a real decline the peer already knows; on our own timeout it doesn't -
                     // tell it explicitly so a peer that accepts a moment later gets a clean
@@ -199,7 +201,7 @@ public class MatchEndState extends BaseAppState {
                     }
                     resetRematchFlags(host, client);
                     rematchPhase = RematchPhase.NONE;
-                    app.showMultiplayer();
+                    nav.showMultiplayer();
                 }
             }
             case REQUESTED_REMOTE -> {
@@ -217,11 +219,11 @@ public class MatchEndState extends BaseAppState {
         }
     }
 
-    private void startRematch(PaddleShockApp app, NetHost host, NetClient client) {
+    private void startRematch(PlayerContext ctx, NetHost host, NetClient client) {
         resetRematchFlags(host, client);
         rematchPhase = RematchPhase.NONE;
         rematchTimer = 0f;
-        app.resumeMultiplayerRematch();
+        ctx.resumeMultiplayerRematch();
     }
 
     /** REMATCH button handler: for single-player, unchanged (back to loadout). For a still-live
@@ -229,10 +231,11 @@ public class MatchEndState extends BaseAppState {
      *  falling into single-player-vs-AI - the actual bug this fixes. If the connection is already
      *  dead (opponent's socket timed out), falls back to the multiplayer menu instead. */
     private void onRematchClicked() {
-        PaddleShockApp app = (PaddleShockApp) getApplication();
-        GameplayAppState gp = app.getGameplayState();
+        PlayerContext ctx = (PlayerContext) getApplication();
+        Navigator nav = (Navigator) getApplication();
+        GameplayAppState gp = ctx.getGameplayState();
         if (gp == null || gp.getMode() == GameplayAppState.Mode.SINGLE_PLAYER) {
-            app.showLoadout();
+            nav.showLoadout();
             return;
         }
 
@@ -252,17 +255,17 @@ public class MatchEndState extends BaseAppState {
         }
 
         if (!sent) {
-            app.showMultiplayer();
+            nav.showMultiplayer();
             return;
         }
         rematchPhase = RematchPhase.REQUESTED_LOCAL;
         rematchTimer = 0f;
-        rebuild(app);
+        rebuild(nav);
     }
 
     private void onAcceptRematchClicked() {
-        PaddleShockApp app = (PaddleShockApp) getApplication();
-        GameplayAppState gp = app.getGameplayState();
+        PlayerContext ctx = (PlayerContext) getApplication();
+        GameplayAppState gp = ctx.getGameplayState();
         if (gp == null) {
             return;
         }
@@ -273,12 +276,13 @@ public class MatchEndState extends BaseAppState {
         } else if (client != null) {
             client.sendRematchAccept();
         }
-        startRematch(app, host, client);
+        startRematch(ctx, host, client);
     }
 
     private void onDeclineRematchClicked() {
-        PaddleShockApp app = (PaddleShockApp) getApplication();
-        GameplayAppState gp = app.getGameplayState();
+        PlayerContext ctx = (PlayerContext) getApplication();
+        Navigator nav = (Navigator) getApplication();
+        GameplayAppState gp = ctx.getGameplayState();
         if (gp == null) {
             return;
         }
@@ -291,12 +295,13 @@ public class MatchEndState extends BaseAppState {
         }
         resetRematchFlags(host, client);
         rematchPhase = RematchPhase.NONE;
-        rebuild(app);
+        rebuild(nav);
     }
 
     private void onCancelRematchClicked() {
-        PaddleShockApp app = (PaddleShockApp) getApplication();
-        GameplayAppState gp = app.getGameplayState();
+        PlayerContext ctx = (PlayerContext) getApplication();
+        Navigator nav = (Navigator) getApplication();
+        GameplayAppState gp = ctx.getGameplayState();
         NetHost host = gp == null ? null : gp.getNetHost();
         NetClient client = gp == null ? null : gp.getNetClient();
         if (host != null) {
@@ -306,7 +311,7 @@ public class MatchEndState extends BaseAppState {
         }
         resetRematchFlags(host, client);
         rematchPhase = RematchPhase.NONE;
-        rebuild(app);
+        rebuild(nav);
     }
 
     @Override
@@ -314,27 +319,27 @@ public class MatchEndState extends BaseAppState {
         // Built fresh in rebuild() every time the screen is shown.
     }
 
-    private void rebuild(PaddleShockApp app) {
+    private void rebuild(Navigator nav) {
         uiRoot.detachAllChildren();
 
-        SimpleApplication simpleApp = (SimpleApplication) app;
+        SimpleApplication simpleApp = (SimpleApplication) getApplication();
         float screenW = simpleApp.getCamera().getWidth();
         float screenH = simpleApp.getCamera().getHeight();
 
         buildDimOverlay(screenW, screenH);
 
         if (connectionLost) {
-            buildConnectionLostLayout(app, screenW, screenH);
+            buildConnectionLostLayout(nav, screenW, screenH);
         } else if (playerWon) {
-            buildWinLayout(app, screenW, screenH);
+            buildWinLayout(nav, screenW, screenH);
         } else {
-            buildDefeatLayout(app, screenW, screenH);
+            buildDefeatLayout(nav, screenW, screenH);
         }
     }
 
     /** Dedicated dead-end screen for a joiner whose host disconnected mid-match - see
      *  {@link #setConnectionLost}. No REMATCH (the connection is gone); just clear ways back in. */
-    private void buildConnectionLostLayout(PaddleShockApp app, float screenW, float screenH) {
+    private void buildConnectionLostLayout(Navigator nav, float screenW, float screenH) {
         float blockHeight = 84 + 24 + 108 + 20 + 24 + 96;
         float topY = (screenH + blockHeight) / 2f;
         float centerX = screenW / 2f;
@@ -352,8 +357,8 @@ public class MatchEndState extends BaseAppState {
         attachCenteredText(centerX, consolationY, I18n.t("matchend.connection_lost_desc"), 15, Theme.TEXT_DIM);
 
         Container actions = new Container(new SpringGridLayout(Axis.Y, Axis.X));
-        addMenuButton(actions, I18n.t("matchend.multiplayer"), Theme.ORANGE, Theme.ON_ACCENT, app::showMultiplayer);
-        addMenuButton(actions, I18n.t("matchend.main_menu"), Theme.PANEL_HOVER, Theme.TEXT, app::showMainMenu);
+        addMenuButton(actions, I18n.t("matchend.multiplayer"), Theme.ORANGE, Theme.ON_ACCENT, nav::showMultiplayer);
+        addMenuButton(actions, I18n.t("matchend.main_menu"), Theme.PANEL_HOVER, Theme.TEXT, nav::showMainMenu);
         Vector3f actionsSize = actions.getPreferredSize();
         actions.setLocalTranslation(centerX - actionsSize.x / 2f, consolationY - 24, 2);
         uiRoot.attachChild(actions);
@@ -362,7 +367,7 @@ public class MatchEndState extends BaseAppState {
     /** Builds the REMATCH-area button(s) for the win/defeat layouts, replacing a plain REMATCH
      *  button with the right controls for whatever the rematch negotiation state actually is (see
      *  {@link #pollRematch}/{@link #onRematchClicked}). */
-    private void attachRematchControls(PaddleShockApp app, Container actions) {
+    private void attachRematchControls(Container actions) {
         switch (rematchPhase) {
             case REQUESTED_LOCAL -> {
                 Label waiting = actions.addChild(new Label(I18n.t("matchend.waiting_rematch")));
@@ -391,7 +396,7 @@ public class MatchEndState extends BaseAppState {
         uiRoot.attachChild(overlay);
     }
 
-    private void buildWinLayout(PaddleShockApp app, float screenW, float screenH) {
+    private void buildWinLayout(Navigator nav, float screenW, float screenH) {
         // Headline banner: bleeds off the left edge, orange fill, dark (ON_ACCENT) text.
         attachAngledQuad(-60, screenH - 84, 148, 0, 660, 660 * 0.86f, 0, Theme.ORANGE, 1);
         attachText(36, screenH - 124, I18n.t("matchend.you_win"), 56, Theme.ON_ACCENT);
@@ -413,14 +418,14 @@ public class MatchEndState extends BaseAppState {
 
         // Actions: left-anchored, matching the banner's asymmetric composition.
         Container actions = new Container(new SpringGridLayout(Axis.Y, Axis.X));
-        attachRematchControls(app, actions);
-        addMenuButton(actions, I18n.t("matchend.store"), Theme.PANEL_HOVER, Theme.TEXT, app::showStore);
-        addMenuButton(actions, I18n.t("matchend.main_menu"), Theme.PANEL_HOVER, Theme.TEXT, app::showMainMenu);
+        attachRematchControls(actions);
+        addMenuButton(actions, I18n.t("matchend.store"), Theme.PANEL_HOVER, Theme.TEXT, nav::showStore);
+        addMenuButton(actions, I18n.t("matchend.main_menu"), Theme.PANEL_HOVER, Theme.TEXT, nav::showMainMenu);
         actions.setLocalTranslation(40, screenH - 460, 2);
         uiRoot.attachChild(actions);
     }
 
-    private void buildDefeatLayout(PaddleShockApp app, float screenW, float screenH) {
+    private void buildDefeatLayout(Navigator nav, float screenW, float screenH) {
         float blockHeight = 84 + 24 + 108 + 20 + 24 + 24 + 96;
         float topY = (screenH + blockHeight) / 2f;
         float centerX = screenW / 2f;
@@ -448,8 +453,8 @@ public class MatchEndState extends BaseAppState {
         }
 
         Container actions = new Container(new SpringGridLayout(Axis.Y, Axis.X));
-        attachRematchControls(app, actions);
-        addMenuButton(actions, I18n.t("matchend.main_menu"), Theme.PANEL_HOVER, Theme.TEXT, app::showMainMenu);
+        attachRematchControls(actions);
+        addMenuButton(actions, I18n.t("matchend.main_menu"), Theme.PANEL_HOVER, Theme.TEXT, nav::showMainMenu);
         Vector3f actionsSize = actions.getPreferredSize();
         actions.setLocalTranslation(centerX - actionsSize.x / 2f, actionsY, 2);
         uiRoot.attachChild(actions);
@@ -522,7 +527,7 @@ public class MatchEndState extends BaseAppState {
         button.setFontSize(16);
         button.setPreferredSize(new Vector3f(BUTTON_WIDTH, 46, 0));
         button.addClickCommands(source -> {
-            ((PaddleShockApp) getApplication()).getAudioManager().playSfx("button_click.ogg");
+            ((PlayerContext) getApplication()).getAudioManager().playSfx("button_click.ogg");
             action.run();
         });
     }
@@ -588,7 +593,7 @@ public class MatchEndState extends BaseAppState {
 
     @Override
     protected void onEnable() {
-        rebuild((PaddleShockApp) getApplication());
+        rebuild((Navigator) getApplication());
         ((SimpleApplication) getApplication()).getGuiNode().attachChild(uiRoot);
         getApplication().getInputManager().setCursorVisible(true);
     }

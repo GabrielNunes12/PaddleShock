@@ -24,7 +24,9 @@ import com.simsilica.lemur.component.QuadBackgroundComponent;
 import com.simsilica.lemur.component.SpringGridLayout;
 
 import com.paddleshock.GameConstants;
+import com.paddleshock.app.Navigator;
 import com.paddleshock.app.PaddleShockApp;
+import com.paddleshock.app.PlayerContext;
 import com.paddleshock.i18n.I18n;
 import com.paddleshock.net.NetClient;
 import com.paddleshock.net.NetHost;
@@ -44,8 +46,8 @@ import com.paddleshock.net.TournamentService;
  * {@code NetClient}/the existing lobby-code create-join flow completely unchanged (see
  * {@link #beginHostingBracketMatch}/{@link #beginJoiningBracketMatch}) - this class just tracks
  * which pairing is "mine" and publishes/consumes the lobby code for it via the tournament backend
- * (see {@code TournamentClient}), then hands off to {@link PaddleShockApp#enterHostedMatch}/
- * {@link PaddleShockApp#enterJoinedMatch} exactly like a normal internet match does.
+ * (see {@code TournamentClient}), then hands off to {@link PlayerContext#enterHostedMatch}/
+ * {@link PlayerContext#enterJoinedMatch} exactly like a normal internet match does.
  */
 public class TournamentState extends BaseAppState {
 
@@ -105,7 +107,7 @@ public class TournamentState extends BaseAppState {
 
     // ============================== create / join ==============================
 
-    private void buildCreateJoin(PaddleShockApp app, Container panel) {
+    private void buildCreateJoin(PlayerContext app, Container panel) {
         Label title = panel.addChild(new Label(I18n.t("tournament.title")));
         title.setFontSize(26);
         title.setColor(Theme.BLUE);
@@ -197,7 +199,7 @@ public class TournamentState extends BaseAppState {
         button.setInsets(new Insets3f(0, 0, 0, 0));
     }
 
-    private void beginCreate(PaddleShockApp app) {
+    private void beginCreate(PlayerContext app) {
         if (actionPending) {
             return;
         }
@@ -233,7 +235,7 @@ public class TournamentState extends BaseAppState {
         thread.start();
     }
 
-    private void beginJoin(PaddleShockApp app, String enteredCode) {
+    private void beginJoin(PlayerContext app, String enteredCode) {
         if (actionPending) {
             return;
         }
@@ -276,7 +278,7 @@ public class TournamentState extends BaseAppState {
 
     // ============================== waiting room ==============================
 
-    private void buildWaiting(PaddleShockApp app, Container panel) {
+    private void buildWaiting(PlayerContext app, Container panel) {
         boolean isHost = state != null && app.getProfile().getPlayerId().equals(state.getHostPlayerId());
 
         Label title = panel.addChild(new Label(I18n.t("tournament.lobby_title")));
@@ -360,7 +362,7 @@ public class TournamentState extends BaseAppState {
         }
     }
 
-    private void beginStart(PaddleShockApp app) {
+    private void beginStart(PlayerContext app) {
         if (startPending) {
             return;
         }
@@ -383,7 +385,7 @@ public class TournamentState extends BaseAppState {
 
     // ============================== bracket ==============================
 
-    private void buildBracket(PaddleShockApp app, Container panel) {
+    private void buildBracket(PlayerContext app, Container panel) {
         String myId = app.getProfile().getPlayerId();
 
         Label title = panel.addChild(new Label(I18n.t("tournament.bracket_title")));
@@ -488,7 +490,7 @@ public class TournamentState extends BaseAppState {
         return new int[] { -1, -1 };
     }
 
-    private Container buildMatchCard(PaddleShockApp app, TournamentClient.Match match, int roundIndex,
+    private Container buildMatchCard(PlayerContext app, TournamentClient.Match match, int roundIndex,
             int matchIndex, String myId, boolean isMine) {
         Container card = new Container(new SpringGridLayout(Axis.Y, Axis.X));
         card.setBackground(new QuadBackgroundComponent(isMine ? Theme.BLUE_DIM : Theme.BACKGROUND_2));
@@ -600,7 +602,7 @@ public class TournamentState extends BaseAppState {
 
     // ---- hosting/joining one bracket pairing ----
 
-    private void beginHostingBracketMatch(PaddleShockApp app, int roundIndex, int matchIndex) {
+    private void beginHostingBracketMatch(PlayerContext app, int roundIndex, int matchIndex) {
         if (matchNetHost != null) {
             matchNetHost.close();
         }
@@ -663,7 +665,7 @@ public class TournamentState extends BaseAppState {
         thread.start();
     }
 
-    private void beginJoiningBracketMatch(PaddleShockApp app, int roundIndex, int matchIndex, String lobbyCode) {
+    private void beginJoiningBracketMatch(PlayerContext app, int roundIndex, int matchIndex, String lobbyCode) {
         if (matchNetClient != null) {
             matchNetClient.close();
             matchNetClient = null;
@@ -694,8 +696,8 @@ public class TournamentState extends BaseAppState {
 
     private void rebuild() {
         uiRoot.detachAllChildren();
-        PaddleShockApp app = (PaddleShockApp) getApplication();
-        SimpleApplication simpleApp = (SimpleApplication) app;
+        PlayerContext app = (PlayerContext) getApplication();
+        SimpleApplication simpleApp = (SimpleApplication) getApplication();
         float screenW = simpleApp.getCamera().getWidth();
         float screenH = simpleApp.getCamera().getHeight();
 
@@ -729,7 +731,7 @@ public class TournamentState extends BaseAppState {
         styleButton(back, Theme.PANEL_HOVER, Theme.TEXT, 14);
         back.addClickCommands(source -> {
             app.getAudioManager().playSfx("button_click.ogg");
-            app.showMultiplayer();
+            ((Navigator) getApplication()).showMultiplayer();
         });
         Vector3f backSize = back.getPreferredSize();
         float cardBottomY = cardTopY - cardSize.y;
@@ -752,7 +754,7 @@ public class TournamentState extends BaseAppState {
         pollPending = true;
         int myGeneration = pollGeneration.incrementAndGet();
         String tournamentCode = code;
-        TournamentService tournamentService = ((PaddleShockApp) getApplication()).getTournamentService();
+        TournamentService tournamentService = ((PlayerContext) getApplication()).getTournamentService();
         Thread thread = new Thread(() -> {
             TournamentClient.State result = null;
             String error = null;
@@ -776,7 +778,7 @@ public class TournamentState extends BaseAppState {
 
     @Override
     public void update(float tpf) {
-        PaddleShockApp app = (PaddleShockApp) getApplication();
+        PlayerContext app = (PlayerContext) getApplication();
 
         // Pick up the create/join action result once it lands.
         if (view == View.CREATE_JOIN && !actionPending) {
@@ -835,7 +837,7 @@ public class TournamentState extends BaseAppState {
             NetHost handoff = matchNetHost;
             matchNetHost = null;
             String opponentId = handoff.getJoinerPlayerId();
-            app.setActiveTournamentContext(new PaddleShockApp.TournamentMatchContext(
+            ((Navigator) getApplication()).setActiveTournamentContext(new PaddleShockApp.TournamentMatchContext(
                     code, hostingRoundIndex, hostingMatchIndex, app.getProfile().getPlayerId(), opponentId));
             app.enterHostedMatch(handoff);
             return;
@@ -848,7 +850,7 @@ public class TournamentState extends BaseAppState {
                 NetClient handoff = matchNetClient;
                 matchNetClient = null;
                 String opponentId = opponentIdFor(joiningRoundIndex, joiningMatchIndex, app.getProfile().getPlayerId());
-                app.setActiveTournamentContext(new PaddleShockApp.TournamentMatchContext(
+                ((Navigator) getApplication()).setActiveTournamentContext(new PaddleShockApp.TournamentMatchContext(
                         code, joiningRoundIndex, joiningMatchIndex, app.getProfile().getPlayerId(), opponentId));
                 app.enterJoinedMatch(handoff);
                 return;

@@ -13,7 +13,8 @@ import com.simsilica.lemur.Label;
 import com.simsilica.lemur.component.QuadBackgroundComponent;
 import com.simsilica.lemur.Container;
 
-import com.paddleshock.app.PaddleShockApp;
+import com.paddleshock.app.Navigator;
+import com.paddleshock.app.PlayerContext;
 import com.paddleshock.i18n.I18n;
 
 /** Studio splash: shows the MentorHub Gaming mark, then advances to the main menu. */
@@ -32,10 +33,9 @@ public class SplashState extends BaseAppState implements ActionListener {
         // Built fresh in rebuild() every time the screen is shown.
     }
 
-    private void rebuild(PaddleShockApp app) {
+    private void rebuild(SimpleApplication simpleApp) {
         uiRoot.detachAllChildren();
 
-        SimpleApplication simpleApp = (SimpleApplication) app;
         float screenW = simpleApp.getCamera().getWidth();
         float screenH = simpleApp.getCamera().getHeight();
 
@@ -122,14 +122,15 @@ public class SplashState extends BaseAppState implements ActionListener {
             return;
         }
         advancing = true;
-        PaddleShockApp app = (PaddleShockApp) getApplication();
-        if (app.getProfile().hasSeenTutorial()) {
-            app.showMainMenu();
+        PlayerContext ctx = (PlayerContext) getApplication();
+        Navigator nav = (Navigator) getApplication();
+        if (ctx.getProfile().hasSeenTutorial()) {
+            nav.showMainMenu();
         } else {
             // First launch (or a save that predates the tutorial flag) - show it once before the
             // main menu instead of dropping the player straight into a 5-button menu with zero
             // explanation of controls/power-ups.
-            app.showHowToPlay(app::showMainMenu);
+            nav.showHowToPlay(nav::showMainMenu);
         }
     }
 
@@ -140,14 +141,14 @@ public class SplashState extends BaseAppState implements ActionListener {
 
     @Override
     protected void onEnable() {
-        PaddleShockApp app = (PaddleShockApp) getApplication();
+        SimpleApplication simpleApp = (SimpleApplication) getApplication();
         remaining = DISPLAY_SECONDS;
         advancing = false;
         firstFrameSeen = false;
-        rebuild(app);
-        ((SimpleApplication) app).getGuiNode().attachChild(uiRoot);
+        rebuild(simpleApp);
+        simpleApp.getGuiNode().attachChild(uiRoot);
 
-        InputManager inputManager = app.getInputManager();
+        InputManager inputManager = getApplication().getInputManager();
         inputManager.setCursorVisible(true);
         inputManager.addMapping(ACTION_SKIP, new MouseButtonTrigger(MouseInput.BUTTON_LEFT));
         inputManager.addListener(this, ACTION_SKIP);

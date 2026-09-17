@@ -26,7 +26,8 @@ import com.simsilica.lemur.VAlignment;
 import com.simsilica.lemur.component.QuadBackgroundComponent;
 import com.simsilica.lemur.component.SpringGridLayout;
 
-import com.paddleshock.app.PaddleShockApp;
+import com.paddleshock.app.Navigator;
+import com.paddleshock.app.PlayerContext;
 import com.paddleshock.i18n.I18n;
 import com.paddleshock.data.MatchHistoryEntry;
 import com.paddleshock.data.RivalRecord;
@@ -93,7 +94,7 @@ public class ProfileState extends BaseAppState {
         // Built fresh in rebuild() every time the screen is shown, or the fetch completes.
     }
 
-    private void beginFetch(PaddleShockApp app) {
+    private void beginFetch(PlayerContext app) {
         rankView = RankView.LOADING;
         fetchResult.set(null);
         fetchFailed = false;
@@ -129,7 +130,7 @@ public class ProfileState extends BaseAppState {
      *  aws/README.md "Seasonal peak-rank reward". Purely local bookkeeping (no extra network call),
      *  so it never adds latency to the fetch it piggybacks on; runs on the same background thread
      *  the rank fetch already used, never the render thread. */
-    private void maybeGrantSeasonReward(PaddleShockApp app, RankState rank) {
+    private void maybeGrantSeasonReward(PlayerContext app, RankState rank) {
         Integer lastSeasonNumber = rank.getLastSeasonNumber();
         RankTier peakTier = rank.getLastSeasonPeakTier();
         if (lastSeasonNumber == null || peakTier == null) {
@@ -155,8 +156,8 @@ public class ProfileState extends BaseAppState {
 
     private void rebuild() {
         uiRoot.detachAllChildren();
-        PaddleShockApp app = (PaddleShockApp) getApplication();
-        SimpleApplication simpleApp = (SimpleApplication) app;
+        PlayerContext app = (PlayerContext) getApplication();
+        SimpleApplication simpleApp = (SimpleApplication) getApplication();
         float screenW = simpleApp.getCamera().getWidth();
         float screenH = simpleApp.getCamera().getHeight();
 
@@ -195,7 +196,7 @@ public class ProfileState extends BaseAppState {
         back.addClickCommands(source -> {
             app.getAudioManager().playSfx("button_click.ogg");
             commitNameEdit(app);
-            app.showMainMenu();
+            ((Navigator) getApplication()).showMainMenu();
         });
 
         Vector3f panelSize = panel.getPreferredSize();
@@ -242,7 +243,7 @@ public class ProfileState extends BaseAppState {
     /** Steam's persona name when available; otherwise the local, editable display name - only the
      *  local name is ever editable here, since overriding a real Steam identity makes no sense.
      *  Rendered as an avatar chip (name-initial letter) next to the name/edit controls. */
-    private void buildIdentity(PaddleShockApp app, Container card) {
+    private void buildIdentity(PlayerContext app, Container card) {
         nameField = null;
         Optional<String> steamName = app.getSteamManager().getPersonaName();
         String displayName = steamName.orElseGet(() -> app.getProfile().getDisplayName());
@@ -306,7 +307,7 @@ public class ProfileState extends BaseAppState {
         return name.strip().substring(0, 1).toUpperCase();
     }
 
-    private void commitNameEdit(PaddleShockApp app) {
+    private void commitNameEdit(PlayerContext app) {
         if (nameField == null) {
             return;
         }
@@ -353,7 +354,7 @@ public class ProfileState extends BaseAppState {
         }
     }
 
-    private void buildRivals(PaddleShockApp app, Container card) {
+    private void buildRivals(PlayerContext app, Container card) {
         Label rivalsTitle = card.addChild(new Label(I18n.t("profile.rivals_title")));
         rivalsTitle.setFontSize(12);
         rivalsTitle.setColor(Theme.TEXT_DIM);
@@ -394,7 +395,7 @@ public class ProfileState extends BaseAppState {
         recordLabel.setPreferredSize(new Vector3f(80, recordLabel.getPreferredSize().y, 0));
     }
 
-    private void buildHistory(PaddleShockApp app, Container card) {
+    private void buildHistory(PlayerContext app, Container card) {
         Label historyTitle = card.addChild(new Label(I18n.t("profile.history_title")));
         historyTitle.setFontSize(12);
         historyTitle.setColor(Theme.TEXT_DIM);
@@ -488,7 +489,7 @@ public class ProfileState extends BaseAppState {
 
     @Override
     protected void onEnable() {
-        PaddleShockApp app = (PaddleShockApp) getApplication();
+        PlayerContext app = (PlayerContext) getApplication();
         beginFetch(app);
         rebuild();
         ((SimpleApplication) getApplication()).getGuiNode().attachChild(uiRoot);
@@ -497,7 +498,7 @@ public class ProfileState extends BaseAppState {
 
     @Override
     protected void onDisable() {
-        commitNameEdit((PaddleShockApp) getApplication());
+        commitNameEdit((PlayerContext) getApplication());
         uiRoot.removeFromParent();
         // Supersede any in-flight background fetch so a late result discards itself instead of
         // leaking into a future onEnable() - see LeaderboardState's identical pattern.

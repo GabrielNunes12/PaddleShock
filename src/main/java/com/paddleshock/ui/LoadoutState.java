@@ -19,7 +19,8 @@ import com.simsilica.lemur.Label;
 import com.simsilica.lemur.component.QuadBackgroundComponent;
 import com.simsilica.lemur.component.SpringGridLayout;
 
-import com.paddleshock.app.PaddleShockApp;
+import com.paddleshock.app.Navigator;
+import com.paddleshock.app.PlayerContext;
 import com.paddleshock.data.BallDefinition;
 import com.paddleshock.data.Catalog;
 import com.paddleshock.data.LevelDefinition;
@@ -60,11 +61,11 @@ public class LoadoutState extends BaseAppState {
         // Built fresh in rebuild() every time the screen is shown.
     }
 
-    private void rebuild(PaddleShockApp app) {
+    private void rebuild(Navigator nav, PlayerContext ctx) {
         uiRoot.detachAllChildren();
         modalOpen = false;
 
-        SimpleApplication simpleApp = (SimpleApplication) app;
+        SimpleApplication simpleApp = (SimpleApplication) getApplication();
         float screenW = simpleApp.getCamera().getWidth();
         float screenH = simpleApp.getCamera().getHeight();
 
@@ -74,7 +75,7 @@ public class LoadoutState extends BaseAppState {
         background.setLocalTranslation(0, screenH, 0);
         uiRoot.attachChild(background);
 
-        buildHeader(app, screenW, screenH);
+        buildHeader(nav, ctx, screenW, screenH);
 
         Container panel = new Container(new SpringGridLayout(Axis.Y, Axis.X));
         panel.setBackground(new QuadBackgroundComponent(Theme.PANEL));
@@ -82,7 +83,7 @@ public class LoadoutState extends BaseAppState {
 
         Container equipRow = panel.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
         equipRow.setInsets(new Insets3f(0, 0, 8, 0));
-        PlayerProfile profile = app.getProfile();
+        PlayerProfile profile = ctx.getProfile();
         PaddleDefinition equippedPaddle = Catalog.findPaddle(profile.getEquippedId("paddle")).orElse(null);
         TableDefinition equippedTable = Catalog.findTable(profile.getEquippedId("table")).orElse(null);
         BallDefinition equippedBall = Catalog.findBall(profile.getEquippedId("ball")).orElse(null);
@@ -106,10 +107,10 @@ public class LoadoutState extends BaseAppState {
                 if (modalOpen) {
                     return;
                 }
-                app.getAudioManager().playSfx("button_click.ogg");
-                app.getProfile().equip("level", levelDef.getId());
-                app.saveProfile();
-                refreshLevelButtons(app.getProfile());
+                ctx.getAudioManager().playSfx("button_click.ogg");
+                ctx.getProfile().equip("level", levelDef.getId());
+                ctx.saveProfile();
+                refreshLevelButtons(ctx.getProfile());
             });
             levelButtons[i] = levelButton;
         }
@@ -130,8 +131,8 @@ public class LoadoutState extends BaseAppState {
             if (modalOpen) {
                 return;
             }
-            app.getAudioManager().playSfx("button_click.ogg");
-            cycleAiDifficulty(app, -1);
+            ctx.getAudioManager().playSfx("button_click.ogg");
+            cycleAiDifficulty(ctx, -1);
         });
 
         aiDifficultyLabel = aiRow.addChild(new Label(""));
@@ -148,8 +149,8 @@ public class LoadoutState extends BaseAppState {
             if (modalOpen) {
                 return;
             }
-            app.getAudioManager().playSfx("button_click.ogg");
-            cycleAiDifficulty(app, 1);
+            ctx.getAudioManager().playSfx("button_click.ogg");
+            cycleAiDifficulty(ctx, 1);
         });
 
         Label powerUpTitle = panel.addChild(new Label(I18n.t("loadout.powerups_title")));
@@ -173,11 +174,11 @@ public class LoadoutState extends BaseAppState {
             if (modalOpen) {
                 return;
             }
-            app.getAudioManager().playSfx("button_click.ogg");
+            ctx.getAudioManager().playSfx("button_click.ogg");
             modalOpen = true;
-            app.showStoreModal(() -> {
+            nav.showStoreModal(() -> {
                 modalOpen = false;
-                refreshLabels(app.getProfile());
+                refreshLabels(ctx.getProfile());
             });
         });
 
@@ -191,8 +192,8 @@ public class LoadoutState extends BaseAppState {
             if (modalOpen) {
                 return;
             }
-            app.getAudioManager().playSfx("button_confirm.ogg");
-            app.startMatchVsAI();
+            ctx.getAudioManager().playSfx("button_confirm.ogg");
+            ctx.startMatchVsAI();
         });
 
         Button back = panel.addChild(new Button(I18n.t("loadout.back")));
@@ -205,11 +206,11 @@ public class LoadoutState extends BaseAppState {
             if (modalOpen) {
                 return;
             }
-            app.getAudioManager().playSfx("button_click.ogg");
-            app.showMainMenu();
+            ctx.getAudioManager().playSfx("button_click.ogg");
+            nav.showMainMenu();
         });
 
-        refreshLabels(app.getProfile());
+        refreshLabels(ctx.getProfile());
 
         Vector3f panelSize = panel.getPreferredSize();
         panel.setLocalTranslation((screenW - panelSize.x) / 2f, (screenH - HEADER_HEIGHT + panelSize.y) / 2f, 1);
@@ -218,7 +219,7 @@ public class LoadoutState extends BaseAppState {
 
     /** Top bar mirroring the store screen's header: BACK, the screen title, and a credits pill
      *  in the top-right corner. */
-    private void buildHeader(PaddleShockApp app, float screenW, float screenH) {
+    private void buildHeader(Navigator nav, PlayerContext ctx, float screenW, float screenH) {
         Container headerBar = new Container();
         headerBar.setBackground(new QuadBackgroundComponent(Theme.PANEL));
         headerBar.setPreferredSize(new Vector3f(screenW, HEADER_HEIGHT, 0));
@@ -236,8 +237,8 @@ public class LoadoutState extends BaseAppState {
             if (modalOpen) {
                 return;
             }
-            app.getAudioManager().playSfx("button_click.ogg");
-            app.showMainMenu();
+            ctx.getAudioManager().playSfx("button_click.ogg");
+            nav.showMainMenu();
         });
         uiRoot.attachChild(back);
 
@@ -343,7 +344,7 @@ public class LoadoutState extends BaseAppState {
 
     private void refreshLabels(PlayerProfile profile) {
         creditsLabel.setText(I18n.t("loadout.credits", profile.getCurrency()));
-        aiDifficultyLabel.setText(((PaddleShockApp) getApplication()).getGameSettings().getAiDifficulty().getDisplayName());
+        aiDifficultyLabel.setText(((PlayerContext) getApplication()).getGameSettings().getAiDifficulty().getDisplayName());
 
         paddleLabel.setText(nameOf(Catalog.findPaddle(profile.getEquippedId("paddle")), PaddleDefinition::getDisplayName));
         tableLabel.setText(nameOf(Catalog.findTable(profile.getEquippedId("table")), TableDefinition::getDisplayName));
@@ -364,12 +365,12 @@ public class LoadoutState extends BaseAppState {
         }
     }
 
-    private void cycleAiDifficulty(PaddleShockApp app, int direction) {
+    private void cycleAiDifficulty(PlayerContext ctx, int direction) {
         AiDifficulty[] values = AiDifficulty.values();
-        com.paddleshock.settings.GameSettings settings = app.getGameSettings();
+        com.paddleshock.settings.GameSettings settings = ctx.getGameSettings();
         int nextIndex = Math.floorMod(settings.getAiDifficulty().ordinal() + direction, values.length);
         settings.setAiDifficulty(values[nextIndex]);
-        app.saveGameSettings();
+        ctx.saveGameSettings();
         aiDifficultyLabel.setText(settings.getAiDifficulty().getDisplayName());
     }
 
@@ -395,7 +396,7 @@ public class LoadoutState extends BaseAppState {
 
     @Override
     protected void onEnable() {
-        rebuild((PaddleShockApp) getApplication());
+        rebuild((Navigator) getApplication(), (PlayerContext) getApplication());
         ((SimpleApplication) getApplication()).getGuiNode().attachChild(uiRoot);
         getApplication().getInputManager().setCursorVisible(true);
     }

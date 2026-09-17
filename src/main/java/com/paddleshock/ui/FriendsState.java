@@ -19,7 +19,8 @@ import com.simsilica.lemur.TextField;
 import com.simsilica.lemur.component.QuadBackgroundComponent;
 import com.simsilica.lemur.component.SpringGridLayout;
 
-import com.paddleshock.app.PaddleShockApp;
+import com.paddleshock.app.Navigator;
+import com.paddleshock.app.PlayerContext;
 import com.paddleshock.data.Friend;
 import com.paddleshock.i18n.I18n;
 
@@ -48,8 +49,8 @@ public class FriendsState extends BaseAppState {
 
     private void rebuild() {
         uiRoot.detachAllChildren();
-        PaddleShockApp app = (PaddleShockApp) getApplication();
-        SimpleApplication simpleApp = (SimpleApplication) app;
+        PlayerContext app = (PlayerContext) getApplication();
+        SimpleApplication simpleApp = (SimpleApplication) getApplication();
         float screenW = simpleApp.getCamera().getWidth();
         float screenH = simpleApp.getCamera().getHeight();
 
@@ -89,7 +90,7 @@ public class FriendsState extends BaseAppState {
         back.setInsets(new Insets3f(18, 0, 0, 0));
         back.addClickCommands(source -> {
             app.getAudioManager().playSfx("button_click.ogg");
-            app.showMainMenu();
+            ((Navigator) getApplication()).showMainMenu();
         });
 
         Vector3f panelSize = panel.getPreferredSize();
@@ -106,7 +107,7 @@ public class FriendsState extends BaseAppState {
 
     /** This player's own id - the only way to actually give it to a friend so they can add you
      *  back (not mutual - see class docs - but they still need to know your id to invite you). */
-    private void buildOwnId(PaddleShockApp app, Container card) {
+    private void buildOwnId(PlayerContext app, Container card) {
         Label hint = card.addChild(new Label(I18n.t("friends.your_id_hint")));
         hint.setFontSize(11);
         hint.setColor(Theme.TEXT_DIM);
@@ -130,7 +131,7 @@ public class FriendsState extends BaseAppState {
         });
     }
 
-    private void buildAddFriendRow(PaddleShockApp app, Container card) {
+    private void buildAddFriendRow(PlayerContext app, Container card) {
         Label title = card.addChild(new Label(I18n.t("friends.add_a_friend")));
         title.setFontSize(12);
         title.setColor(Theme.TEXT_DIM);
@@ -178,7 +179,7 @@ public class FriendsState extends BaseAppState {
         field.setText(hint);
     }
 
-    private void attemptAddFriend(PaddleShockApp app) {
+    private void attemptAddFriend(PlayerContext app) {
         String rawId = addIdField.getText() == null ? "" : addIdField.getText().trim();
         String rawNickname = addNicknameField.getText() == null ? "" : addNicknameField.getText().trim();
         if (rawId.isEmpty() || I18n.t("friends.placeholder_player_id").equals(rawId)) {
@@ -198,7 +199,7 @@ public class FriendsState extends BaseAppState {
         rebuild();
     }
 
-    private void buildFriendsList(PaddleShockApp app, Container card) {
+    private void buildFriendsList(PlayerContext app, Container card) {
         Label title = card.addChild(new Label(I18n.t("friends.your_friends")));
         title.setFontSize(12);
         title.setColor(Theme.TEXT_DIM);
@@ -220,7 +221,7 @@ public class FriendsState extends BaseAppState {
         }
     }
 
-    private void addFriendRow(PaddleShockApp app, Container rows, Friend friend) {
+    private void addFriendRow(PlayerContext app, Container rows, Friend friend) {
         Container row = rows.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
         row.setInsets(new Insets3f(3, 0, 3, 0));
 

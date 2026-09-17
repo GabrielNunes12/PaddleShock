@@ -13,7 +13,7 @@ import com.simsilica.lemur.Label;
 import com.simsilica.lemur.component.QuadBackgroundComponent;
 import com.simsilica.lemur.component.SpringGridLayout;
 
-import com.paddleshock.app.PaddleShockApp;
+import com.paddleshock.app.PlayerContext;
 import com.paddleshock.i18n.I18n;
 import com.paddleshock.settings.GameSettings;
 import com.paddleshock.settings.Lang;
@@ -56,10 +56,10 @@ public class OptionsState extends BaseAppState {
         // Built fresh in rebuild() every time the screen is shown.
     }
 
-    private void rebuild(PaddleShockApp app) {
+    private void rebuild(PlayerContext app) {
         uiRoot.detachAllChildren();
 
-        SimpleApplication simpleApp = (SimpleApplication) app;
+        SimpleApplication simpleApp = (SimpleApplication) getApplication();
         float screenW = simpleApp.getCamera().getWidth();
         float screenH = simpleApp.getCamera().getHeight();
 
@@ -165,7 +165,7 @@ public class OptionsState extends BaseAppState {
      *  inactive one saves it, reloads {@link I18n}, and rebuilds this whole screen in the new
      *  language immediately - every UI state already rebuilds its text on {@code onEnable()}, so
      *  no restart is needed for screens visited after the switch either. */
-    private Container addLanguageCard(Container parent, PaddleShockApp app) {
+    private Container addLanguageCard(Container parent, PlayerContext app) {
         Container wrapper = parent.addChild(new Container(new SpringGridLayout(Axis.Y, Axis.X)));
 
         Container border = wrapper.addChild(new Container(new SpringGridLayout(Axis.Y, Axis.X)));
@@ -216,7 +216,7 @@ public class OptionsState extends BaseAppState {
         button.setPreferredSize(new Vector3f(CARD_WIDTH - 32, 44, 0));
     }
 
-    private void applyLanguage(PaddleShockApp app, Lang lang) {
+    private void applyLanguage(PlayerContext app, Lang lang) {
         GameSettings settings = app.getGameSettings();
         if (settings.getLanguage() == lang) {
             return;
@@ -266,31 +266,31 @@ public class OptionsState extends BaseAppState {
     }
 
     private void playClick() {
-        ((PaddleShockApp) getApplication()).getAudioManager().playSfx("button_click.ogg");
+        ((PlayerContext) getApplication()).getAudioManager().playSfx("button_click.ogg");
     }
 
-    private void adjustMouseSensitivity(PaddleShockApp app, float delta) {
+    private void adjustMouseSensitivity(PlayerContext app, float delta) {
         GameSettings settings = app.getGameSettings();
         settings.setMouseSensitivity(settings.getMouseSensitivity() + delta);
         app.saveGameSettings();
         refreshLabels(settings);
     }
 
-    private void adjustBrightness(PaddleShockApp app, float delta) {
+    private void adjustBrightness(PlayerContext app, float delta) {
         GameSettings settings = app.getGameSettings();
         settings.setBrightness(settings.getBrightness() + delta);
         app.saveGameSettings();
         refreshLabels(settings);
     }
 
-    private void adjustSoundVolume(PaddleShockApp app, float delta) {
+    private void adjustSoundVolume(PlayerContext app, float delta) {
         GameSettings settings = app.getGameSettings();
         settings.setSoundVolume(settings.getSoundVolume() + delta);
         app.saveGameSettings();
         refreshLabels(settings);
     }
 
-    private void adjustMusicVolume(PaddleShockApp app, float delta) {
+    private void adjustMusicVolume(PlayerContext app, float delta) {
         GameSettings settings = app.getGameSettings();
         settings.setMusicVolume(settings.getMusicVolume() + delta);
         app.saveGameSettings();
@@ -298,7 +298,7 @@ public class OptionsState extends BaseAppState {
         refreshLabels(settings);
     }
 
-    private void cycleVideoQuality(PaddleShockApp app, int direction) {
+    private void cycleVideoQuality(PlayerContext app, int direction) {
         VideoQuality[] values = VideoQuality.values();
         GameSettings settings = app.getGameSettings();
         int nextIndex = Math.floorMod(settings.getVideoQuality().ordinal() + direction, values.length);
@@ -308,7 +308,7 @@ public class OptionsState extends BaseAppState {
         refreshLabels(settings);
     }
 
-    private void toggleFullscreen(PaddleShockApp app) {
+    private void toggleFullscreen(PlayerContext app) {
         GameSettings settings = app.getGameSettings();
         settings.setFullscreen(!settings.isFullscreen());
         app.saveGameSettings();
@@ -316,7 +316,7 @@ public class OptionsState extends BaseAppState {
         refreshLabels(settings);
     }
 
-    private void cycleResolution(PaddleShockApp app, int direction) {
+    private void cycleResolution(PlayerContext app, int direction) {
         Resolution[] values = Resolution.values();
         GameSettings settings = app.getGameSettings();
         int nextIndex = Math.floorMod(settings.getResolution().ordinal() + direction, values.length);
@@ -345,7 +345,7 @@ public class OptionsState extends BaseAppState {
 
     @Override
     protected void onEnable() {
-        rebuild((PaddleShockApp) getApplication());
+        rebuild((PlayerContext) getApplication());
         ((SimpleApplication) getApplication()).getGuiNode().attachChild(uiRoot);
         getApplication().getInputManager().setCursorVisible(true);
     }

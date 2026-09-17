@@ -28,7 +28,8 @@ import com.simsilica.lemur.component.QuadBackgroundComponent;
 import com.simsilica.lemur.component.SpringGridLayout;
 
 import com.paddleshock.GameConstants;
-import com.paddleshock.app.PaddleShockApp;
+import com.paddleshock.app.Navigator;
+import com.paddleshock.app.PlayerContext;
 import com.paddleshock.data.Friend;
 import com.paddleshock.i18n.I18n;
 import com.paddleshock.net.InviteClient;
@@ -134,8 +135,8 @@ public class MultiplayerState extends BaseAppState {
 
     private void rebuild() {
         uiRoot.detachAllChildren();
-        PaddleShockApp app = (PaddleShockApp) getApplication();
-        SimpleApplication simpleApp = (SimpleApplication) app;
+        PlayerContext app = (PlayerContext) getApplication();
+        SimpleApplication simpleApp = (SimpleApplication) getApplication();
         float screenW = simpleApp.getCamera().getWidth();
         float screenH = simpleApp.getCamera().getHeight();
 
@@ -176,7 +177,7 @@ public class MultiplayerState extends BaseAppState {
             styleButton(back, Theme.PANEL_HOVER, Theme.TEXT, 14);
             back.addClickCommands(source -> {
                 app.getAudioManager().playSfx("button_click.ogg");
-                app.showMainMenu();
+                ((Navigator) getApplication()).showMainMenu();
             });
             Vector3f backSize = back.getPreferredSize();
             float cardBottomY = cardTopY - cardSize.y;
@@ -185,7 +186,7 @@ public class MultiplayerState extends BaseAppState {
         }
     }
 
-    private void buildChoice(PaddleShockApp app, Container panel) {
+    private void buildChoice(PlayerContext app, Container panel) {
         Label title = panel.addChild(new Label(I18n.t("multiplayer.title")));
         title.setFontSize(26);
         title.setColor(Theme.ORANGE);
@@ -249,7 +250,7 @@ public class MultiplayerState extends BaseAppState {
         tournamentButton.setPreferredSize(new Vector3f(CARD_CONTENT_WIDTH, 46, 0));
         tournamentButton.addClickCommands(source -> {
             app.getAudioManager().playSfx("button_click.ogg");
-            app.showTournament();
+            ((Navigator) getApplication()).showTournament();
         });
     }
 
@@ -260,7 +261,7 @@ public class MultiplayerState extends BaseAppState {
      *  apparently doesn't extend to non-managed children the way a plain Node's would, and wasn't
      *  worth chasing further for a cosmetic flourish). Reuses the same click command as the old
      *  toggle button, so the {@code unranked} field and its effect on hosting are unchanged. */
-    private Button buildToggleSwitch(PaddleShockApp app) {
+    private Button buildToggleSwitch(PlayerContext app) {
         Button toggle = new Button(unranked ? I18n.t("common.off") : I18n.t("common.on"));
         toggle.setBackground(new QuadBackgroundComponent(unranked ? Theme.PANEL_HOVER : Theme.GREEN));
         toggle.setColor(unranked ? Theme.TEXT_DIM : Theme.ON_ACCENT);
@@ -278,7 +279,7 @@ public class MultiplayerState extends BaseAppState {
 
     /** Same pill-shaped toggle-switch visual as {@link #buildToggleSwitch}, wired to
      *  {@link #joinAsSpectator} instead of {@link #unranked}. */
-    private Button buildSpectateToggle(PaddleShockApp app) {
+    private Button buildSpectateToggle(PlayerContext app) {
         Button toggle = new Button(joinAsSpectator ? I18n.t("common.on") : I18n.t("common.off"));
         toggle.setBackground(new QuadBackgroundComponent(joinAsSpectator ? Theme.BLUE : Theme.PANEL_HOVER));
         toggle.setColor(joinAsSpectator ? Theme.ON_ACCENT : Theme.TEXT_DIM);
@@ -294,7 +295,7 @@ public class MultiplayerState extends BaseAppState {
         return toggle;
     }
 
-    private void beginHosting(PaddleShockApp app) {
+    private void beginHosting(PlayerContext app) {
         boolean ranked = !unranked;
         try {
             netHost = app.startHostMatch(GameConstants.MULTIPLAYER_DEFAULT_PORT, ranked);
@@ -322,7 +323,7 @@ public class MultiplayerState extends BaseAppState {
     /** Kicks off (off the render thread) a fetch of this player's current rank, purely to show a
      *  "your rank" / promotion-series callout on the HOSTING screen before the match starts - see
      *  {@link #buildHosting}. Never blocks hosting/joining; a failed fetch just shows nothing. */
-    private void fetchPreMatchRank(PaddleShockApp app) {
+    private void fetchPreMatchRank(PlayerContext app) {
         preMatchRank.set(null);
         preMatchRankShown = false;
         preMatchRankPending = true;
@@ -390,7 +391,7 @@ public class MultiplayerState extends BaseAppState {
         thread.start();
     }
 
-    private void buildHosting(PaddleShockApp app, Container panel) {
+    private void buildHosting(PlayerContext app, Container panel) {
         boolean hostingUnranked = netHost != null && !netHost.isRanked();
         Label title = panel.addChild(new Label(hostingUnranked ? I18n.t("multiplayer.hosting_unranked") : I18n.t("multiplayer.hosting_title")));
         title.setFontSize(26);
@@ -510,7 +511,7 @@ public class MultiplayerState extends BaseAppState {
      *  here specifically (the Friends screen already covers that). Each button fires a
      *  best-effort background {@code sendInvite} call; a failure just leaves the button's label
      *  unchanged rather than blocking/interrupting hosting. */
-    private void buildInviteFriendsRow(PaddleShockApp app, Container panel, String code) {
+    private void buildInviteFriendsRow(PlayerContext app, Container panel, String code) {
         List<Friend> friendsList = app.getProfile().getFriends();
         if (friendsList.isEmpty()) {
             return;
@@ -564,7 +565,7 @@ public class MultiplayerState extends BaseAppState {
         rebuild();
     }
 
-    private void buildJoining(PaddleShockApp app, Container panel) {
+    private void buildJoining(PlayerContext app, Container panel) {
         Label title = panel.addChild(new Label(I18n.t("multiplayer.join_match_title")));
         title.setFontSize(26);
         title.setColor(Theme.BLUE);
@@ -624,7 +625,7 @@ public class MultiplayerState extends BaseAppState {
         });
     }
 
-    private void attemptConnect(PaddleShockApp app) {
+    private void attemptConnect(PlayerContext app) {
         String raw = addressField.getText().trim();
         if (raw.isEmpty()) {
             joinError = I18n.t("multiplayer.error_enter_address");
@@ -638,12 +639,12 @@ public class MultiplayerState extends BaseAppState {
         }
     }
 
-    /** Called by {@code PaddleShockApp.acceptInvite} once this screen has just been enabled:
+    /** Called by {@code PlayerContext.acceptInvite} once this screen has just been enabled:
      *  jumps straight to the JOINING view with {@code lobbyCode} pre-filled and immediately
      *  attempts to connect, reusing {@link #connectByLobbyCode} exactly - the same code path a
      *  player typing a code in by hand would take. */
     public void acceptInviteAndConnect(String lobbyCode) {
-        PaddleShockApp app = (PaddleShockApp) getApplication();
+        PlayerContext app = (PlayerContext) getApplication();
         view = View.JOINING;
         joinError = null;
         rebuild();
@@ -656,7 +657,7 @@ public class MultiplayerState extends BaseAppState {
         }
     }
 
-    private void connectByAddress(PaddleShockApp app, String raw) {
+    private void connectByAddress(PlayerContext app, String raw) {
         int colon = raw.lastIndexOf(':');
         if (colon <= 0 || colon == raw.length() - 1) {
             joinError = I18n.t("multiplayer.error_address_format", GameConstants.MULTIPLAYER_DEFAULT_PORT);
@@ -694,7 +695,7 @@ public class MultiplayerState extends BaseAppState {
      *  thread - the result is picked up in {@link #update}. {@code lobbyJoinGeneration} lets a
      *  newer attempt (another click, or leaving the screen) supersede an older one still in
      *  flight; the superseded thread closes its own result instead of leaking it. */
-    private void connectByLobbyCode(PaddleShockApp app, String code) {
+    private void connectByLobbyCode(PlayerContext app, String code) {
         if (netClient != null) {
             netClient.close();
             netClient = null;
@@ -767,7 +768,7 @@ public class MultiplayerState extends BaseAppState {
 
     @Override
     public void update(float tpf) {
-        PaddleShockApp app = (PaddleShockApp) getApplication();
+        PlayerContext app = (PlayerContext) getApplication();
 
         if (view == View.HOSTING && !lobbyResultShown && !lobbyPending
                 && (lobbyCode.get() != null || lobbyError.get() != null)) {
