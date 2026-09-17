@@ -46,7 +46,6 @@ import com.paddleshock.entities.ScoreboardDisplay;
 import com.paddleshock.entities.Table;
 import com.paddleshock.entities.TextureSet;
 import com.paddleshock.i18n.I18n;
-import com.paddleshock.input.PlayerInput;
 import com.paddleshock.net.NetClient;
 import com.paddleshock.net.NetHost;
 import com.paddleshock.net.NetProtocol;
@@ -74,8 +73,6 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
 
     private static final String ACTION_PAUSE = "PS_Pause";
     private static final String ACTION_REPLAY_SKIP = "PS_ReplaySkip";
-    private static final String[] POWERUP_ACTIONS = {"PS_PowerUp1", "PS_PowerUp2", "PS_PowerUp3"};
-    private static final int[] POWERUP_KEYS = {KeyInput.KEY_1, KeyInput.KEY_2, KeyInput.KEY_3};
     private static final float POWERUP_BOX_SIZE = 64f;
     private static final float POWERUP_BOX_GAP = 12f;
     private static final ColorRGBA POWERUP_BOX_COOLDOWN_COLOR = new ColorRGBA(0.180f, 0.196f, 0.235f, 1f);
@@ -89,7 +86,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     private Paddle playerPaddle;
     private Paddle opponentPaddle;
     private Ball ball;
-    private final PlayerInput playerInput = new PlayerInput();
+    private final PlayerInputGatherer inputGatherer = new PlayerInputGatherer();
     private MatchSimulation matchSimulation;
     private final PowerUpDefinition[] powerUpLoadout = new PowerUpDefinition[3];
 
@@ -120,11 +117,6 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     private BitmapText powerUpBannerText;
     private float powerUpBannerTimer;
 
-    /** Set by the key-1/2/3 handler, consumed (and cleared) on the very next {@link #update}, so it
-     *  reaches {@link MatchSimulation#tick} as part of the same tick-shaped input the future remote
-     *  opponent will also send its activations through. */
-    private Integer pendingPlayerPowerUpSlot;
-
     private BitmapText scoreText;
 
     /** Live "P : O" readouts on the Classic Court scoreboard prop(s); empty on every other level
@@ -146,11 +138,6 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
      *  UNRANKED choice in {@code MultiplayerState}, communicated to a joiner via the WELCOME
      *  handshake (see {@link NetProtocol}). */
     private final boolean ranked;
-
-    /** Consumed (and cleared) on the very next {@link #update}, same buffering as
-     *  {@link #pendingPlayerPowerUpSlot} - used only in {@link Mode#JOINER}, where the local
-     *  player's power-up activation is sent to the host rather than applied locally. */
-    private Integer pendingJoinerPowerUpSlot;
 
     /** Scores as last reported by the host's snapshot; only used in {@link Mode#JOINER}, since a
      *  joiner has no local {@link MatchSimulation} to read scores from directly. */
@@ -242,8 +229,8 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         // the mouse/gamepad-follows-paddle capture and the power-up hotkeys entirely, rather than
         // relying on the update loop simply never consuming them - see updateSpectator().
         if (mode != Mode.SPECTATOR) {
-            playerInput.register(app.getInputManager());
-            registerPowerUpKeys(app.getInputManager());
+            inputGatherer.register(app.getInputManager());
+            inputGatherer.registerPowerUpKeys(app.getInputManager(), this);
         }
         registerPauseKey(app.getInputManager());
         registerReplaySkipKey(app.getInputManager());
@@ -595,13 +582,6 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         inputManager.addListener(this, ACTION_PAUSE);
     }
 
-    private void registerPowerUpKeys(InputManager inputManager) {
-        for (int i = 0; i < POWERUP_ACTIONS.length; i++) {
-            inputManager.addMapping(POWERUP_ACTIONS[i], new KeyTrigger(POWERUP_KEYS[i]));
-            inputManager.addListener(this, POWERUP_ACTIONS[i]);
-        }
-    }
-
     /** Left click, Enter, or Space all jump straight to the normal match-end flow while an
      *  instant replay is playing (see {@link #startReplay}) - not everyone wants to watch it every
      *  time. Registered unconditionally (like the pause/power-up keys) but only acted on while
@@ -631,8 +611,8 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         if (!isPressed || !isEnabled()) {
             return;
         }
-        for (int i = 0; i < POWERUP_ACTIONS.length; i++) {
-            if (POWERUP_ACTIONS[i].equals(name)) {
+        for (int i = 0; i < PlayerInputGatherer.POWERUP_ACTIONS.length; i++) {
+            if (PlayerInputGatherer.POWERUP_ACTIONS[i].equals(name)) {
                 activatePlayerPowerUp(i);
                 return;
             }
@@ -648,11 +628,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         // NetClient) uses, so there's exactly one code path that turns "activate slot N" into a
         // simulation effect. In JOINER mode there's no local PowerUpManager to apply it to at
         // all - it's buffered the same way, but consumed into the outgoing network packet instead.
-        if (mode == Mode.JOINER) {
-            pendingJoinerPowerUpSlot = slot;
-        } else {
-            pendingPlayerPowerUpSlot = slot;
-        }
+        inputGatherer.activateSlot(slot, mode == Mode.JOINER);
     }
 
     @Override
@@ -849,7 +825,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         joinerReconnectHelloTimer = 0f;
 
         PaddleInput localTickInput = computeLocalPaddleInput(tpf);
-        PowerUpDefinition activated = consumePendingJoinerPowerUp();
+        PowerUpDefinition activated = inputGatherer.consumeNetworkActivation(powerUpLoadout);
         String powerUpId = activated != null ? activated.getId() : "";
         netClient.sendInput(localTickInput.getDeltaX(), localTickInput.getDeltaZ(), powerUpId);
 
@@ -972,41 +948,11 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
      *  fed straight into {@link MatchSimulation#tick} in {@link Mode#SINGLE_PLAYER}/{@link Mode#HOST},
      *  or sent over the network in {@link Mode#JOINER}. */
     private PaddleInput computeLocalPaddleInput(float tpf) {
-        float[] mouseDelta = playerInput.consumeDelta();
-        float[] gamepadStick = playerInput.consumeGamepadInput();
-        boolean gamepadActive = gamepadStick[0] != 0f || gamepadStick[1] != 0f;
-        float worldDeltaX;
-        float worldDeltaZ;
-        if (gamepadActive) {
-            float gamepadScale = GameConstants.GAMEPAD_MOVE_SPEED * tpf;
-            worldDeltaX = (screenRightWorld.x * gamepadStick[0] + screenUpWorld.x * gamepadStick[1]) * gamepadScale;
-            worldDeltaZ = (screenRightWorld.z * gamepadStick[0] + screenUpWorld.z * gamepadStick[1]) * gamepadScale;
-        } else {
-            float scale = GameConstants.MOUSE_SENSITIVITY * app.getGameSettings().getMouseSensitivity();
-            worldDeltaX = (screenRightWorld.x * mouseDelta[0] + screenUpWorld.x * mouseDelta[1]) * scale;
-            worldDeltaZ = (screenRightWorld.z * mouseDelta[0] + screenUpWorld.z * mouseDelta[1]) * scale;
-        }
+        float[] worldDelta = inputGatherer.consumeWorldDelta(
+                tpf, screenRightWorld, screenUpWorld, app.getGameSettings().getMouseSensitivity());
 
-        PowerUpDefinition activated = mode == Mode.JOINER ? null : consumePendingPlayerPowerUp();
-        return new PaddleInput(worldDeltaX, worldDeltaZ, activated);
-    }
-
-    private PowerUpDefinition consumePendingJoinerPowerUp() {
-        if (pendingJoinerPowerUpSlot == null) {
-            return null;
-        }
-        PowerUpDefinition def = powerUpLoadout[pendingJoinerPowerUpSlot];
-        pendingJoinerPowerUpSlot = null;
-        return def;
-    }
-
-    private PowerUpDefinition consumePendingPlayerPowerUp() {
-        if (pendingPlayerPowerUpSlot == null) {
-            return null;
-        }
-        PowerUpDefinition def = powerUpLoadout[pendingPlayerPowerUpSlot];
-        pendingPlayerPowerUpSlot = null;
-        return def;
+        PowerUpDefinition activated = mode == Mode.JOINER ? null : inputGatherer.consumeLocalActivation(powerUpLoadout);
+        return new PaddleInput(worldDelta[0], worldDelta[1], activated);
     }
 
     /** Local AI decision-making: there's no remote opponent yet, so this still lives here rather
@@ -1155,7 +1101,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         // Only ever deleted if they were actually registered in initialize() - see the mode check
         // there (a spectator never registers the power-up hotkeys at all).
         if (mode != Mode.SPECTATOR) {
-            for (String action : POWERUP_ACTIONS) {
+            for (String action : PlayerInputGatherer.POWERUP_ACTIONS) {
                 simpleApp.getInputManager().deleteMapping(action);
             }
         }
