@@ -213,7 +213,7 @@ public class MainMenuState extends BaseAppState {
         Thread thread = new Thread(() -> {
             List<InviteClient.Invite> invites = null;
             try {
-                invites = InviteClient.getInvites(playerId);
+                invites = app.getInviteService().getInvites(playerId);
             } catch (IOException e) {
                 // offline, or the invite service is unreachable - just means no banner this poll.
             }
@@ -298,7 +298,7 @@ public class MainMenuState extends BaseAppState {
         String playerId = app.getProfile().getPlayerId();
         Thread thread = new Thread(() -> {
             try {
-                InviteClient.dismissInvites(playerId);
+                app.getInviteService().dismissInvites(playerId);
             } catch (IOException e) {
                 // best-effort - worst case the same invites reappear on a later poll.
             }

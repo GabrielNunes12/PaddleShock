@@ -51,18 +51,20 @@ class SaveManagerTest {
     // Must match the hardcoded string SaveCrypto derives its legacy key from.
     private static final String LEGACY_KEY_MATERIAL = "PaddleShock-save-v1-do-not-edit";
 
+    private final ProfileStore saveManager = new SaveManager();
+
     @Test
     void roundTripsProfileUnderPerInstallKeyAndPersistsIt() throws IOException {
         clearSaveDir();
 
-        PlayerProfile profile = SaveManager.loadProfile();
+        PlayerProfile profile = saveManager.loadProfile();
         profile.addCurrency(1234);
         String playerId = profile.getPlayerId();
-        SaveManager.saveProfile(profile);
+        saveManager.saveProfile(profile);
 
         assertTrue(Files.exists(KEY_FILE), "install key file should have been created next to the save");
 
-        PlayerProfile reloaded = SaveManager.loadProfile();
+        PlayerProfile reloaded = saveManager.loadProfile();
         assertEquals(profile.getCurrency(), reloaded.getCurrency());
         assertEquals(playerId, reloaded.getPlayerId());
 
@@ -85,7 +87,7 @@ class SaveManagerTest {
 
         // First load: install key fails on this file, falls back to the legacy key, succeeds,
         // and should immediately re-save under the install key.
-        PlayerProfile loaded = SaveManager.loadProfile();
+        PlayerProfile loaded = saveManager.loadProfile();
         assertEquals(legacyProfile.getCurrency(), loaded.getCurrency());
         assertEquals(legacyPlayerId, loaded.getPlayerId());
 
@@ -94,7 +96,7 @@ class SaveManagerTest {
         assertFalse(reSaved.usedLegacyKey(), "expected the migrated file to no longer need the legacy-key fallback");
 
         // Second load should read straight from the (now install-key-encrypted) primary file.
-        PlayerProfile reloaded = SaveManager.loadProfile();
+        PlayerProfile reloaded = saveManager.loadProfile();
         assertEquals(legacyProfile.getCurrency(), reloaded.getCurrency());
         assertEquals(legacyPlayerId, reloaded.getPlayerId());
     }
@@ -103,21 +105,21 @@ class SaveManagerTest {
     void corruptedPrimaryFallsBackToBackup() throws IOException {
         clearSaveDir();
 
-        PlayerProfile profile = SaveManager.loadProfile();
+        PlayerProfile profile = saveManager.loadProfile();
         int defaultCurrency = profile.getCurrency(); // PlayerProfile's default starting currency
         profile.addCurrency(111);
         String playerId = profile.getPlayerId();
-        SaveManager.saveProfile(profile); // first save: no prior file yet, so no backup written
+        saveManager.saveProfile(profile); // first save: no prior file yet, so no backup written
 
         profile.addCurrency(222); // now defaultCurrency + 333
-        SaveManager.saveProfile(profile); // second save: the first save's content becomes profile.dat.bak
+        saveManager.saveProfile(profile); // second save: the first save's content becomes profile.dat.bak
         assertTrue(Files.exists(PROFILE_BACKUP), "a second save should have rotated the prior save into .bak");
 
         // Simulate a crash/tamper leaving the primary file corrupt - truncate it so it fails GCM
         // authentication - while the backup (the first save's content, +111 only) is untouched.
         Files.write(PROFILE_FILE, new byte[] {1, 2, 3});
 
-        PlayerProfile recovered = SaveManager.loadProfile();
+        PlayerProfile recovered = saveManager.loadProfile();
         assertEquals(defaultCurrency + 111, recovered.getCurrency(),
                 "should recover the BACKUP generation (+111 only), not silently reset or use the newer (+333) generation");
         assertEquals(playerId, recovered.getPlayerId());
@@ -127,17 +129,17 @@ class SaveManagerTest {
     void bothPrimaryAndBackupCorruptedResetsToFreshDefaultRatherThanThrowing() throws IOException {
         clearSaveDir();
 
-        PlayerProfile original = SaveManager.loadProfile();
+        PlayerProfile original = saveManager.loadProfile();
         int defaultCurrency = original.getCurrency();
         original.addCurrency(999);
         String originalPlayerId = original.getPlayerId();
-        SaveManager.saveProfile(original);
+        saveManager.saveProfile(original);
 
         Files.write(PROFILE_FILE, new byte[] {9, 9, 9});
         Files.createDirectories(SAVE_DIR);
         Files.write(PROFILE_BACKUP, new byte[] {9, 9, 9});
 
-        PlayerProfile reset = SaveManager.loadProfile();
+        PlayerProfile reset = saveManager.loadProfile();
         assertEquals(defaultCurrency, reset.getCurrency(),
                 "with both generations unusable, load must fall back to a brand-new default profile");
         assertTrue(!reset.getPlayerId().equals(originalPlayerId),

@@ -106,7 +106,7 @@ public class ProfileState extends BaseAppState {
             RankState rank = null;
             boolean failed = false;
             try {
-                rank = RankClient.getRank(playerId);
+                rank = app.getRankService().getRank(playerId);
             } catch (IOException e) {
                 failed = true;
             }

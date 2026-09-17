@@ -5,6 +5,7 @@ import java.awt.Toolkit;
 
 import com.jme3.system.AppSettings;
 import com.paddleshock.app.PaddleShockApp;
+import com.paddleshock.data.ProfileStore;
 import com.paddleshock.data.SaveManager;
 import com.paddleshock.diagnostics.CrashReporter;
 import com.paddleshock.settings.GameSettings;
@@ -20,7 +21,10 @@ public final class Main {
         CrashReporter.install();
 
         PaddleShockApp app = new PaddleShockApp();
-        GameSettings savedSettings = SaveManager.loadSettings();
+        // A throwaway ProfileStore, just to read settings before the app (and its own
+        // ProfileStore instance) exist - see SaveManager's class docs.
+        ProfileStore profileStore = new SaveManager();
+        GameSettings savedSettings = profileStore.loadSettings();
 
         AppSettings settings = new AppSettings(true);
         settings.setTitle("PaddleShock");

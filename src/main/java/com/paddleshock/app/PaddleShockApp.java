@@ -17,15 +17,20 @@ import com.paddleshock.GameConstants;
 import com.paddleshock.audio.AudioManager;
 import com.paddleshock.data.MatchHistoryEntry;
 import com.paddleshock.data.PlayerProfile;
+import com.paddleshock.data.ProfileStore;
 import com.paddleshock.data.SaveManager;
 import com.paddleshock.diagnostics.CrashReporter;
 import com.paddleshock.diagnostics.NetLog;
+import com.paddleshock.net.InviteClient;
+import com.paddleshock.net.InviteService;
 import com.paddleshock.net.NetClient;
 import com.paddleshock.net.NetHost;
 import com.paddleshock.net.NetProtocol;
 import com.paddleshock.net.RankClient;
+import com.paddleshock.net.RankService;
 import com.paddleshock.net.RankState;
 import com.paddleshock.net.TournamentClient;
+import com.paddleshock.net.TournamentService;
 import com.paddleshock.settings.GameSettings;
 import com.paddleshock.steam.SteamManager;
 import com.paddleshock.ui.FriendsState;
@@ -43,6 +48,13 @@ import com.paddleshock.ui.TournamentState;
 
 /** App shell: owns save data and switches between the menu/gameplay app states. */
 public class PaddleShockApp extends SimpleApplication {
+
+    // Composition root for these four services - see the class docs on RankService/InviteService/
+    // TournamentService/ProfileStore for why they're interfaces rather than static classes.
+    private final ProfileStore profileStore = new SaveManager();
+    private final RankService rankService = new RankClient();
+    private final InviteService inviteService = new InviteClient();
+    private final TournamentService tournamentService = new TournamentClient();
 
     private PlayerProfile profile;
     /** This player's rank as of just before the current joined match started - see
@@ -97,13 +109,13 @@ public class PaddleShockApp extends SimpleApplication {
         // match was in progress and what mode, read lazily at crash time (never eagerly).
         CrashReporter.setContextSupplier(this::describeMatchStateForCrashReport);
 
-        profile = SaveManager.loadProfile();
+        profile = profileStore.loadProfile();
         // getPlayerId() lazily generates one on a save that predates it - persist that
         // immediately so it doesn't silently regenerate (and orphan any ranked-ladder history
         // tied to the old id) on the next launch.
         profile.getPlayerId();
-        SaveManager.saveProfile(profile);
-        gameSettings = SaveManager.loadSettings();
+        profileStore.saveProfile(profile);
+        gameSettings = profileStore.loadSettings();
         com.paddleshock.i18n.I18n.setLanguage(gameSettings.getLanguage());
         audioManager = new AudioManager(assetManager, gameSettings);
 
@@ -201,7 +213,7 @@ public class PaddleShockApp extends SimpleApplication {
     }
 
     public void saveProfile() {
-        SaveManager.saveProfile(profile);
+        profileStore.saveProfile(profile);
     }
 
     public GameSettings getGameSettings() {
@@ -213,7 +225,19 @@ public class PaddleShockApp extends SimpleApplication {
     }
 
     public void saveGameSettings() {
-        SaveManager.saveSettings(gameSettings);
+        profileStore.saveSettings(gameSettings);
+    }
+
+    public RankService getRankService() {
+        return rankService;
+    }
+
+    public InviteService getInviteService() {
+        return inviteService;
+    }
+
+    public TournamentService getTournamentService() {
+        return tournamentService;
     }
 
     public void showMainMenu() {
@@ -393,7 +417,7 @@ public class PaddleShockApp extends SimpleApplication {
         String playerId = profile.getPlayerId();
         Thread thread = new Thread(() -> {
             try {
-                preMatchRank = RankClient.getRank(playerId);
+                preMatchRank = rankService.getRank(playerId);
             } catch (IOException e) {
                 preMatchRank = null; // endRankedJoinerMatch falls back to "no delta shown"
                 NetLog.log("rank-prefetch failed for player " + playerId, e);
@@ -466,7 +490,7 @@ public class PaddleShockApp extends SimpleApplication {
         String winnerId = playerWon ? context.selfPlayerId() : context.opponentPlayerId();
         Thread thread = new Thread(() -> {
             try {
-                TournamentClient.reportTournamentMatchResult(context.code(), context.roundIndex(),
+                tournamentService.reportTournamentMatchResult(context.code(), context.roundIndex(),
                         context.matchIndex(), winnerId, context.selfPlayerId());
             } catch (IOException e) {
                 NetLog.log("tournament match report failed", e);
@@ -534,7 +558,7 @@ public class PaddleShockApp extends SimpleApplication {
             try {
                 String matchId = java.util.UUID.randomUUID().toString();
                 RankClient.MatchReportResult report =
-                        RankClient.reportMatchResult(matchId, hostPlayerId, joinerPlayerId, playerWon, lobbyCode);
+                        rankService.reportMatchResult(matchId, hostPlayerId, joinerPlayerId, playerWon, lobbyCode);
                 result = report.getHost();
                 // Relay the joiner's own authoritative result back over the still-open connection
                 // so it can show the real number instead of guessing via withDeltaFrom - see
@@ -585,7 +609,7 @@ public class PaddleShockApp extends SimpleApplication {
                 String matchId = java.util.UUID.randomUUID().toString();
                 // The joiner is gone - no relay is possible or needed; it never shows a ranked
                 // result at all for a timeout (see handleJoinerConnectionLost).
-                result = RankClient.reportMatchResult(matchId, hostPlayerId, joinerPlayerId, true, lobbyCode).getHost();
+                result = rankService.reportMatchResult(matchId, hostPlayerId, joinerPlayerId, true, lobbyCode).getHost();
             } catch (IOException e) {
                 // offline, or the rank service is unreachable - the forfeit itself still stands.
                 NetLog.log("ranked forfeit report failed (host)", e);
@@ -664,7 +688,7 @@ public class PaddleShockApp extends SimpleApplication {
                 // it may not have finished writing yet either. Poll briefly for this player's
                 // game count to actually move rather than risk showing the stale pre-match state.
                 for (int attempt = 0; attempt < 6; attempt++) {
-                    fetched = RankClient.getRank(playerId);
+                    fetched = rankService.getRank(playerId);
                     if (baselineGames < 0 || fetched.getWins() + fetched.getLosses() != baselineGames) {
                         break;
                     }
@@ -672,7 +696,7 @@ public class PaddleShockApp extends SimpleApplication {
                     Thread.sleep(400);
                 }
                 if (fetched == null) {
-                    fetched = RankClient.getRank(playerId); // gave up waiting - show whatever's there
+                    fetched = rankService.getRank(playerId); // gave up waiting - show whatever's there
                 }
                 RankState delta = fetched.withDeltaFrom(baseline);
                 matchEndState.reportRankResult(delta);

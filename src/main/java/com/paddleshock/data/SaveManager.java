@@ -14,7 +14,7 @@ import com.google.gson.JsonSyntaxException;
 import com.paddleshock.settings.GameSettings;
 
 /** Loads/saves {@link PlayerProfile} and {@link GameSettings}, AES-GCM encrypted, under the user's home dir. */
-public final class SaveManager {
+public final class SaveManager implements ProfileStore {
 
     static final Path SAVE_DIR = Path.of(System.getProperty("user.home"), ".paddleshock");
     private static final Path PROFILE_FILE = SAVE_DIR.resolve("profile.dat");
@@ -22,28 +22,34 @@ public final class SaveManager {
 
     private static final Gson GSON = new GsonBuilder().create();
 
-    private SaveManager() {
+    public SaveManager() {
     }
 
     /** The local per-player data directory (also home to {@code crashes/} and {@code netcode.log} -
-     *  see {@code com.paddleshock.diagnostics}) so those stay next to the save data they diagnose. */
+     *  see {@code com.paddleshock.diagnostics}). Kept static: {@code CrashReporter}/{@code NetLog}
+     *  need this path before a {@code SaveManager}/{@code PaddleShockApp} instance necessarily
+     *  exists, and it's a pure path lookup with no state worth injecting. */
     public static Path getDataDir() {
         return SAVE_DIR;
     }
 
-    public static PlayerProfile loadProfile() {
+    @Override
+    public PlayerProfile loadProfile() {
         return load(PROFILE_FILE, PlayerProfile.class, PlayerProfile::new, PlayerProfile::migrateIfNeeded);
     }
 
-    public static void saveProfile(PlayerProfile profile) {
+    @Override
+    public void saveProfile(PlayerProfile profile) {
         save(PROFILE_FILE, profile);
     }
 
-    public static GameSettings loadSettings() {
+    @Override
+    public GameSettings loadSettings() {
         return load(SETTINGS_FILE, GameSettings.class, GameSettings::new, GameSettings::migrateIfNeeded);
     }
 
-    public static void saveSettings(GameSettings settings) {
+    @Override
+    public void saveSettings(GameSettings settings) {
         save(SETTINGS_FILE, settings);
     }
 

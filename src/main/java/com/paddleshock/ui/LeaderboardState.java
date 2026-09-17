@@ -64,11 +64,12 @@ public class LeaderboardState extends BaseAppState {
         fetchPending.set(true);
         int myGeneration = fetchGeneration.incrementAndGet();
 
+        PaddleShockApp app = (PaddleShockApp) getApplication();
         Thread thread = new Thread(() -> {
             List<LeaderboardEntry> entries = null;
             String error = null;
             try {
-                entries = RankClient.getLeaderboard(LIMIT);
+                entries = app.getRankService().getLeaderboard(LIMIT);
             } catch (IOException e) {
                 error = e.getMessage() == null ? I18n.t("leaderboard.error_unreachable") : e.getMessage();
             }

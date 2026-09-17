@@ -30,6 +30,7 @@ import com.paddleshock.net.NetClient;
 import com.paddleshock.net.NetHost;
 import com.paddleshock.net.StunClient;
 import com.paddleshock.net.TournamentClient;
+import com.paddleshock.net.TournamentService;
 
 /**
  * Live-bracket tournament screen, reached from {@link MultiplayerState}'s CHOICE view via its
@@ -213,11 +214,11 @@ public class TournamentState extends BaseAppState {
             TournamentClient.State result = null;
             String error = null;
             try {
-                String newCode = TournamentClient.createTournament(hostPlayerId, maxPlayers);
+                String newCode = app.getTournamentService().createTournament(hostPlayerId, maxPlayers);
                 // Register the host itself as a player - createTournament only returns the bare
                 // code, so join immediately (idempotent server-side) to get the host into the
                 // players list and pick up the full state in one round trip.
-                result = TournamentClient.joinTournament(newCode, hostPlayerId, hint);
+                result = app.getTournamentService().joinTournament(newCode, hostPlayerId, hint);
             } catch (IOException e) {
                 error = e.getMessage() == null ? I18n.t("tournament.service_unreachable") : e.getMessage();
             }
@@ -253,7 +254,7 @@ public class TournamentState extends BaseAppState {
             TournamentClient.State result = null;
             String error = null;
             try {
-                result = TournamentClient.joinTournament(enteredCode, playerId, hint);
+                result = app.getTournamentService().joinTournament(enteredCode, playerId, hint);
             } catch (IOException e) {
                 error = e.getMessage() == null ? I18n.t("tournament.service_unreachable") : e.getMessage();
             }
@@ -369,7 +370,7 @@ public class TournamentState extends BaseAppState {
         String tournamentCode = code;
         Thread thread = new Thread(() -> {
             try {
-                TournamentClient.State result = TournamentClient.startTournament(tournamentCode, hostPlayerId);
+                TournamentClient.State result = app.getTournamentService().startTournament(tournamentCode, hostPlayerId);
                 pollResult.set(result);
             } catch (IOException e) {
                 startError.set(e.getMessage() == null ? I18n.t("tournament.service_unreachable") : e.getMessage());
@@ -651,7 +652,7 @@ public class TournamentState extends BaseAppState {
             matchHostPending = false;
             if (lobbyCode != null) {
                 try {
-                    TournamentClient.setTournamentMatchLobbyCode(tournamentCode, roundIndex, matchIndex, selfId, lobbyCode);
+                    app.getTournamentService().setTournamentMatchLobbyCode(tournamentCode, roundIndex, matchIndex, selfId, lobbyCode);
                 } catch (IOException e) {
                     matchHostError.set(I18n.t("tournament.error_publish_code", e.getMessage()));
                 }
@@ -751,11 +752,12 @@ public class TournamentState extends BaseAppState {
         pollPending = true;
         int myGeneration = pollGeneration.incrementAndGet();
         String tournamentCode = code;
+        TournamentService tournamentService = ((PaddleShockApp) getApplication()).getTournamentService();
         Thread thread = new Thread(() -> {
             TournamentClient.State result = null;
             String error = null;
             try {
-                result = TournamentClient.getTournamentState(tournamentCode);
+                result = tournamentService.getTournamentState(tournamentCode);
             } catch (IOException e) {
                 error = e.getMessage() == null ? I18n.t("tournament.service_unreachable") : e.getMessage();
             }

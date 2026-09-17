@@ -26,7 +26,7 @@ import com.google.gson.JsonParser;
  * covers the small "invite a friend into my current lobby" mailbox: sending an invite, polling for
  * pending ones, and dismissing them once seen/acted on.
  */
-public final class InviteClient {
+public final class InviteClient implements InviteService {
 
     private static final String ENDPOINT = "https://2mjcwpgb6sesrjy36nm6qxdmpu0wbvrb.lambda-url.us-east-1.on.aws/";
     private static final Duration TIMEOUT = Duration.ofSeconds(5);
@@ -36,13 +36,14 @@ public final class InviteClient {
             .build();
     private static final Gson GSON = new Gson();
 
-    private InviteClient() {
+    public InviteClient() {
     }
 
     /** Sends an invite from {@code fromPlayerId} to {@code toPlayerId}, inviting them into
      *  {@code lobbyCode}. {@code fromNameHint} may be {@code null}. Blocking network call - run off
      *  the render thread. */
-    public static void sendInvite(String fromPlayerId, String fromNameHint, String toPlayerId, String lobbyCode)
+    @Override
+    public void sendInvite(String fromPlayerId, String fromNameHint, String toPlayerId, String lobbyCode)
             throws IOException {
         JsonObject body = new JsonObject();
         body.addProperty("action", "sendInvite");
@@ -57,7 +58,8 @@ public final class InviteClient {
 
     /** Fetches {@code playerId}'s current pending invites (empty list if none) - this is what a
      *  client polls. Blocking network call - run off the render thread. */
-    public static List<Invite> getInvites(String playerId) throws IOException {
+    @Override
+    public List<Invite> getInvites(String playerId) throws IOException {
         JsonObject body = new JsonObject();
         body.addProperty("action", "getInvites");
         body.addProperty("playerId", playerId);
@@ -73,7 +75,8 @@ public final class InviteClient {
 
     /** Clears {@code playerId}'s pending invites, so they don't see the same ones again on the
      *  next poll. Blocking network call - run off the render thread. */
-    public static void dismissInvites(String playerId) throws IOException {
+    @Override
+    public void dismissInvites(String playerId) throws IOException {
         JsonObject body = new JsonObject();
         body.addProperty("action", "dismissInvites");
         body.addProperty("playerId", playerId);
@@ -115,7 +118,7 @@ public final class InviteClient {
         }
     }
 
-    private static JsonObject post(JsonObject body) throws IOException {
+    private JsonObject post(JsonObject body) throws IOException {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(ENDPOINT))
                 .timeout(TIMEOUT)

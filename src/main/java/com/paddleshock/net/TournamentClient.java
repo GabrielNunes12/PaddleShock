@@ -27,7 +27,7 @@ import com.google.gson.JsonParser;
  * a match's lobby code once its host is ready, reporting who won a pairing, and polling the overall
  * bracket state.
  */
-public final class TournamentClient {
+public final class TournamentClient implements TournamentService {
 
     private static final String ENDPOINT = "https://2mjcwpgb6sesrjy36nm6qxdmpu0wbvrb.lambda-url.us-east-1.on.aws/";
     private static final Duration TIMEOUT = Duration.ofSeconds(5);
@@ -37,12 +37,13 @@ public final class TournamentClient {
             .build();
     private static final Gson GSON = new Gson();
 
-    private TournamentClient() {
+    public TournamentClient() {
     }
 
     /** Creates a new tournament for {@code maxPlayers} (4 or 8), owned by {@code hostPlayerId} -
      *  returns the short code to share with other players. Blocking network call. */
-    public static String createTournament(String hostPlayerId, int maxPlayers) throws IOException {
+    @Override
+    public String createTournament(String hostPlayerId, int maxPlayers) throws IOException {
         JsonObject body = new JsonObject();
         body.addProperty("action", "createTournament");
         body.addProperty("hostPlayerId", hostPlayerId);
@@ -53,7 +54,8 @@ public final class TournamentClient {
 
     /** Joins (or, if already joined, idempotently re-fetches) the tournament {@code code} as
      *  {@code playerId}, and returns the full tournament state. Blocking network call. */
-    public static State joinTournament(String code, String playerId, String displayNameHint) throws IOException {
+    @Override
+    public State joinTournament(String code, String playerId, String displayNameHint) throws IOException {
         JsonObject body = new JsonObject();
         body.addProperty("action", "joinTournament");
         body.addProperty("code", code);
@@ -64,7 +66,8 @@ public final class TournamentClient {
 
     /** Host-only: starts the tournament once it's exactly full, populating the bracket. Blocking
      *  network call. */
-    public static State startTournament(String code, String hostPlayerId) throws IOException {
+    @Override
+    public State startTournament(String code, String hostPlayerId) throws IOException {
         JsonObject body = new JsonObject();
         body.addProperty("action", "startTournament");
         body.addProperty("code", code);
@@ -75,7 +78,8 @@ public final class TournamentClient {
     /** Called only by the {@code p1} side of a pairing, once it has created a real lobby (via the
      *  existing {@code NetHost.registerLobby}) for that round's match - publishes the lobby code
      *  into the bracket so {@code p2} can find and join it. Blocking network call. */
-    public static State setTournamentMatchLobbyCode(String code, int roundIndex, int matchIndex,
+    @Override
+    public State setTournamentMatchLobbyCode(String code, int roundIndex, int matchIndex,
             String playerId, String lobbyCode) throws IOException {
         JsonObject body = new JsonObject();
         body.addProperty("action", "setTournamentMatchLobbyCode");
@@ -90,7 +94,8 @@ public final class TournamentClient {
     /** Reports the winner of one bracket pairing - idempotent, so either side (or both) may call
      *  this once the match ends with no coordination needed about who reports first. Blocking
      *  network call. */
-    public static State reportTournamentMatchResult(String code, int roundIndex, int matchIndex,
+    @Override
+    public State reportTournamentMatchResult(String code, int roundIndex, int matchIndex,
             String winnerPlayerId, String reporterPlayerId) throws IOException {
         JsonObject body = new JsonObject();
         body.addProperty("action", "reportTournamentMatchResult");
@@ -104,14 +109,15 @@ public final class TournamentClient {
 
     /** Fetches the current tournament state - what the waiting-room/bracket views poll. Blocking
      *  network call. */
-    public static State getTournamentState(String code) throws IOException {
+    @Override
+    public State getTournamentState(String code) throws IOException {
         JsonObject body = new JsonObject();
         body.addProperty("action", "getTournamentState");
         body.addProperty("code", code);
         return parseState(post(body));
     }
 
-    private static State parseState(JsonObject json) {
+    private State parseState(JsonObject json) {
         return GSON.fromJson(json, State.class);
     }
 
@@ -230,7 +236,7 @@ public final class TournamentClient {
         }
     }
 
-    private static JsonObject post(JsonObject body) throws IOException {
+    private JsonObject post(JsonObject body) throws IOException {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(ENDPOINT))
                 .timeout(TIMEOUT)

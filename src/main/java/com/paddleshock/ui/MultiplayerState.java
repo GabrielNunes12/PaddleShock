@@ -330,7 +330,7 @@ public class MultiplayerState extends BaseAppState {
         Thread thread = new Thread(() -> {
             RankState rank;
             try {
-                rank = RankClient.getRank(playerId);
+                rank = app.getRankService().getRank(playerId);
             } catch (IOException e) {
                 rank = null;
             }
@@ -541,7 +541,7 @@ public class MultiplayerState extends BaseAppState {
                 String selfName = app.getSteamManager().getPersonaName().orElseGet(() -> app.getProfile().getDisplayName());
                 Thread thread = new Thread(() -> {
                     try {
-                        InviteClient.sendInvite(selfId, selfName, friend.getPlayerId(), code);
+                        app.getInviteService().sendInvite(selfId, selfName, friend.getPlayerId(), code);
                     } catch (java.io.IOException e) {
                         // Best-effort - inviting a friend is a convenience on top of the lobby
                         // code, which is still shown/copyable regardless of whether this succeeds.

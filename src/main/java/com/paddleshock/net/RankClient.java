@@ -23,7 +23,7 @@ import com.paddleshock.rank.RankTier;
  * host already owns the authoritative match simulation - the same trust boundary the P2P
  * architecture already relies on for the match itself, not a new one.
  */
-public final class RankClient {
+public final class RankClient implements RankService {
 
     private static final String ENDPOINT = "https://2mjcwpgb6sesrjy36nm6qxdmpu0wbvrb.lambda-url.us-east-1.on.aws/";
     private static final Duration TIMEOUT = Duration.ofSeconds(5);
@@ -33,12 +33,13 @@ public final class RankClient {
             .build();
     private static final Gson GSON = new Gson();
 
-    private RankClient() {
+    public RankClient() {
     }
 
     /** Fetches {@code playerId}'s current rank (a fresh Copper IV/0 LP record if they've never
      *  played a ranked match). Blocking network call - run off the render thread. */
-    public static RankState getRank(String playerId) throws IOException {
+    @Override
+    public RankState getRank(String playerId) throws IOException {
         JsonObject body = new JsonObject();
         body.addProperty("action", "getRank");
         body.addProperty("playerId", playerId);
@@ -54,7 +55,8 @@ public final class RankClient {
      *  {@code null} for a direct IP:port LAN match, which never registered a lobby session in the
      *  first place and so can't be verified this way (see {@code aws/README.md} "Trust model" for
      *  that accepted tradeoff). Blocking network call - run off the render thread. */
-    public static MatchReportResult reportMatchResult(String matchId, String hostPlayerId,
+    @Override
+    public MatchReportResult reportMatchResult(String matchId, String hostPlayerId,
             String joinerPlayerId, boolean hostWon, String lobbyCode) throws IOException {
         JsonObject body = new JsonObject();
         body.addProperty("action", "reportMatchResult");
@@ -71,7 +73,8 @@ public final class RankClient {
     /** Fetches the top {@code limit} entries on the ranked ladder, best-to-worst (the server sorts
      *  by tier desc, then division asc/better, then LP desc). Blocking network call - run off the
      *  render thread. */
-    public static List<LeaderboardEntry> getLeaderboard(int limit) throws IOException {
+    @Override
+    public List<LeaderboardEntry> getLeaderboard(int limit) throws IOException {
         JsonObject body = new JsonObject();
         body.addProperty("action", "getLeaderboard");
         body.addProperty("limit", limit);
@@ -150,7 +153,7 @@ public final class RankClient {
         }
     }
 
-    private static JsonObject post(JsonObject body) throws IOException {
+    private JsonObject post(JsonObject body) throws IOException {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(ENDPOINT))
                 .timeout(TIMEOUT)
