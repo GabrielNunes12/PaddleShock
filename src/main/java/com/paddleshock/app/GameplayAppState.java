@@ -51,7 +51,6 @@ import com.paddleshock.net.NetClient;
 import com.paddleshock.net.NetHost;
 import com.paddleshock.net.NetProtocol;
 import com.paddleshock.powerups.PowerUpType;
-import com.paddleshock.replay.ReplayRecorder;
 import com.paddleshock.replay.ReplaySample;
 import com.paddleshock.sim.MatchSimulation;
 import com.paddleshock.sim.PaddleInput;
@@ -185,21 +184,12 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
      *  self-heal, short enough that a genuinely dead host still dead-ends in a reasonable time. */
     private static final float JOINER_RECONNECT_WINDOW_SECONDS = 8f;
 
-    /** Ring buffer of recent renderable match state, sampled once per tick (see
-     *  {@link #recordReplaySample}/{@link #applySnapshotToScene}) - played back over this same
-     *  scene's ball/paddle objects as an instant replay right after the match ends, before handing
-     *  off to {@code PaddleShockApp}'s normal match-end flow. Runs for all three {@link Mode}s. */
-    private final ReplayRecorder replayRecorder = new ReplayRecorder();
-    private boolean replaying;
-    private List<ReplaySample> replayBuffer;
-    private int replayIndex;
-    private float replayElapsedInSample;
-    /** The exact {@code PaddleShockApp.endMatch}/{@code endRankedHostMatch}/{@code endRankedJoinerMatch}
-     *  call that was deferred to run the instant replay first - invoked once playback finishes or
-     *  is skipped, so every existing match-end call site keeps working exactly as before. */
-    private Runnable pendingMatchEndAction;
-    private BitmapText replayLabelText;
-    private BitmapText replaySkipText;
+    /** Records+plays back recent renderable match state as an instant replay right after the
+     *  match ends, before handing off to {@code PaddleShockApp}'s normal match-end flow. Runs for
+     *  all three {@link Mode}s; see {@link #recordReplaySample}/{@link #applySnapshotToScene} for
+     *  where samples are fed in. Constructed once {@link #ball}/{@link #playerPaddle}/
+     *  {@link #opponentPaddle} exist - see {@link #setUpScene}. */
+    private ReplayController replayController;
 
     /** The existing, unchanged single-player-vs-AI match. */
     public GameplayAppState() {
@@ -357,6 +347,8 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         resolveLoadout(profile);
 
         gameNode.attachChild(buildThemedDecor());
+
+        replayController = new ReplayController(ball, playerPaddle, opponentPaddle, app.getInputManager());
     }
 
     /** Resolves the player's 3 store-configured power-up slots into their catalog definitions. */
@@ -464,25 +456,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         hudNode.attachChild(powerUpBannerText);
         powerUpBannerTimer = 0f;
 
-        replayLabelText = new BitmapText(font);
-        replayLabelText.setSize(34);
-        replayLabelText.setColor(Theme.ORANGE);
-        replayLabelText.setText(I18n.t("gameplay.instant_replay"));
-        replayLabelText.setLocalTranslation(
-                (simpleApp.getCamera().getWidth() - replayLabelText.getLineWidth()) / 2f,
-                simpleApp.getCamera().getHeight() - 40, 5);
-        replayLabelText.setCullHint(Spatial.CullHint.Always);
-        hudNode.attachChild(replayLabelText);
-
-        replaySkipText = new BitmapText(font);
-        replaySkipText.setSize(16);
-        replaySkipText.setColor(Theme.TEXT_DIM);
-        replaySkipText.setText(I18n.t("gameplay.replay_skip_hint"));
-        replaySkipText.setLocalTranslation(
-                (simpleApp.getCamera().getWidth() - replaySkipText.getLineWidth()) / 2f,
-                simpleApp.getCamera().getHeight() - 78, 5);
-        replaySkipText.setCullHint(Spatial.CullHint.Always);
-        hudNode.attachChild(replaySkipText);
+        replayController.buildHud(hudNode, font, simpleApp.getCamera().getWidth(), simpleApp.getCamera().getHeight());
 
         // A spectator has nothing to activate - its own equipped loadout isn't even relevant to
         // the match it's watching, so skip the power-up slot HUD entirely rather than showing a
@@ -631,7 +605,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     /** Left click, Enter, or Space all jump straight to the normal match-end flow while an
      *  instant replay is playing (see {@link #startReplay}) - not everyone wants to watch it every
      *  time. Registered unconditionally (like the pause/power-up keys) but only acted on while
-     *  {@link #replaying} is true - see {@link #onAction}. */
+     *  {@code replayController.isReplaying()} is true - see {@link #onAction}. */
     private void registerReplaySkipKey(InputManager inputManager) {
         inputManager.addMapping(ACTION_REPLAY_SKIP,
                 new MouseButtonTrigger(MouseInput.BUTTON_LEFT),
@@ -642,11 +616,11 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
 
     @Override
     public void onAction(String name, boolean isPressed, float tpf) {
-        if (ACTION_REPLAY_SKIP.equals(name) && isPressed && replaying) {
-            finishReplay();
+        if (ACTION_REPLAY_SKIP.equals(name) && isPressed && replayController.isReplaying()) {
+            replayController.skip();
             return;
         }
-        if (replaying) {
+        if (replayController.isReplaying()) {
             // Pause/power-up input is meaningless while the instant replay owns the scene.
             return;
         }
@@ -683,8 +657,8 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
 
     @Override
     public void update(float tpf) {
-        if (replaying) {
-            updateReplay(tpf);
+        if (replayController.isReplaying()) {
+            replayController.update(tpf);
             updatePowerUpBanner(tpf);
             return;
         }
@@ -925,7 +899,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         // A joiner has no local MatchSimulation tick to hook (see recordReplaySample) - it
         // redraws the scene from whatever's the latest network snapshot each render frame, so
         // that's the equivalent point to sample from here, using the real frame tpf.
-        replayRecorder.record(new ReplaySample(tpf,
+        replayController.recordSample(new ReplaySample(tpf,
                 snapshot.ballX(), snapshot.ballY(), snapshot.ballZ(),
                 snapshot.ballVelX(), snapshot.ballVelZ(), snapshot.ballVerticalVel(),
                 snapshot.hostPaddleX(), snapshot.hostPaddleZ(),
@@ -1115,7 +1089,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     }
 
     /** Samples the current tick's renderable state (ball + both paddles + score) into
-     *  {@link #replayRecorder} - called once per simulation tick in {@link Mode#SINGLE_PLAYER}/
+     *  {@link #replayController} - called once per simulation tick in {@link Mode#SINGLE_PLAYER}/
      *  {@link Mode#HOST}, right after {@link MatchSimulation#tick} has updated the scene's Ball/
      *  Paddle objects. {@link Mode#JOINER} has no local tick to hook; it samples from
      *  {@link #applySnapshotToScene} instead. */
@@ -1124,7 +1098,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         Vector3f ballVel = matchSimulation.getBall().getVelocity();
         Vector3f playerPaddlePos = matchSimulation.getPlayerPaddle().getPosition();
         Vector3f opponentPaddlePos = matchSimulation.getOpponentPaddle().getPosition();
-        replayRecorder.record(new ReplaySample(tpf,
+        replayController.recordSample(new ReplaySample(tpf,
                 ballPos.x, ballPos.y, ballPos.z,
                 ballVel.x, ballVel.z, matchSimulation.getBall().getVerticalVelocity(),
                 playerPaddlePos.x, playerPaddlePos.z,
@@ -1132,78 +1106,12 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                 matchSimulation.getPlayerScore(), matchSimulation.getOpponentScore()));
     }
 
-    /** Starts playing the just-recorded buffer back over this scene's real ball/paddle objects -
-     *  see {@link #updateReplay} - deferring {@code postMatchEndAction} (the exact
-     *  {@code PaddleShockApp} match-end call that would otherwise run immediately) until playback
-     *  finishes naturally or is skipped (see {@link #onAction}/{@link #finishReplay}). If nothing
-     *  was recorded (shouldn't normally happen - a match always runs at least one tick), skips
-     *  straight to the match-end action instead of showing an empty replay. */
+    /** Starts playing the just-recorded buffer back over this scene's real ball/paddle objects,
+     *  deferring {@code postMatchEndAction} (the exact {@code PaddleShockApp} match-end call that
+     *  would otherwise run immediately) until playback finishes naturally or is skipped (see
+     *  {@link #onAction}) - see {@link ReplayController#start}. */
     private void startReplay(Runnable postMatchEndAction) {
-        replayBuffer = replayRecorder.snapshot();
-        replayIndex = 0;
-        replayElapsedInSample = 0f;
-        pendingMatchEndAction = postMatchEndAction;
-        replaying = !replayBuffer.isEmpty();
-        if (!replaying) {
-            finishReplay();
-            return;
-        }
-        showReplayHud();
-    }
-
-    /** Steps through {@link #replayBuffer} at roughly the pace it was recorded at (each sample's
-     *  own {@code tpf}), re-applying each sample's ball/paddle positions to the real scene objects
-     *  via the same {@code setNetworkState}/{@code setNetworkPosition} seam a networked joiner
-     *  already uses to render a received snapshot - no new scene objects, no new rendering path. */
-    private void updateReplay(float tpf) {
-        if (replayBuffer == null || replayIndex >= replayBuffer.size()) {
-            finishReplay();
-            return;
-        }
-        ReplaySample sample = replayBuffer.get(replayIndex);
-        ball.setNetworkState(sample.ballX(), sample.ballY(), sample.ballZ(),
-                sample.ballVelX(), sample.ballVelZ(), sample.ballVerticalVel());
-        playerPaddle.setNetworkPosition(sample.playerPaddleX(), sample.playerPaddleZ());
-        opponentPaddle.setNetworkPosition(sample.opponentPaddleX(), sample.opponentPaddleZ());
-
-        replayElapsedInSample += tpf;
-        if (replayElapsedInSample >= Math.max(sample.tpf(), 0.0001f)) {
-            replayElapsedInSample = 0f;
-            replayIndex++;
-            if (replayIndex >= replayBuffer.size()) {
-                finishReplay();
-            }
-        }
-    }
-
-    /** Ends replay playback (naturally finishing, or skipped via {@link #onAction}) and runs the
-     *  deferred match-end call - see {@link #startReplay}. */
-    private void finishReplay() {
-        replaying = false;
-        replayBuffer = null;
-        hideReplayHud();
-        Runnable action = pendingMatchEndAction;
-        pendingMatchEndAction = null;
-        if (action != null) {
-            action.run();
-        }
-    }
-
-    private void showReplayHud() {
-        if (replayLabelText != null) {
-            replayLabelText.setCullHint(Spatial.CullHint.Never);
-            replaySkipText.setCullHint(Spatial.CullHint.Never);
-        }
-        // The gameplay cursor is normally hidden (see onEnable) so raw mouse deltas can drive the
-        // paddle; make it visible again so the player can actually click SKIP.
-        app.getInputManager().setCursorVisible(true);
-    }
-
-    private void hideReplayHud() {
-        if (replayLabelText != null) {
-            replayLabelText.setCullHint(Spatial.CullHint.Always);
-            replaySkipText.setCullHint(Spatial.CullHint.Always);
-        }
+        replayController.start(postMatchEndAction);
     }
 
     public void startNewMatch() {
@@ -1212,11 +1120,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         }
         // Reset the replay buffer/state too, so a rematch never opens with a stale replay from
         // the previous match still queued up (see resumeMultiplayerRematch).
-        replayRecorder.reset();
-        replaying = false;
-        replayBuffer = null;
-        pendingMatchEndAction = null;
-        hideReplayHud();
+        replayController.reset();
         // Also reset the joiner-only display state and the disconnect guard: needed for a
         // multiplayer rematch reusing this same GameplayAppState/connection rather than a fresh
         // single-player match, where these are already at their defaults and this is a no-op.
