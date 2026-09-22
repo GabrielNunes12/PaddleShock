@@ -173,6 +173,7 @@ val jpackageImage by tasks.registering(Exec::class) {
     val iconExt = when (targetOs) { TargetOs.WINDOWS -> "ico"; TargetOs.LINUX -> "png"; TargetOs.MACOS -> "icns" }
     val icon = layout.projectDirectory.file("branding/paddleshock.$iconExt").asFile
     if (icon.exists()) {
+        inputs.file(icon)
         args("--icon", icon.absolutePath)
     }
 }
