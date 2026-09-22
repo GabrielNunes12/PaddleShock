@@ -30,7 +30,7 @@ import com.paddleshock.net.InviteClient;
 /**
  * Main menu: a two-column split - a left "hero" panel ({@link Theme#BACKGROUND_2}) carrying the
  * wordmark, tagline and the primary PLAY VS AI call-to-action, and a right panel
- * ({@link Theme#BACKGROUND}) listing the other six destinations as bordered "nav card" rows. See
+ * ({@link Theme#BACKGROUND}) listing the other destinations as bordered "nav card" rows. See
  * the redesign spec this was built from for the full rationale; visually a reskin of the previous
  * single centered button stack, same destinations, same click targets.
  */
@@ -127,7 +127,7 @@ public class MainMenuState extends BaseAppState {
         playVsAi.setLocalTranslation(32, taglineY - 40, 2);
     }
 
-    /** Right panel: the other six destinations as bordered nav-card rows. */
+    /** Right panel: the other destinations as bordered nav-card rows. */
     private void buildRightNav(float leftWidth, float rightWidth, float screenH) {
         Container rightPanel = new Container();
         rightPanel.setBackground(new QuadBackgroundComponent(Theme.BACKGROUND));
@@ -147,6 +147,7 @@ public class MainMenuState extends BaseAppState {
         addNavCard(nav, I18n.t("menu.store"), Theme.PANEL_HOVER, cardWidth, nav1::showStore);
         addNavCard(nav, I18n.t("menu.settings"), Theme.PANEL_HOVER, cardWidth, () -> nav1.showOptions(nav1::showMainMenu));
         addNavCard(nav, I18n.t("menu.how_to_play"), Theme.PANEL_HOVER, cardWidth, () -> nav1.showHowToPlay(nav1::showMainMenu));
+        addNavCard(nav, I18n.t("menu.credits"), Theme.PANEL_HOVER, cardWidth, () -> nav1.showCredits(nav1::showMainMenu));
         addNavCard(nav, I18n.t("menu.quit"), Theme.PANEL_HOVER, cardWidth, () -> getApplication().stop());
 
         Vector3f navSize = nav.getPreferredSize();

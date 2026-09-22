@@ -31,6 +31,7 @@ import com.paddleshock.net.TournamentClient;
 import com.paddleshock.net.TournamentService;
 import com.paddleshock.settings.GameSettings;
 import com.paddleshock.steam.SteamManager;
+import com.paddleshock.ui.CreditsState;
 import com.paddleshock.ui.FriendsState;
 import com.paddleshock.ui.LeaderboardState;
 import com.paddleshock.ui.LoadoutState;
@@ -74,6 +75,7 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
     private LoadoutState loadoutState;
     private MultiplayerState multiplayerState;
     private com.paddleshock.ui.HowToPlayState howToPlayState;
+    private CreditsState creditsState;
     private LeaderboardState leaderboardState;
     private ProfileState profileState;
     private TournamentState tournamentState;
@@ -133,6 +135,7 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
         loadoutState = new LoadoutState();
         multiplayerState = new MultiplayerState();
         howToPlayState = new com.paddleshock.ui.HowToPlayState();
+        creditsState = new CreditsState();
         leaderboardState = new LeaderboardState();
         profileState = new ProfileState();
         tournamentState = new TournamentState();
@@ -150,6 +153,7 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
         stateManager.attach(loadoutState);
         stateManager.attach(multiplayerState);
         stateManager.attach(howToPlayState);
+        stateManager.attach(creditsState);
         stateManager.attach(leaderboardState);
         stateManager.attach(profileState);
         stateManager.attach(tournamentState);
@@ -163,6 +167,7 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
         loadoutState.setEnabled(false);
         multiplayerState.setEnabled(false);
         howToPlayState.setEnabled(false);
+        creditsState.setEnabled(false);
         leaderboardState.setEnabled(false);
         profileState.setEnabled(false);
         tournamentState.setEnabled(false);
@@ -257,6 +262,7 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
         loadoutState.setEnabled(false);
         multiplayerState.setEnabled(false);
         howToPlayState.setEnabled(false);
+        creditsState.setEnabled(false);
         leaderboardState.setEnabled(false);
         profileState.setEnabled(false);
         tournamentState.setEnabled(false);
@@ -274,6 +280,13 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
         splashState.setEnabled(false);
         mainMenuState.setEnabled(false);
         howToPlayState.setEnabled(true);
+    }
+
+    /** Shows the CREDITS screen (third-party asset/library attribution) from the main menu. */
+    public void showCredits(Runnable backAction) {
+        creditsState.setBackAction(backAction);
+        mainMenuState.setEnabled(false);
+        creditsState.setEnabled(true);
     }
 
     /** Shows the HOST/JOIN LAN multiplayer screen (wired up from the main menu's MULTIPLAYER button). */

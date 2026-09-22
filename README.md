@@ -85,10 +85,7 @@ short of server-side validation (relevant later for leaderboards/Steamworks, not
 ## Third-party assets
 
 - Textures: CC0 (public domain) from [ambientCG](https://ambientcg.com) — see `src/main/resources/Textures/CREDITS.md`
-- Paddle, ball, and decorative models: CC-BY, require attribution — see `src/main/resources/Models/CREDITS.md`. Before shipping, add an in-game credits screen showing:
-  > Table Tennis Paddle by jeremy [CC-BY] via Poly Pizza
-  > Ping Pong table by burunduk [CC-BY] via Poly Pizza
-  > Trophy by jeremy [CC-BY] via Poly Pizza
-  > Tennis ball by Poly by Google [CC-BY] via Poly Pizza
-  > beach ball by the_normalgamer [CC-BY] via Poly Pizza
-  > Bollard by J-Toastie [CC-BY] via Poly Pizza
+- Paddle, ball, and decorative models: CC-BY, require attribution — see `src/main/resources/Models/CREDITS.md`.
+- Music: CC BY 3.0 (CodeManu) — see `src/main/resources/Sounds/CREDITS.md`.
+- All attributions are shown in-game on the CREDITS screen (main menu), backed by
+  `com.paddleshock.data.Credits`; `CreditsTest` fails the build if a shipped model isn't credited.

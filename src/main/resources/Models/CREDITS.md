@@ -13,6 +13,13 @@ Unlike the CC0 textures, these models are CC-BY and **require attribution**:
 - `Decor/beach_umbrella.glb` — Beach umbrella by Poly by Google [CC-BY] via [Poly Pizza](https://poly.pizza/m/936irBEUnpu)
 - `Decor/satellite_dish.glb` — Satellite dish by Poly by Google [CC-BY] via [Poly Pizza](https://poly.pizza/m/5iVbfDhRnN7)
 
-Note: the Pellet ball intentionally has no model (`Ball/pellet.glb` was removed) — the downloaded
-"Golf ball" export was corrupted (its bounding box was offset by hundreds of thousands of units).
-Pellet falls back to a plain procedural sphere.
+## Original models (made for PaddleShock, no attribution needed)
+
+`Ball/pellet.glb`, `Decor/bench.glb`, `Decor/scoreboard.glb`, `Decor/scoreboard_display.glb`,
+`Paddle/paddle_turbo.glb`, `Paddle/paddle_wall.glb` — modeled in Blender for this project.
+
+## In-game credits
+
+The CREDITS screen (main menu) shows these attributions from `com.paddleshock.data.Credits`.
+`CreditsTest` fails the build if a `.glb` here is missing from that class, so when adding a model,
+add it both to this file and to `Credits.THIRD_PARTY_MODELS` (or `ORIGINAL_MODELS`).

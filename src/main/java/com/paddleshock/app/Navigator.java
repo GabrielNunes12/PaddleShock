@@ -15,6 +15,8 @@ public interface Navigator {
 
     void showHowToPlay(Runnable backAction);
 
+    void showCredits(Runnable backAction);
+
     void showMultiplayer();
 
     void showTournament();
