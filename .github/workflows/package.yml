@@ -1,0 +1,36 @@
+name: Package
+
+# Builds the self-contained app image (bundled JRE + native launcher) per OS. jpackage can only
+# target the OS it runs on, so each platform gets its own runner. The unzipped artifact is the
+# folder to upload to a Steam depot.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Build app image
+        shell: bash
+        run: ./gradlew packageZip --no-daemon
+
+      - name: Upload app image
+        uses: actions/upload-artifact@v4
+        with:
+          name: PaddleShock-${{ runner.os }}
+          path: build/distributions/*.zip
+          if-no-files-found: error

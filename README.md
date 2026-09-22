@@ -25,6 +25,30 @@ Features in this pass:
 
 (Windows: `gradlew.bat run`)
 
+## Packaging (self-contained build for Steam)
+
+```
+./gradlew packageApp   # -> build/jpackage/image/PaddleShock/  (upload this folder to a Steam depot)
+./gradlew packageZip   # -> build/distributions/PaddleShock-<version>-<os>.zip
+```
+
+Produces a native launcher (`PaddleShock.exe` on Windows, `bin/PaddleShock` on Linux) with a
+trimmed Java 21 runtime bundled via `jlink` — players don't need Java installed. Only the
+LWJGL natives for the build OS are included, and the Steam redistributable (`native/win64`,
+`native/linux64`, `native/osx`) is copied next to the jars and found via
+`-Djava.library.path=$APPDIR`.
+
+- `jpackage` only targets the OS it runs on: build Windows on Windows. The `Package` GitHub
+  workflow (`.github/workflows/package.yml`, run manually or on a `v*` tag) builds Windows + Linux.
+- `steam_appid.txt` is intentionally not shipped; Steam supplies the App ID at launch. To test
+  a packaged build with Steam outside the Steam client, drop `steam_appid.txt` next to the launcher.
+- Linux/Steam Deck Steam support needs Valve's `libsteam_api.so` in `native/linux64/`
+  (not checked in yet — without it the game runs in offline mode).
+- App icon: put `paddleshock.ico` (Windows) / `paddleshock.png` (Linux) in `branding/` and it's
+  picked up automatically.
+- The packaged JVM won't start from an `ntfs3`-mounted drive on Linux (segfaults on launch); copy
+  the image to a native Linux filesystem to test it there.
+
 ## Planned features
 
 - Power-ups for paddles
