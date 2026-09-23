@@ -38,6 +38,17 @@ public final class GameConstants {
     public static final float BALL_BOUNCE_BASE_RESTITUTION = 0.80f;
     public static final float BALL_BOUNCE_MAX_RESTITUTION = 0.97f;
     public static final float BALL_BOUNCE_SETTLE_SPEED = 0.5f;
+
+    // Spin (see docs/specs/03-spin.md): a paddle's sideways speed at contact (world units/s)
+    // becomes spin, which bends the ball's sideways velocity while it flies and decays over time.
+    public static final float SPIN_PER_PADDLE_SPEED = 0.12f;
+    public static final float SPIN_MAX = 2f;
+    /** Sideways acceleration (units/s^2) per unit of spin. */
+    public static final float SPIN_CURVE_ACCEL = 4f;
+    /** Fraction of spin lost per second. */
+    public static final float SPIN_DECAY_PER_SECOND = 0.8f;
+    /** How fast the ball model visibly rotates per unit of spin (radians/s) - cosmetic only. */
+    public static final float SPIN_VISUAL_RATE = 9f;
     public static final float PADDLE_POP_BASE = 4f;
     public static final float PADDLE_POP_SPEED_FACTOR = 0.15f;
     public static final float PADDLE_REACH_HEIGHT = 2.0f;

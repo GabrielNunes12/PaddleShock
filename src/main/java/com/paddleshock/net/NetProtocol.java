@@ -264,7 +264,18 @@ public final class NetProtocol {
             float joinerPaddleX, float joinerPaddleZ,
             int hostScore, int joinerScore,
             int flags,
-            int powerUpActorSide, int powerUpTypeOrdinal) {
+            int powerUpActorSide, int powerUpTypeOrdinal,
+            float ballSpin) {
+
+        /** The pre-spin field list; spin defaults to 0. */
+        public SnapshotMessage(float ballX, float ballY, float ballZ, float ballVelX, float ballVelZ,
+                float ballVerticalVel, float hostPaddleX, float hostPaddleZ, float joinerPaddleX,
+                float joinerPaddleZ, int hostScore, int joinerScore, int flags, int powerUpActorSide,
+                int powerUpTypeOrdinal) {
+            this(ballX, ballY, ballZ, ballVelX, ballVelZ, ballVerticalVel, hostPaddleX, hostPaddleZ,
+                    joinerPaddleX, joinerPaddleZ, hostScore, joinerScore, flags, powerUpActorSide,
+                    powerUpTypeOrdinal, 0f);
+        }
 
         /** {@link #powerUpActorSide} values: who activated the power-up this tick (if any). */
         public static final int ACTOR_NONE = 0;
@@ -323,6 +334,7 @@ public final class NetProtocol {
             out.writeByte(snap.flags());
             out.writeByte(snap.powerUpActorSide());
             out.writeByte(snap.powerUpTypeOrdinal());
+            out.writeFloat(snap.ballSpin());
             return bytes.toByteArray();
         } catch (IOException e) {
             throw new IllegalStateException("Failed to encode snapshot packet", e);
@@ -354,9 +366,11 @@ public final class NetProtocol {
             powerUpActorSide = in.readByte();
             powerUpTypeOrdinal = in.readByte();
         }
+        // Spin: likewise optional - an older host never sends it, which reads as no spin.
+        float ballSpin = in.available() >= 4 ? in.readFloat() : 0f;
         return new SnapshotMessage(ballX, ballY, ballZ, ballVelX, ballVelZ, ballVerticalVel,
                 hostPaddleX, hostPaddleZ, joinerPaddleX, joinerPaddleZ, hostScore, joinerScore, flags,
-                powerUpActorSide, powerUpTypeOrdinal);
+                powerUpActorSide, powerUpTypeOrdinal, ballSpin);
     }
 
     // ---- RANK_RESULT (host -> joiner) ----

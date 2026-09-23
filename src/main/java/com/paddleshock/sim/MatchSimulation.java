@@ -32,6 +32,9 @@ public final class MatchSimulation {
     /** Points needed to win - {@link GameConstants#WIN_SCORE} except for shorter World Tour matches. */
     private final int winScore;
 
+    private float playerPaddleSpeedX;
+    private float opponentPaddleSpeedX;
+
     private int playerScore;
     private int opponentScore;
 
@@ -61,6 +64,9 @@ public final class MatchSimulation {
 
         playerPaddle.moveDelta(playerInput.getDeltaX(), playerInput.getDeltaZ());
         opponentPaddle.moveDelta(opponentInput.getDeltaX(), opponentInput.getDeltaZ());
+        // Sideways swipe speed this tick, which becomes spin if that paddle hits the ball.
+        playerPaddleSpeedX = tpf > 0f ? playerPaddle.getLastMoveX() / tpf : 0f;
+        opponentPaddleSpeedX = tpf > 0f ? opponentPaddle.getLastMoveX() / tpf : 0f;
 
         PowerUpDefinition playerPowerUp = playerInput.getActivatedPowerUp();
         if (playerPowerUp != null) {
@@ -94,10 +100,10 @@ public final class MatchSimulation {
             result.setWallBounce(true);
         }
 
-        if (tryPaddleBounce(playerPaddle)) {
+        if (tryPaddleBounce(playerPaddle, playerPaddleSpeedX)) {
             result.setPlayerPaddleHit(true);
         }
-        if (tryPaddleBounce(opponentPaddle)) {
+        if (tryPaddleBounce(opponentPaddle, opponentPaddleSpeedX)) {
             result.setOpponentPaddleHit(true);
         }
 
@@ -122,7 +128,7 @@ public final class MatchSimulation {
         }
     }
 
-    private boolean tryPaddleBounce(Paddle paddle) {
+    private boolean tryPaddleBounce(Paddle paddle, float paddleSpeedX) {
         Vector3f ballPos = ball.getPosition();
         Vector3f paddlePos = paddle.getPosition();
 
@@ -133,6 +139,7 @@ public final class MatchSimulation {
 
         if (withinReach && withinPaddleWidth && lowEnoughToHit) {
             ball.bounceOffPaddle(paddle);
+            ball.setSpin(Ball.spinFromPaddleSpeed(paddleSpeedX));
             return true;
         }
         return false;

@@ -261,4 +261,27 @@ class NetProtocolTest {
 
         assertThrows(EOFException.class, () -> NetProtocol.decodeSnapshot(truncated));
     }
+
+    @Test
+    void snapshotRoundTripsSpin() throws IOException {
+        NetProtocol.SnapshotMessage original = new NetProtocol.SnapshotMessage(
+                1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f, 9f, 10f, 3, 4, 0,
+                NetProtocol.SnapshotMessage.ACTOR_NONE, -1, -1.25f);
+        NetProtocol.SnapshotMessage decoded = NetProtocol.decodeSnapshot(NetProtocol.encodeSnapshot(original));
+        assertEquals(original, decoded);
+    }
+
+    @Test
+    void snapshotFromAnOlderHostWithoutSpinDecodesAsNoSpin() throws IOException {
+        NetProtocol.SnapshotMessage original = new NetProtocol.SnapshotMessage(
+                1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f, 9f, 10f, 3, 4, 0,
+                NetProtocol.SnapshotMessage.ACTOR_HOST, 1, 1.9f);
+        byte[] full = NetProtocol.encodeSnapshot(original);
+        byte[] legacy = java.util.Arrays.copyOf(full, full.length - 4);
+        NetProtocol.SnapshotMessage decoded = NetProtocol.decodeSnapshot(legacy);
+        assertEquals(0f, decoded.ballSpin());
+        assertEquals(NetProtocol.SnapshotMessage.ACTOR_HOST, decoded.powerUpActorSide());
+        assertEquals(1, decoded.powerUpTypeOrdinal());
+        assertEquals(10f, decoded.joinerPaddleZ());
+    }
 }

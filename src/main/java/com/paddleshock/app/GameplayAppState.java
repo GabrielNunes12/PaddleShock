@@ -608,7 +608,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                 hostPaddlePos.x, hostPaddlePos.z,
                 joinerPaddlePos.x, joinerPaddlePos.z,
                 matchSimulation.getPlayerScore(), matchSimulation.getOpponentScore(),
-                flags, powerUpActorSide, powerUpTypeOrdinal);
+                flags, powerUpActorSide, powerUpTypeOrdinal, matchSimulation.getBall().getSpin());
     }
 
     /** The host stops applying stale input and hangs the match forever if a joiner's process dies
@@ -679,7 +679,8 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
 
     private void applySnapshotToScene(NetProtocol.SnapshotMessage snapshot, float tpf) {
         ball.setNetworkState(snapshot.ballX(), snapshot.ballY(), snapshot.ballZ(),
-                snapshot.ballVelX(), snapshot.ballVelZ(), snapshot.ballVerticalVel());
+                snapshot.ballVelX(), snapshot.ballVelZ(), snapshot.ballVerticalVel(), snapshot.ballSpin());
+        ball.animateSpin(tpf);
         // playerPaddle/opponentPaddle here just mean "the two paddle nodes in this scene": on the
         // joiner, playerPaddle renders the host's paddle and opponentPaddle renders the joiner's
         // own paddle (i.e. the one this client's own mouse/gamepad input drives, authoritatively
