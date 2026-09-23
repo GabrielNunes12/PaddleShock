@@ -40,6 +40,7 @@ public class CelebrationBurst {
                     : celebration.getColor().mult(0.8f + 0.4f * random.nextFloat());
             color.a = 1f;
             material.setColor("Color", color);
+            material.setColor("GlowColor", color.mult(0.6f));
             pieces[i] = new Geometry("celebrationPiece", box);
             pieces[i].setMaterial(material);
             velocities[i] = new Vector3f();

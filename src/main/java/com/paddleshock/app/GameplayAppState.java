@@ -118,6 +118,11 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     private float controlsHintTimer;
     private static final float CONTROLS_HINT_SECONDS = 7f;
 
+    /** Rendering effects for this match (see docs/specs/09-visual-polish.md). */
+    private DirectionalLight sun;
+    private SceneEffects sceneEffects;
+    private com.paddleshock.entities.BlobShadow blobShadow;
+
     /** Equipped cosmetics (local view only); null when the "none" default is equipped. */
     private com.paddleshock.entities.BallTrail ballTrail;
     private com.paddleshock.entities.CelebrationBurst celebrationBurst;
@@ -275,6 +280,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         registerPauseKey(app.getInputManager());
         registerReplaySkipKey(app.getInputManager());
 
+        setUpRendering(simpleApp);
         simpleApp.getRootNode().attachChild(gameNode);
         simpleApp.getGuiNode().attachChild(hudNode);
 
@@ -323,13 +329,53 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         screenUpWorld.set(camDirection.x, 0, camDirection.z).normalizeLocal();
     }
 
+    /** Sky, shadow modes and the quality-dependent post-processing - see {@link SceneEffects}. */
+    private void setUpRendering(SimpleApplication simpleApp) {
+        ColorRGBA skyColor = level.getSkyColor();
+        ColorRGBA zenith = skyColor.mult(0.75f);
+        zenith.a = 1f;
+        ColorRGBA horizon = skyColor.mult(0.7f).addLocal(level.getAmbientTint().mult(0.22f));
+        horizon.a = 1f;
+        Spatial sky = com.paddleshock.entities.SkyGradient.create(getApplication().getAssetManager(),
+                zenith, horizon, level.getGroundColor().mult(0.6f));
+        sky.setShadowMode(com.jme3.renderer.queue.RenderQueue.ShadowMode.Off);
+        gameNode.attachChild(sky);
+
+        com.paddleshock.settings.GraphicsProfile profile =
+                com.paddleshock.settings.GraphicsProfile.of(app.getGameSettings().getVideoQuality());
+        // Everything casts and receives by default; purely visual overlays opt out below.
+        gameNode.setShadowMode(com.jme3.renderer.queue.RenderQueue.ShadowMode.CastAndReceive);
+        for (Geometry bar : shieldBars) {
+            bar.setShadowMode(com.jme3.renderer.queue.RenderQueue.ShadowMode.Off);
+        }
+        if (ballTrail != null) {
+            ballTrail.getNode().setShadowMode(com.jme3.renderer.queue.RenderQueue.ShadowMode.Off);
+        }
+        if (celebrationBurst != null) {
+            celebrationBurst.getNode().setShadowMode(com.jme3.renderer.queue.RenderQueue.ShadowMode.Off);
+        }
+        if (profile.blobShadow()) {
+            blobShadow = new com.paddleshock.entities.BlobShadow(getApplication().getAssetManager(), ball.getRadius());
+            blobShadow.getGeometry().setShadowMode(com.jme3.renderer.queue.RenderQueue.ShadowMode.Off);
+            gameNode.attachChild(blobShadow.getGeometry());
+        }
+        sceneEffects = SceneEffects.attach(getApplication().getAssetManager(), simpleApp.getViewPort(), sun, profile,
+                simpleApp.getContext().getSettings().getSamples());
+    }
+
     private void setUpLights() {
         float brightness = app.getGameSettings().getBrightness();
 
-        DirectionalLight sun = new DirectionalLight();
+        sun = new DirectionalLight();
         sun.setDirection(new Vector3f(-0.5f, -1f, -0.5f).normalizeLocal());
         sun.setColor(level.getSunTint().mult(1.1f * brightness));
         gameNode.addLight(sun);
+
+        // A cool, dim light from the far side outlines edges the sun leaves flat.
+        DirectionalLight rim = new DirectionalLight();
+        rim.setDirection(new Vector3f(0.35f, -0.45f, 0.85f).normalizeLocal());
+        rim.setColor(new ColorRGBA(0.55f, 0.65f, 0.9f, 1f).multLocal(0.35f * brightness));
+        gameNode.addLight(rim);
 
         AmbientLight ambient = new AmbientLight();
         ambient.setColor(level.getAmbientTint().mult(0.6f * brightness));
@@ -456,6 +502,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                 24, 8, 0.07f, com.paddleshock.sim.Bumpers.RADIUS));
         Material glow = new Material(getApplication().getAssetManager(), "Common/MatDefs/Misc/Unshaded.j3md");
         glow.setColor("Color", new ColorRGBA(1f, 0.85f, 0.35f, 1f));
+        glow.setColor("GlowColor", new ColorRGBA(1f, 0.7f, 0.2f, 1f));
         ring.setMaterial(glow);
         ring.rotate(com.jme3.math.FastMath.HALF_PI, 0f, 0f);
         ring.setLocalTranslation(0f, com.paddleshock.sim.Bumpers.HEIGHT + 0.02f, 0f);
@@ -477,6 +524,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         Geometry bar = new Geometry("shieldBar", new Box(GameConstants.TABLE_HALF_WIDTH, 0.45f, 0.06f));
         Material material = new Material(getApplication().getAssetManager(), "Common/MatDefs/Misc/Unshaded.j3md");
         material.setColor("Color", new ColorRGBA(0.3f, 0.9f, 1f, 0.55f));
+        material.setColor("GlowColor", new ColorRGBA(0.2f, 0.75f, 1f, 1f));
         material.getAdditionalRenderState().setBlendMode(RenderState.BlendMode.Alpha);
         bar.setMaterial(material);
         bar.setQueueBucket(RenderQueue.Bucket.Transparent);
@@ -728,8 +776,12 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     /** Trail + celebration animation, every frame in every mode (also during the replay). The
      *  trail hides whenever the ball does, so it can't give away a Ghost Ball. */
     private void updateCosmetics(float tpf) {
+        boolean ballVisible = ball.getNode().getCullHint() != Spatial.CullHint.Always;
         if (ballTrail != null) {
-            ballTrail.update(ball.getPosition(), ball.getNode().getCullHint() != Spatial.CullHint.Always, tpf);
+            ballTrail.update(ball.getPosition(), ballVisible, tpf);
+        }
+        if (blobShadow != null) {
+            blobShadow.update(ball.getPosition(), ballVisible);
         }
         if (celebrationBurst != null) {
             celebrationBurst.update(tpf);
@@ -1290,6 +1342,9 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             secondPlayer.unregister(simpleApp.getInputManager());
         }
         simpleApp.getViewPort().setBackgroundColor(ColorRGBA.Black);
+        if (sceneEffects != null) {
+            sceneEffects.detach();
+        }
         // Network resources (the UDP socket + its background receive thread) belong to this
         // match's lifetime, not the app shell's - close them whenever this state goes away,
         // whether via a normal match end or the player quitting to the main menu mid-match.
