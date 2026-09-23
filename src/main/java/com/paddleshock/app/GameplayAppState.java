@@ -107,6 +107,9 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     /** The local viewer's own goal line sits just below the camera's view, so their own live
      *  Shield is shown as a glowing strip + label along the bottom of the HUD instead. */
     private Geometry ownShieldStrip;
+
+    /** Pinball Palace's two bumpers ([0] near/-z, [1] far/+z); null on every other arena. */
+    private Node[] bumperNodes;
     private BitmapText ownShieldLabel;
 
     /** Where the AI last saw the ball while a Ghost Ball hides it from the AI - see {@link #computeOpponentAiInput}. */
@@ -343,7 +346,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         // host's MatchSimulation reports via network snapshots.
         if (mode != Mode.JOINER && mode != Mode.SPECTATOR) {
             int winScore = tourOpponent != null ? tourOpponent.winScore() : GameConstants.WIN_SCORE;
-            matchSimulation = new MatchSimulation(ball, playerPaddle, opponentPaddle, table, winScore);
+            matchSimulation = new MatchSimulation(ball, playerPaddle, opponentPaddle, table, winScore, level.getHazard());
         }
         resolveLoadout(profile);
 
@@ -352,10 +355,55 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
 
         replayController = new ReplayController(ball, playerPaddle, opponentPaddle, app.getInputManager());
 
+        if (level.getHazard() == com.paddleshock.data.LevelHazard.BUMPERS) {
+            bumperNodes = new Node[] {buildBumper(), buildBumper()};
+            for (Node bumper : bumperNodes) {
+                gameNode.attachChild(bumper);
+            }
+            placeBumpers(0f);
+        }
+
         for (int i = 0; i < shieldBars.length; i++) {
             shieldBars[i] = buildShieldBar(i == 0 ? -GameConstants.TABLE_HALF_LENGTH : GameConstants.TABLE_HALF_LENGTH);
             gameNode.attachChild(shieldBars[i]);
         }
+    }
+
+    /** One Pinball bumper: a squat metal post with a glowing ring on top. */
+    private Node buildBumper() {
+        Node bumper = new Node("bumper");
+        com.jme3.scene.shape.Cylinder postShape = new com.jme3.scene.shape.Cylinder(
+                12, 24, com.paddleshock.sim.Bumpers.RADIUS, com.paddleshock.sim.Bumpers.HEIGHT, true);
+        Geometry post = new Geometry("bumperPost", postShape);
+        Material postMaterial = new Material(getApplication().getAssetManager(), "Common/MatDefs/Light/Lighting.j3md");
+        postMaterial.setBoolean("UseMaterialColors", true);
+        postMaterial.setColor("Diffuse", new ColorRGBA(0.95f, 0.3f, 0.5f, 1f));
+        postMaterial.setColor("Ambient", new ColorRGBA(0.6f, 0.15f, 0.3f, 1f));
+        postMaterial.setColor("Specular", ColorRGBA.White);
+        postMaterial.setFloat("Shininess", 24f);
+        post.setMaterial(postMaterial);
+        post.rotate(com.jme3.math.FastMath.HALF_PI, 0f, 0f);
+        post.setLocalTranslation(0f, com.paddleshock.sim.Bumpers.HEIGHT / 2f, 0f);
+        bumper.attachChild(post);
+
+        Geometry ring = new Geometry("bumperRing", new com.jme3.scene.shape.Torus(
+                24, 8, 0.07f, com.paddleshock.sim.Bumpers.RADIUS));
+        Material glow = new Material(getApplication().getAssetManager(), "Common/MatDefs/Misc/Unshaded.j3md");
+        glow.setColor("Color", new ColorRGBA(1f, 0.85f, 0.35f, 1f));
+        ring.setMaterial(glow);
+        ring.rotate(com.jme3.math.FastMath.HALF_PI, 0f, 0f);
+        ring.setLocalTranslation(0f, com.paddleshock.sim.Bumpers.HEIGHT + 0.02f, 0f);
+        bumper.attachChild(ring);
+        return bumper;
+    }
+
+    /** Positions the bumpers for the near bumper's current x (the far one mirrors it). */
+    private void placeBumpers(float offset) {
+        if (bumperNodes == null) {
+            return;
+        }
+        bumperNodes[0].setLocalTranslation(offset, 0f, -com.paddleshock.sim.Bumpers.Z);
+        bumperNodes[1].setLocalTranslation(-offset, 0f, com.paddleshock.sim.Bumpers.Z);
     }
 
     /** A translucent glowing wall across one goal line, hidden until that side's Shield is live. */
@@ -378,6 +426,8 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         boolean farShield;
         boolean ballHidden;
         boolean ownShield;
+        placeBumpers(matchSimulation != null ? matchSimulation.getBumperOffset()
+                : snapshot != null ? snapshot.hazardOffset() : 0f);
         if (matchSimulation != null) {
             nearShield = matchSimulation.getPowerUpManager().hasEffect(true, PowerUpType.SHIELD);
             farShield = matchSimulation.getPowerUpManager().hasEffect(false, PowerUpType.SHIELD);
@@ -706,7 +756,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                 joinerPaddlePos.x, joinerPaddlePos.z,
                 matchSimulation.getPlayerScore(), matchSimulation.getOpponentScore(),
                 flags, powerUpActorSide, powerUpTypeOrdinal, matchSimulation.getBall().getSpin(),
-                effectBits());
+                effectBits(), matchSimulation.getBumperOffset());
     }
 
     /** Live behavior power-ups for the snapshot - "player" in the host's simulation is the host. */

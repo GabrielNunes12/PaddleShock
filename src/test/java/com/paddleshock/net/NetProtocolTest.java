@@ -277,7 +277,8 @@ class NetProtocolTest {
                 1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f, 9f, 10f, 3, 4, 0,
                 NetProtocol.SnapshotMessage.ACTOR_HOST, 1, 1.9f);
         byte[] full = NetProtocol.encodeSnapshot(original);
-        byte[] legacy = java.util.Arrays.copyOf(full, full.length - 4);
+        // A pre-spin host sends nothing after the power-up bytes: drop spin (4), effects (1), hazard (4).
+        byte[] legacy = java.util.Arrays.copyOf(full, full.length - 9);
         NetProtocol.SnapshotMessage decoded = NetProtocol.decodeSnapshot(legacy);
         assertEquals(0f, decoded.ballSpin());
         assertEquals(NetProtocol.SnapshotMessage.ACTOR_HOST, decoded.powerUpActorSide());
@@ -304,8 +305,22 @@ class NetProtocolTest {
                 1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f, 9f, 10f, 3, 4, 0,
                 NetProtocol.SnapshotMessage.ACTOR_NONE, -1, 1.5f, NetProtocol.EFFECT_HOST_SHIELD);
         byte[] full = NetProtocol.encodeSnapshot(original);
-        NetProtocol.SnapshotMessage decoded = NetProtocol.decodeSnapshot(java.util.Arrays.copyOf(full, full.length - 1));
+        // A spin-era host stops after spin: drop effects (1) and hazard (4).
+        NetProtocol.SnapshotMessage decoded = NetProtocol.decodeSnapshot(java.util.Arrays.copyOf(full, full.length - 5));
         assertEquals(0, decoded.effects());
         assertEquals(1.5f, decoded.ballSpin());
+    }
+
+    @Test
+    void snapshotRoundTripsHazardOffsetAndOlderHostsReadAsNone() throws IOException {
+        NetProtocol.SnapshotMessage original = new NetProtocol.SnapshotMessage(
+                1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f, 9f, 10f, 3, 4, 0,
+                NetProtocol.SnapshotMessage.ACTOR_NONE, -1, 0.5f, NetProtocol.EFFECT_JOINER_SHIELD, -2.25f);
+        byte[] full = NetProtocol.encodeSnapshot(original);
+        assertEquals(original, NetProtocol.decodeSnapshot(full));
+
+        NetProtocol.SnapshotMessage older = NetProtocol.decodeSnapshot(java.util.Arrays.copyOf(full, full.length - 4));
+        assertEquals(0f, older.hazardOffset());
+        assertEquals(NetProtocol.EFFECT_JOINER_SHIELD, older.effects());
     }
 }

@@ -65,6 +65,16 @@ final class SceneDecorBuilder {
                 decor.attachChild(loadProp(assetManager, "Models/Decor/palm_tree.glb", 2.6f, rightX + 1.5f, 1f, 0f));
                 decor.attachChild(loadProp(assetManager, "Models/Decor/beach_umbrella.glb", 1.7f, leftX - 1.5f, 1f, 0f));
             }
+            case "level_pinball" -> {
+                decor.attachChild(loadProp(assetManager, "Models/Decor/arcade_machine.glb", 2.0f, rightX, -4f, FastMath.QUARTER_PI * 0.6f));
+                decor.attachChild(loadProp(assetManager, "Models/Decor/arcade_machine.glb", 2.0f, leftX, -4f, -FastMath.QUARTER_PI * 0.6f));
+                decor.attachChild(loadProp(assetManager, "Models/Decor/trophy.glb", 1.2f, rightX, 1f, 0f));
+            }
+            case "level_glacier" -> {
+                decor.attachChild(loadProp(assetManager, "Models/Decor/bollard.glb", 1.0f, rightX, -3f, 0f));
+                decor.attachChild(loadProp(assetManager, "Models/Decor/bollard.glb", 1.0f, leftX, -3f, 0f));
+                decor.attachChild(loadProp(assetManager, "Models/Decor/bench.glb", 0.7f, rightX, 1.5f, -0.35f));
+            }
             case "level_space" -> {
                 decor.attachChild(loadProp(assetManager, "Models/Decor/satellite_dish.glb", 1.8f, rightX, -3f, 0f));
                 decor.attachChild(loadProp(assetManager, "Models/Decor/satellite_dish.glb", 1.8f, leftX, -3f, FastMath.PI));

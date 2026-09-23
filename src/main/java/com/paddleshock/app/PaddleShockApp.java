@@ -370,6 +370,7 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
         }
         mainMenuState.setEnabled(false);
         matchEndState.setEnabled(false);
+        loadoutState.setEnabled(false);
         // Disable first so a re-show while already open still rebuilds with fresh progress.
         worldTourState.setEnabled(false);
         worldTourState.setEnabled(true);

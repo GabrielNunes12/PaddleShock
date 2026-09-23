@@ -97,4 +97,15 @@ class WorldTourTest {
             }
         }
     }
+
+    @Test
+    void aBeatenOpponentStaysUnlockedEvenIfTheRungBeforeItIsNew() {
+        TourOpponent later = LADDER.get(LADDER.size() - 2);
+        assertTrue(WorldTour.isUnlocked(Set.of(later.id()), later));
+    }
+
+    @Test
+    void theVoidIsStillTheFinalBoss() {
+        assertEquals("the_void", LADDER.get(LADDER.size() - 1).id());
+    }
 }

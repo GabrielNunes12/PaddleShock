@@ -3,6 +3,7 @@ package com.paddleshock.sim;
 import com.jme3.math.Vector3f;
 
 import com.paddleshock.GameConstants;
+import com.paddleshock.data.LevelHazard;
 import com.paddleshock.data.PowerUpDefinition;
 import com.paddleshock.entities.Ball;
 import com.paddleshock.entities.Paddle;
@@ -32,6 +33,11 @@ public final class MatchSimulation {
     private final PowerUpManager powerUpManager;
     /** Points needed to win - {@link GameConstants#WIN_SCORE} except for shorter World Tour matches. */
     private final int winScore;
+    private final LevelHazard hazard;
+    private final IceSlide playerIce = new IceSlide();
+    private final IceSlide opponentIce = new IceSlide();
+    /** Seconds since the match started - drives the Pinball bumpers' slide. */
+    private float matchTime;
 
     private float playerPaddleSpeedX;
     private float opponentPaddleSpeedX;
@@ -44,6 +50,12 @@ public final class MatchSimulation {
     }
 
     public MatchSimulation(Ball ball, Paddle playerPaddle, Paddle opponentPaddle, Table table, int winScore) {
+        this(ball, playerPaddle, opponentPaddle, table, winScore, LevelHazard.NONE);
+    }
+
+    public MatchSimulation(Ball ball, Paddle playerPaddle, Paddle opponentPaddle, Table table, int winScore,
+            LevelHazard hazard) {
+        this.hazard = hazard;
         this.winScore = winScore;
         this.ball = ball;
         this.playerPaddle = playerPaddle;
@@ -56,6 +68,7 @@ public final class MatchSimulation {
     public void startNewMatch() {
         playerScore = 0;
         opponentScore = 0;
+        matchTime = 0f;
         ball.launch(Math.random() < 0.5 ? 1f : -1f);
     }
 
@@ -63,8 +76,9 @@ public final class MatchSimulation {
     public TickResult tick(float tpf, PaddleInput playerInput, PaddleInput opponentInput) {
         TickResult result = new TickResult();
 
-        playerPaddle.moveDelta(playerInput.getDeltaX(), playerInput.getDeltaZ());
-        opponentPaddle.moveDelta(opponentInput.getDeltaX(), opponentInput.getDeltaZ());
+        matchTime += tpf;
+        movePaddle(playerPaddle, playerIce, playerInput, tpf);
+        movePaddle(opponentPaddle, opponentIce, opponentInput, tpf);
         // Sideways swipe speed this tick, which becomes spin if that paddle hits the ball.
         playerPaddleSpeedX = tpf > 0f ? playerPaddle.getLastMoveX() / tpf : 0f;
         opponentPaddleSpeedX = tpf > 0f ? opponentPaddle.getLastMoveX() / tpf : 0f;
@@ -93,8 +107,34 @@ public final class MatchSimulation {
         return result;
     }
 
+    /** Applies one side's movement input - straight through, or through its ice slide on Glacier Rink. */
+    private void movePaddle(Paddle paddle, IceSlide ice, PaddleInput input, float tpf) {
+        if (hazard != LevelHazard.ICE) {
+            paddle.moveDelta(input.getDeltaX(), input.getDeltaZ());
+            return;
+        }
+        float[] slid = ice.step(input.getDeltaX(), input.getDeltaZ(), tpf);
+        paddle.moveDelta(slid[0], slid[1]);
+        // moveDelta scales by the paddle's speed multipliers; compare in input units.
+        float multiplier = paddle.getEffectiveSpeedMultiplier();
+        ice.onBlocked(slid[0], multiplier > 0f ? paddle.getLastMoveX() / multiplier : 0f, tpf);
+    }
+
+    /** The near Pinball bumper's current x (the far one is its mirror); 0 on any other arena. */
+    public float getBumperOffset() {
+        return hazard == LevelHazard.BUMPERS ? Bumpers.offsetAt(matchTime) : 0f;
+    }
+
+    public LevelHazard getHazard() {
+        return hazard;
+    }
+
     private void handleCollisions(TickResult result) {
         Vector3f pos = ball.getPosition();
+
+        if (hazard == LevelHazard.BUMPERS && Bumpers.collide(ball, getBumperOffset())) {
+            result.setWallBounce(true);
+        }
 
         if (table.isOutsideSideRails(pos, ball.getRadius())) {
             ball.bounceOffSideRail();

@@ -102,6 +102,11 @@ public class Paddle {
         return GameConstants.PADDLE_RADIUS * baseRadiusMultiplier * buffRadiusMultiplier;
     }
 
+    /** Base (paddle item) x power-up speed multiplier that {@link #moveDelta} applies to its input. */
+    public float getEffectiveSpeedMultiplier() {
+        return baseSpeedMultiplier * buffSpeedMultiplier;
+    }
+
     /** Temporary multiplier from a power-up; pass 1f to clear it. */
     public void setSpeedBuff(float speedMultiplier) {
         this.buffSpeedMultiplier = speedMultiplier;
