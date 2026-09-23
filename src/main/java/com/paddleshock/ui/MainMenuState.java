@@ -125,6 +125,21 @@ public class MainMenuState extends BaseAppState {
         });
         uiRoot.attachChild(playVsAi);
         playVsAi.setLocalTranslation(32, taglineY - 40, 2);
+
+        // Secondary CTA: the single-player campaign, with progress right on the button.
+        java.util.Set<String> beaten = ((PlayerContext) getApplication()).getProfile().getTourBeatenIds();
+        Button worldTour = new Button(I18n.t("menu.world_tour",
+                com.paddleshock.tour.WorldTour.beatenCount(beaten), com.paddleshock.tour.WorldTour.OPPONENTS.size()));
+        worldTour.setBackground(new QuadBackgroundComponent(Theme.PANEL_HOVER));
+        worldTour.setColor(Theme.TEXT);
+        worldTour.setFontSize(18);
+        worldTour.setPreferredSize(new Vector3f(ctaWidth, 46, 0));
+        worldTour.addClickCommands(source -> {
+            ((PlayerContext) getApplication()).getAudioManager().playSfx("button_click.ogg");
+            ((Navigator) getApplication()).showWorldTour();
+        });
+        uiRoot.attachChild(worldTour);
+        worldTour.setLocalTranslation(32, taglineY - 40 - ctaHeight - 12, 2);
     }
 
     /** Right panel: the other destinations as bordered nav-card rows. */

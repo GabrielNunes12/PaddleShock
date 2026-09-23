@@ -28,6 +28,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.paddleshock.GameConstants;
 import com.paddleshock.i18n.I18n;
+import com.paddleshock.tour.TourOpponent;
+import com.paddleshock.tour.WorldTour;
 import com.paddleshock.app.GameplayAppState;
 import com.paddleshock.app.Navigator;
 import com.paddleshock.app.PlayerContext;
@@ -52,6 +54,13 @@ public class MatchEndState extends BaseAppState {
     private int rewardEarned;
     private int playerScore;
     private int opponentScore;
+
+    /** Set (via {@link #setTourResult}) when the match was a World Tour match - swaps the REMATCH
+     *  button for NEXT/RETRY + WORLD TOUR. Cleared by every {@link #setResult}. */
+    private TourOpponent tourOpponent;
+
+    /** The match's target score, for the defeat screen's "first to N" line. */
+    private int winScore = GameConstants.WIN_SCORE;
 
     // Ranked-match rank display: the actual RankClient call happens on a background thread owned
     // by PaddleShockApp (see endRankedHostMatch/endRankedJoinerMatch) - this just polls for its
@@ -94,8 +103,29 @@ public class MatchEndState extends BaseAppState {
         this.ranked = false;
         this.connectionLost = false;
         this.extraNotice = null;
+        this.tourOpponent = null;
+        this.winScore = GameConstants.WIN_SCORE;
         this.rematchPhase = RematchPhase.NONE;
         this.keepAliveTimer = 0f;
+    }
+
+    /** Marks the result just set via {@link #setResult} as a World Tour match against
+     *  {@code opponent}; {@code firstWin} adds the "beaten / next unlocked" notice. */
+    public void setTourResult(TourOpponent opponent, boolean firstWin) {
+        this.tourOpponent = opponent;
+        this.winScore = opponent.winScore();
+        if (!firstWin) {
+            return;
+        }
+        TourOpponent next = nextInLadder(opponent);
+        this.extraNotice = next != null
+                ? I18n.t("matchend.tour_beaten_next", opponent.name().toUpperCase(), next.name().toUpperCase())
+                : I18n.t("matchend.tour_complete");
+    }
+
+    private static TourOpponent nextInLadder(TourOpponent opponent) {
+        int index = WorldTour.OPPONENTS.indexOf(opponent);
+        return index >= 0 && index + 1 < WorldTour.OPPONENTS.size() ? WorldTour.OPPONENTS.get(index + 1) : null;
     }
 
     /** Same as {@link #setResult}, but for a ranked multiplayer match - shows a "looking up
@@ -384,8 +414,30 @@ public class MatchEndState extends BaseAppState {
                 addMenuButton(actions, I18n.t("matchend.accept_rematch"), Theme.ORANGE, Theme.ON_ACCENT, this::onAcceptRematchClicked);
                 addMenuButton(actions, I18n.t("matchend.decline"), Theme.PANEL_HOVER, Theme.TEXT, this::onDeclineRematchClicked);
             }
-            case NONE -> addMenuButton(actions, I18n.t("matchend.rematch"), Theme.ORANGE, Theme.ON_ACCENT, this::onRematchClicked);
+            case NONE -> {
+                if (tourOpponent != null) {
+                    attachTourControls(actions);
+                } else {
+                    addMenuButton(actions, I18n.t("matchend.rematch"), Theme.ORANGE, Theme.ON_ACCENT, this::onRematchClicked);
+                }
+            }
         }
+    }
+
+    /** World Tour result actions: NEXT (after a win, if there is a next opponent) or RETRY, then
+     *  back to the ladder. */
+    private void attachTourControls(Container actions) {
+        Navigator nav = (Navigator) getApplication();
+        TourOpponent next = playerWon ? nextInLadder(tourOpponent) : null;
+        if (next != null) {
+            addMenuButton(actions, I18n.t("matchend.tour_next", next.name().toUpperCase()), Theme.ORANGE, Theme.ON_ACCENT,
+                    () -> nav.startTourMatch(next));
+        } else {
+            TourOpponent same = tourOpponent;
+            addMenuButton(actions, I18n.t(playerWon ? "matchend.tour_play_again" : "matchend.tour_retry"), Theme.ORANGE, Theme.ON_ACCENT,
+                    () -> nav.startTourMatch(same));
+        }
+        addMenuButton(actions, I18n.t("matchend.world_tour"), Theme.PANEL_HOVER, Theme.TEXT, nav::showWorldTour);
     }
 
     private void buildDimOverlay(float screenW, float screenH) {
@@ -410,10 +462,11 @@ public class MatchEndState extends BaseAppState {
         attachText(550, screenH - 335, I18n.t("matchend.credits_reward", rewardEarned), 20, Theme.ON_ACCENT);
 
         if (ranked) {
-            attachText(40, screenH - 358, rankLineText(), 15, rankLineColor());
+            // Below the scoreboard tile (screenH - 268 .. screenH - 396), not on top of it.
+            attachText(40, screenH - 408, rankLineText(), 15, rankLineColor());
         }
         if (extraNotice != null) {
-            attachText(40, screenH - (ranked ? 380 : 358), extraNotice, 13, Theme.TEXT_DIM);
+            attachText(40, screenH - (ranked ? 430 : 408), extraNotice, 13, Theme.TEXT_DIM);
         }
 
         // Actions: left-anchored, matching the banner's asymmetric composition.
@@ -440,7 +493,7 @@ public class MatchEndState extends BaseAppState {
         attachScoreboard(centerX - scoreWidth / 2f, scoreWidth, scoreY, 108, playerScore, opponentScore, Theme.TEXT_DIM, Theme.TEXT);
 
         float consolationY = scoreY - 108 - 20;
-        attachCenteredText(centerX, consolationY, I18n.t("matchend.try_again", GameConstants.WIN_SCORE), 16, Theme.TEXT_DIM);
+        attachCenteredText(centerX, consolationY, I18n.t("matchend.try_again", winScore), 16, Theme.TEXT_DIM);
 
         float actionsY = consolationY - 24;
         if (ranked) {

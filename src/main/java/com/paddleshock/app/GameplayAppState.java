@@ -42,9 +42,11 @@ import com.paddleshock.net.NetHost;
 import com.paddleshock.net.NetProtocol;
 import com.paddleshock.powerups.PowerUpType;
 import com.paddleshock.replay.ReplaySample;
+import com.paddleshock.sim.AiBrain;
 import com.paddleshock.sim.MatchSimulation;
 import com.paddleshock.sim.PaddleInput;
 import com.paddleshock.sim.TickResult;
+import com.paddleshock.tour.TourOpponent;
 import com.paddleshock.ui.Theme;
 
 /**
@@ -83,12 +85,12 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
      *  doesn't hand the AI a stronger kit too. A small, hardcoded pair; timing/frequency of when
      *  the AI fires them is still governed entirely by {@link com.paddleshock.settings.AiDifficulty}
      *  via {@link #aiPowerUpMinInterval}/{@link #aiPowerUpMaxInterval}. */
-    private static final String[] AI_POWERUP_IDS = {"powerup_speed_boost", "powerup_slow_opponent"};
-    private final PowerUpDefinition[] aiPowerUpLoadout = new PowerUpDefinition[AI_POWERUP_IDS.length];
+    private static final List<String> AI_POWERUP_IDS = List.of("powerup_speed_boost", "powerup_slow_opponent");
+    private final List<PowerUpDefinition> aiPowerUpLoadout = new ArrayList<>();
     private final PowerUpHud powerUpHud = new PowerUpHud();
     /** Only meaningful in {@link Mode#SINGLE_PLAYER} - resolved from the player's chosen
      *  {@link com.paddleshock.settings.AiDifficulty} in {@link #initialize}. */
-    private float aiMaxSpeed;
+    private AiBrain aiBrain;
     private float aiPowerUpMinInterval;
     private float aiPowerUpMaxInterval;
     private float aiPowerUpTimer;
@@ -113,6 +115,9 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     private final Vector3f screenUpWorld = new Vector3f();
 
     private final Mode mode;
+    /** Set for a World Tour match ({@link Mode#SINGLE_PLAYER} only): overrides the arena, the AI's
+     *  tuning/kit/look and the match length - see {@link com.paddleshock.tour.WorldTour}. */
+    private final TourOpponent tourOpponent;
     private final NetHost netHost;
     private final NetClient netClient;
 
@@ -152,14 +157,20 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
 
     /** The existing, unchanged single-player-vs-AI match. */
     public GameplayAppState() {
-        this(Mode.SINGLE_PLAYER, null, null, false);
+        this(Mode.SINGLE_PLAYER, null, null, false, null);
+    }
+
+    /** A World Tour match against {@code opponent} - single-player, with the opponent's own arena,
+     *  AI tuning, power-up kit, paddle look and match length instead of the quick-match ones. */
+    public GameplayAppState(TourOpponent opponent) {
+        this(Mode.SINGLE_PLAYER, null, null, false, opponent);
     }
 
     /** A listen-server host match: runs {@link MatchSimulation} locally and broadcasts snapshots
      *  to the joiner connected via {@code netHost}. {@code ranked} is the host's own UNRANKED
      *  choice from {@code MultiplayerState} ({@link NetHost#isRanked()}). */
     public GameplayAppState(NetHost netHost, boolean ranked) {
-        this(Mode.HOST, netHost, null, ranked);
+        this(Mode.HOST, netHost, null, ranked, null);
     }
 
     /** A joiner OR spectator match: renders snapshots received from the host connected via
@@ -169,11 +180,12 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
      *  set from the role the joining screen chose) - a joiner additionally sends local input every
      *  frame; a spectator never does. */
     public GameplayAppState(NetClient netClient, boolean ranked) {
-        this(netClient.isSpectator() ? Mode.SPECTATOR : Mode.JOINER, null, netClient, ranked);
+        this(netClient.isSpectator() ? Mode.SPECTATOR : Mode.JOINER, null, netClient, ranked, null);
     }
 
-    private GameplayAppState(Mode mode, NetHost netHost, NetClient netClient, boolean ranked) {
+    private GameplayAppState(Mode mode, NetHost netHost, NetClient netClient, boolean ranked, TourOpponent tourOpponent) {
         this.mode = mode;
+        this.tourOpponent = tourOpponent;
         this.netHost = netHost;
         this.netClient = netClient;
         this.ranked = ranked;
@@ -183,13 +195,20 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     protected void initialize(Application application) {
         this.app = (PaddleShockApp) application;
         SimpleApplication simpleApp = (SimpleApplication) application;
-        level = Catalog.findLevel(app.getProfile().getEquippedId("level")).orElse(Catalog.LEVELS.get(0));
+        String levelId = tourOpponent != null ? tourOpponent.levelId() : app.getProfile().getEquippedId("level");
+        level = Catalog.findLevel(levelId).orElse(Catalog.LEVELS.get(0));
         simpleApp.getViewPort().setBackgroundColor(level.getSkyColor());
 
-        com.paddleshock.settings.AiDifficulty aiDifficulty = app.getGameSettings().getAiDifficulty();
-        aiMaxSpeed = aiDifficulty.getMaxSpeed();
-        aiPowerUpMinInterval = aiDifficulty.getPowerUpMinInterval();
-        aiPowerUpMaxInterval = aiDifficulty.getPowerUpMaxInterval();
+        if (tourOpponent != null) {
+            aiBrain = new AiBrain(tourOpponent.maxSpeed(), tourOpponent.sloppiness());
+            aiPowerUpMinInterval = tourOpponent.powerUpMinInterval();
+            aiPowerUpMaxInterval = tourOpponent.powerUpMaxInterval();
+        } else {
+            com.paddleshock.settings.AiDifficulty aiDifficulty = app.getGameSettings().getAiDifficulty();
+            aiBrain = new AiBrain(aiDifficulty.getMaxSpeed(), 0f);
+            aiPowerUpMinInterval = aiDifficulty.getPowerUpMinInterval();
+            aiPowerUpMaxInterval = aiDifficulty.getPowerUpMaxInterval();
+        }
         aiPowerUpTimer = aiPowerUpMinInterval;
 
         setUpCamera(simpleApp);
@@ -286,8 +305,10 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                 paddleDef.getSizeMultiplier());
         gameNode.attachChild(playerPaddle.getNode());
 
-        opponentPaddle = new Paddle(getApplication().getAssetManager(), new ColorRGBA(1f, 0.35f, 0.3f, 1f),
-                TextureSet.PLASTIC, PaddleModel.CLASSIC, GameConstants.PADDLE_OPPONENT_Z, 1f, 1f);
+        ColorRGBA opponentColor = tourOpponent != null ? tourOpponent.paddleColor() : new ColorRGBA(1f, 0.35f, 0.3f, 1f);
+        float opponentSize = tourOpponent != null ? tourOpponent.paddleSize() : 1f;
+        opponentPaddle = new Paddle(getApplication().getAssetManager(), opponentColor,
+                TextureSet.PLASTIC, PaddleModel.CLASSIC, GameConstants.PADDLE_OPPONENT_Z, 1f, opponentSize);
         gameNode.attachChild(opponentPaddle.getNode());
 
         // The level's own bounce energy stacks with the table's, so e.g. a bouncy table in the
@@ -301,7 +322,8 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         // A joiner or spectator never runs its own simulation - both only render whatever the
         // host's MatchSimulation reports via network snapshots.
         if (mode != Mode.JOINER && mode != Mode.SPECTATOR) {
-            matchSimulation = new MatchSimulation(ball, playerPaddle, opponentPaddle, table);
+            int winScore = tourOpponent != null ? tourOpponent.winScore() : GameConstants.WIN_SCORE;
+            matchSimulation = new MatchSimulation(ball, playerPaddle, opponentPaddle, table, winScore);
         }
         resolveLoadout(profile);
 
@@ -319,8 +341,9 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             powerUpLoadout[i] = id.isEmpty() ? null : Catalog.findPowerUp(id).orElse(null);
         }
         if (mode == Mode.SINGLE_PLAYER) {
-            for (int i = 0; i < AI_POWERUP_IDS.length; i++) {
-                aiPowerUpLoadout[i] = Catalog.findPowerUp(AI_POWERUP_IDS[i]).orElse(null);
+            aiPowerUpLoadout.clear();
+            for (String id : tourOpponent != null ? tourOpponent.powerUpIds() : AI_POWERUP_IDS) {
+                Catalog.findPowerUp(id).ifPresent(aiPowerUpLoadout::add);
             }
         }
     }
@@ -361,7 +384,9 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             case SINGLE_PLAYER -> {
                 mine = matchSimulation.getPlayerScore();
                 opponent = matchSimulation.getOpponentScore();
-                scoreText.setText(I18n.t("gameplay.score_single_player", mine, opponent));
+                scoreText.setText(tourOpponent != null
+                        ? I18n.t("gameplay.score_tour", mine, opponent, tourOpponent.name().toUpperCase())
+                        : I18n.t("gameplay.score_single_player", mine, opponent));
             }
             case HOST -> {
                 mine = matchSimulation.getPlayerScore();
@@ -746,9 +771,8 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
      *  than in {@code MatchSimulation}, but its output is packaged into the same {@link PaddleInput}
      *  shape a networked opponent will eventually be fed through instead. */
     private PaddleInput computeOpponentAiInput(float tpf) {
-        float toBall = matchSimulation.getBall().getPosition().x - matchSimulation.getOpponentPaddle().getPosition().x;
-        float maxStep = aiMaxSpeed * tpf;
-        float step = Math.max(-maxStep, Math.min(maxStep, toBall));
+        float step = aiBrain.step(matchSimulation.getBall().getPosition().x,
+                matchSimulation.getOpponentPaddle().getPosition().x, tpf);
 
         PowerUpDefinition chosen = pickAiPowerUp(tpf);
         return new PaddleInput(step, 0, chosen);
@@ -867,6 +891,11 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
 
     public Mode getMode() {
         return mode;
+    }
+
+    /** The World Tour opponent this match is against, or {@code null} for any other match. */
+    public TourOpponent getTourOpponent() {
+        return tourOpponent;
     }
 
     public NetHost getNetHost() {

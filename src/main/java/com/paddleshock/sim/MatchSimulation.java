@@ -29,11 +29,18 @@ public final class MatchSimulation {
     private final Paddle opponentPaddle;
     private final Table table;
     private final PowerUpManager powerUpManager;
+    /** Points needed to win - {@link GameConstants#WIN_SCORE} except for shorter World Tour matches. */
+    private final int winScore;
 
     private int playerScore;
     private int opponentScore;
 
     public MatchSimulation(Ball ball, Paddle playerPaddle, Paddle opponentPaddle, Table table) {
+        this(ball, playerPaddle, opponentPaddle, table, GameConstants.WIN_SCORE);
+    }
+
+    public MatchSimulation(Ball ball, Paddle playerPaddle, Paddle opponentPaddle, Table table, int winScore) {
+        this.winScore = winScore;
         this.ball = ball;
         this.playerPaddle = playerPaddle;
         this.opponentPaddle = opponentPaddle;
@@ -97,7 +104,7 @@ public final class MatchSimulation {
         if (pos.z < -GameConstants.TABLE_HALF_LENGTH) {
             opponentScore++;
             result.setScorer(TickResult.Scorer.OPPONENT);
-            if (opponentScore >= GameConstants.WIN_SCORE) {
+            if (opponentScore >= winScore) {
                 result.setMatchOver(true);
                 result.setPlayerWon(false);
             } else {
@@ -106,7 +113,7 @@ public final class MatchSimulation {
         } else if (pos.z > GameConstants.TABLE_HALF_LENGTH) {
             playerScore++;
             result.setScorer(TickResult.Scorer.PLAYER);
-            if (playerScore >= GameConstants.WIN_SCORE) {
+            if (playerScore >= winScore) {
                 result.setMatchOver(true);
                 result.setPlayerWon(true);
             } else {
@@ -153,5 +160,9 @@ public final class MatchSimulation {
 
     public int getOpponentScore() {
         return opponentScore;
+    }
+
+    public int getWinScore() {
+        return winScore;
     }
 }

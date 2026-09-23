@@ -191,6 +191,22 @@ class MatchSimulationTest {
     }
 
     @Test
+    void customWinScoreEndsTheMatchEarly() {
+        MatchSimulation shortMatch = new MatchSimulation(ball, playerPaddle, opponentPaddle, table, 5);
+        moveAllPaddlesAway();
+
+        TickResult lastResult = null;
+        for (int point = 1; point <= 5; point++) {
+            ball.setNetworkState(0f, ball.getRadius(), GameConstants.TABLE_HALF_LENGTH + 0.5f, 0f, 1f, 0f);
+            lastResult = shortMatch.tick(0f, PaddleInput.none(), PaddleInput.none());
+            assertEquals(point == 5, lastResult.isMatchOver(), "point " + point);
+        }
+        assertTrue(lastResult.isPlayerWon());
+        assertEquals(5, shortMatch.getWinScore());
+        assertEquals(GameConstants.WIN_SCORE, sim.getWinScore());
+    }
+
+    @Test
     void playerPowerUpActivationTriggersFlagAndRespectsCooldown() {
         moveAllPaddlesAway();
         ball.setNetworkState(0f, 3f, 0f, 0f, 0f, 0f); // parked well above paddle reach height, no collisions

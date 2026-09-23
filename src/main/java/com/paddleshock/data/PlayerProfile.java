@@ -75,6 +75,11 @@ public class PlayerProfile {
     // treated as unclaimed.
     private int lastRewardedSeason = -1;
 
+    // World Tour opponents this player has beaten at least once (see com.paddleshock.tour.WorldTour).
+    // Old saves predate this field and deserialize it as null; getTourBeatenIds()/markTourBeaten()
+    // treat that as an empty set, same no-migration-needed treatment as rivals/friends above.
+    private Set<String> tourBeatenIds = new HashSet<>();
+
     private Set<String> ownedPaddleIds = new HashSet<>(Set.of("paddle_classic"));
     private Set<String> ownedTableIds = new HashSet<>(Set.of("table_classic"));
     private Set<String> ownedBallIds = new HashSet<>(Set.of("ball_classic"));
@@ -247,6 +252,18 @@ public class PlayerProfile {
         if (friends != null) {
             friends.remove(playerId);
         }
+    }
+
+    /** World Tour opponent ids beaten at least once. Never {@code null}; read-only. */
+    public Set<String> getTourBeatenIds() {
+        return tourBeatenIds == null ? Set.of() : Set.copyOf(tourBeatenIds);
+    }
+
+    public void markTourBeaten(String opponentId) {
+        if (tourBeatenIds == null) {
+            tourBeatenIds = new HashSet<>();
+        }
+        tourBeatenIds.add(opponentId);
     }
 
     public boolean owns(String category, String id) {

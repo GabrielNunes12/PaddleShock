@@ -31,7 +31,10 @@ import com.paddleshock.net.TournamentClient;
 import com.paddleshock.net.TournamentService;
 import com.paddleshock.settings.GameSettings;
 import com.paddleshock.steam.SteamManager;
+import com.paddleshock.tour.TourOpponent;
+import com.paddleshock.tour.WorldTour;
 import com.paddleshock.ui.CreditsState;
+import com.paddleshock.ui.WorldTourState;
 import com.paddleshock.ui.FriendsState;
 import com.paddleshock.ui.LeaderboardState;
 import com.paddleshock.ui.LoadoutState;
@@ -76,6 +79,7 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
     private MultiplayerState multiplayerState;
     private com.paddleshock.ui.HowToPlayState howToPlayState;
     private CreditsState creditsState;
+    private WorldTourState worldTourState;
     private LeaderboardState leaderboardState;
     private ProfileState profileState;
     private TournamentState tournamentState;
@@ -136,6 +140,7 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
         multiplayerState = new MultiplayerState();
         howToPlayState = new com.paddleshock.ui.HowToPlayState();
         creditsState = new CreditsState();
+        worldTourState = new WorldTourState();
         leaderboardState = new LeaderboardState();
         profileState = new ProfileState();
         tournamentState = new TournamentState();
@@ -154,6 +159,7 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
         stateManager.attach(multiplayerState);
         stateManager.attach(howToPlayState);
         stateManager.attach(creditsState);
+        stateManager.attach(worldTourState);
         stateManager.attach(leaderboardState);
         stateManager.attach(profileState);
         stateManager.attach(tournamentState);
@@ -168,6 +174,7 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
         multiplayerState.setEnabled(false);
         howToPlayState.setEnabled(false);
         creditsState.setEnabled(false);
+        worldTourState.setEnabled(false);
         leaderboardState.setEnabled(false);
         profileState.setEnabled(false);
         tournamentState.setEnabled(false);
@@ -263,6 +270,7 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
         multiplayerState.setEnabled(false);
         howToPlayState.setEnabled(false);
         creditsState.setEnabled(false);
+        worldTourState.setEnabled(false);
         leaderboardState.setEnabled(false);
         profileState.setEnabled(false);
         tournamentState.setEnabled(false);
@@ -287,6 +295,32 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
         creditsState.setBackAction(backAction);
         mainMenuState.setEnabled(false);
         creditsState.setEnabled(true);
+    }
+
+    /** Shows the World Tour ladder (main menu CTA, or back from a tour match's result screen). */
+    public void showWorldTour() {
+        if (gameplayState != null) {
+            stateManager.detach(gameplayState);
+            gameplayState = null;
+        }
+        mainMenuState.setEnabled(false);
+        matchEndState.setEnabled(false);
+        // Disable first so a re-show while already open still rebuilds with fresh progress.
+        worldTourState.setEnabled(false);
+        worldTourState.setEnabled(true);
+        audioManager.playMenuMusic();
+    }
+
+    /** Starts a World Tour match against {@code opponent} with the player's equipped gear. */
+    public void startTourMatch(TourOpponent opponent) {
+        worldTourState.setEnabled(false);
+        matchEndState.setEnabled(false);
+        if (gameplayState != null) {
+            stateManager.detach(gameplayState);
+        }
+        gameplayState = new GameplayAppState(opponent);
+        stateManager.attach(gameplayState);
+        audioManager.playRandomMatchMusic();
     }
 
     /** Shows the HOST/JOIN LAN multiplayer screen (wired up from the main menu's MULTIPLAYER button). */
@@ -470,12 +504,36 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
      *  see {@code NetHost#getJoinerPlayerId}/{@code NetClient#getHostPlayerId}), used to update the
      *  local rival tracker; {@code null} for single-player, which has no real opponent. */
     public void endMatch(boolean playerWon, int playerScore, int opponentScore, String opponentPlayerId) {
+        TourOpponent tourOpponent = gameplayState.getTourOpponent();
+        if (tourOpponent != null) {
+            endTourMatch(tourOpponent, playerWon, playerScore, opponentScore);
+            return;
+        }
         String mode = matchModeFor(gameplayState);
         int reward = endMatchCommon(playerWon, playerScore, opponentScore);
         matchEndState.setResult(playerWon, reward, playerScore, opponentScore);
         matchEndState.setEnabled(true);
         recordMatchHistory(mode, playerScore, opponentScore, playerWon, 0, opponentPlayerId);
         reportTournamentResultIfActive(playerWon);
+    }
+
+    /** World Tour match end: a first win against {@code opponent} pays its one-time reward and
+     *  unlocks the next opponent; a replay win pays the normal random reward - see
+     *  {@link WorldTour#winReward}. */
+    private void endTourMatch(TourOpponent opponent, boolean playerWon, int playerScore, int opponentScore) {
+        beginMatchEnd(playerWon);
+        java.util.Set<String> beatenBefore = profile.getTourBeatenIds();
+        int reward = 0;
+        if (playerWon) {
+            reward = WorldTour.winReward(beatenBefore, opponent, randomMatchReward());
+            profile.addCurrency(reward);
+            profile.markTourBeaten(opponent.id());
+        }
+        boolean firstWin = playerWon && !beatenBefore.contains(opponent.id());
+        matchEndState.setResult(playerWon, reward, playerScore, opponentScore);
+        matchEndState.setTourResult(opponent, firstWin);
+        matchEndState.setEnabled(true);
+        recordMatchHistory("World Tour", playerScore, opponentScore, playerWon, 0, null);
     }
 
     /** If this match was one bracket pairing of a live tournament (see
@@ -590,17 +648,26 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
     }
 
     private int endMatchCommon(boolean playerWon, int playerScore, int opponentScore) {
-        gameplayState.setEnabled(false);
-        audioManager.stopMusic();
-        audioManager.playSfx(playerWon ? "match_win.ogg" : "match_defeat.ogg");
+        beginMatchEnd(playerWon);
 
         int reward = 0;
         if (playerWon) {
-            reward = ThreadLocalRandom.current().nextInt(GameConstants.MATCH_REWARD_MIN, GameConstants.MATCH_REWARD_MAX + 1);
+            reward = randomMatchReward();
             profile.addCurrency(reward);
             saveProfile();
         }
         return reward;
+    }
+
+    /** Stops the match and plays the win/defeat sting - shared by every match-end path. */
+    private void beginMatchEnd(boolean playerWon) {
+        gameplayState.setEnabled(false);
+        audioManager.stopMusic();
+        audioManager.playSfx(playerWon ? "match_win.ogg" : "match_defeat.ogg");
+    }
+
+    private static int randomMatchReward() {
+        return ThreadLocalRandom.current().nextInt(GameConstants.MATCH_REWARD_MIN, GameConstants.MATCH_REWARD_MAX + 1);
     }
 
     public void showStore() {
