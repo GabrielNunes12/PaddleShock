@@ -31,6 +31,10 @@ public final class AchievementTracker {
      *  match-specific achievements and everything that depends on profile state. Call after the
      *  rest of the match-end bookkeeping (e.g. World Tour progress) has been applied. */
     public static List<Achievement> recordMatch(PlayerProfile profile, MatchOutcome outcome) {
+        if (outcome.kind() == MatchOutcome.Kind.LOCAL_VERSUS) {
+            // One person can play both sides of a local match - it never counts toward anything.
+            return List.of();
+        }
         profile.addPowerUpsUsed(outcome.powerUpsUsed());
         if (outcome.won()) {
             profile.addWin(outcome.levelId());

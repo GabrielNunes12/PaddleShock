@@ -279,6 +279,7 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
             case HOST -> "host";
             case JOINER -> "joiner";
             case SPECTATOR -> "spectator";
+            case LOCAL_VERSUS -> "local versus";
         };
         return mode + " match in progress";
     }
@@ -582,6 +583,27 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
         reportTournamentResultIfActive(playerWon);
     }
 
+    /** Starts a two-players-on-one-PC match on the equipped arena (main menu LOCAL VERSUS). */
+    public void startLocalVersus() {
+        mainMenuState.setEnabled(false);
+        matchEndState.setEnabled(false);
+        if (gameplayState != null) {
+            stateManager.detach(gameplayState);
+        }
+        gameplayState = GameplayAppState.localVersus();
+        stateManager.attach(gameplayState);
+        audioManager.playRandomMatchMusic();
+    }
+
+    /** Local versus match end: no credits (one person could play both sides to farm them) - the
+     *  match is just recorded in history. {@code player1Won}/scores are Player 1's perspective. */
+    public void endLocalVersusMatch(boolean player1Won, int player1Score, int player2Score) {
+        beginMatchEnd(true);
+        matchEndState.setLocalVersusResult(player1Won, player1Score, player2Score);
+        matchEndState.setEnabled(true);
+        recordMatchHistory(matchModeFor(gameplayState), player1Score, player2Score, player1Won, 0, null);
+    }
+
     /** World Tour match end: a first win against {@code opponent} pays its one-time reward and
      *  unlocks the next opponent; a replay win pays the normal random reward - see
      *  {@link WorldTour#winReward}. */
@@ -639,6 +661,7 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
             // endSpectatedMatch instead, which never calls this - but the switch must still be
             // exhaustive.
             case SPECTATOR -> "Spectator";
+            case LOCAL_VERSUS -> "Local Versus";
         };
     }
 
@@ -751,6 +774,7 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
      *  snapshots the match for achievements, while the gameplay state is still guaranteed to exist. */
     private void beginMatchEnd(boolean playerWon) {
         MatchOutcome.Kind kind = gameplayState.getTourOpponent() != null ? MatchOutcome.Kind.WORLD_TOUR
+                : gameplayState.getMode() == GameplayAppState.Mode.LOCAL_VERSUS ? MatchOutcome.Kind.LOCAL_VERSUS
                 : gameplayState.getMode() == GameplayAppState.Mode.SINGLE_PLAYER ? MatchOutcome.Kind.QUICK_MATCH
                 : MatchOutcome.Kind.ONLINE;
         lastMatchContext = new MatchContext(kind, gameplayState.getAuthoritativeLevelId(),

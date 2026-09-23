@@ -59,6 +59,9 @@ public class MatchEndState extends BaseAppState {
      *  button for NEXT/RETRY + WORLD TOUR. Cleared by every {@link #setResult}. */
     private TourOpponent tourOpponent;
 
+    /** 1 or 2 when the match was local versus (the winning player), else 0 - see {@link #setLocalVersusResult}. */
+    private int localVersusWinner;
+
     /** The match's target score, for the defeat screen's "first to N" line. */
     private int winScore = GameConstants.WIN_SCORE;
 
@@ -104,9 +107,17 @@ public class MatchEndState extends BaseAppState {
         this.connectionLost = false;
         this.extraNotice = null;
         this.tourOpponent = null;
+        this.localVersusWinner = 0;
         this.winScore = GameConstants.WIN_SCORE;
         this.rematchPhase = RematchPhase.NONE;
         this.keepAliveTimer = 0f;
+    }
+
+    /** A local versus result: always the celebratory layout, titled with the winning player, no
+     *  credits; scores are Player 1 : Player 2. REMATCH replays locally. */
+    public void setLocalVersusResult(boolean player1Won, int player1Score, int player2Score) {
+        setResult(true, 0, player1Score, player2Score);
+        this.localVersusWinner = player1Won ? 1 : 2;
     }
 
     /** Marks the result just set via {@link #setResult} as a World Tour match against
@@ -182,8 +193,9 @@ public class MatchEndState extends BaseAppState {
         PlayerContext ctx = (PlayerContext) getApplication();
         Navigator nav = (Navigator) getApplication();
         GameplayAppState gp = ctx.getGameplayState();
-        if (gp == null || gp.getMode() == GameplayAppState.Mode.SINGLE_PLAYER) {
-            return;
+        if (gp == null || gp.getMode() == GameplayAppState.Mode.SINGLE_PLAYER
+                || gp.getMode() == GameplayAppState.Mode.LOCAL_VERSUS) {
+            return; // no network peer to keep alive or negotiate with
         }
         NetHost host = gp.getNetHost();
         NetClient client = gp.getNetClient();
@@ -266,6 +278,10 @@ public class MatchEndState extends BaseAppState {
         GameplayAppState gp = ctx.getGameplayState();
         if (gp == null || gp.getMode() == GameplayAppState.Mode.SINGLE_PLAYER) {
             nav.showLoadout();
+            return;
+        }
+        if (gp.getMode() == GameplayAppState.Mode.LOCAL_VERSUS) {
+            nav.startLocalVersus();
             return;
         }
 
@@ -451,15 +467,22 @@ public class MatchEndState extends BaseAppState {
     private void buildWinLayout(Navigator nav, float screenW, float screenH) {
         // Headline banner: bleeds off the left edge, orange fill, dark (ON_ACCENT) text.
         attachAngledQuad(-60, screenH - 84, 148, 0, 660, 660 * 0.86f, 0, Theme.ORANGE, 1);
-        attachText(36, screenH - 124, I18n.t("matchend.you_win"), 56, Theme.ON_ACCENT);
+        String headline = localVersusWinner == 1 ? I18n.t("matchend.p1_wins")
+                : localVersusWinner == 2 ? I18n.t("matchend.p2_wins") : I18n.t("matchend.you_win");
+        attachText(36, screenH - 124, headline, 56, Theme.ON_ACCENT);
 
         // Scoreboard tile: winner's number bright, loser's dim.
         attachAngledQuad(40, screenH - 268, 128, 0, 460, 460, 24, Theme.PANEL_HOVER, 1);
-        attachScoreboard(40, 460, screenH - 268, 128, playerScore, opponentScore, Theme.TEXT, Theme.TEXT_DIM);
+        // Winner's number bright: Player 2's is the right-hand one when they won a local match.
+        boolean rightWon = localVersusWinner == 2;
+        attachScoreboard(40, 460, screenH - 268, 128, playerScore, opponentScore,
+                rightWon ? Theme.TEXT_DIM : Theme.TEXT, rightWon ? Theme.TEXT : Theme.TEXT_DIM);
 
-        // Reward chip.
-        attachAngledQuad(528, screenH - 316, 60, 14, 232, 232, 0, Theme.GREEN, 1);
-        attachText(550, screenH - 335, I18n.t("matchend.credits_reward", rewardEarned), 20, Theme.ON_ACCENT);
+        // Reward chip (local versus pays nothing, so it has none).
+        if (localVersusWinner == 0) {
+            attachAngledQuad(528, screenH - 316, 60, 14, 232, 232, 0, Theme.GREEN, 1);
+            attachText(550, screenH - 335, I18n.t("matchend.credits_reward", rewardEarned), 20, Theme.ON_ACCENT);
+        }
 
         if (ranked) {
             // Below the scoreboard tile (screenH - 268 .. screenH - 396), not on top of it.

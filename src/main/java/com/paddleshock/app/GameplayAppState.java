@@ -67,7 +67,10 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
      *  connection type (and most of the receiving/rendering logic) with {@link #JOINER} - see the
      *  {@link #GameplayAppState(NetClient, boolean)} constructor - but never sends input and is
      *  never treated as "the opponent" by the host. */
-    public enum Mode { SINGLE_PLAYER, HOST, JOINER, SPECTATOR }
+    public enum Mode { SINGLE_PLAYER, HOST, JOINER, SPECTATOR,
+        /** Two players on one PC: Player 1 is the near ("player") side, Player 2 drives the far
+         *  side through {@link SecondPlayerInput} instead of the AI - see docs/specs/08-local-versus.md. */
+        LOCAL_VERSUS }
 
     private static final String ACTION_PAUSE = "PS_Pause";
     private static final String ACTION_REPLAY_SKIP = "PS_ReplaySkip";
@@ -107,6 +110,13 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     /** The local viewer's own goal line sits just below the camera's view, so their own live
      *  Shield is shown as a glowing strip + label along the bottom of the HUD instead. */
     private Geometry ownShieldStrip;
+
+    /** Player 2's controls - {@link Mode#LOCAL_VERSUS} only. */
+    private SecondPlayerInput secondPlayer;
+    /** "P1: mouse ... P2: arrows ..." shown for the first few seconds of a local versus match. */
+    private BitmapText controlsHint;
+    private float controlsHintTimer;
+    private static final float CONTROLS_HINT_SECONDS = 7f;
 
     /** Equipped cosmetics (local view only); null when the "none" default is equipped. */
     private com.paddleshock.entities.BallTrail ballTrail;
@@ -187,6 +197,11 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         this(Mode.SINGLE_PLAYER, null, null, false, null);
     }
 
+    /** A two-players-on-one-PC match - see {@link Mode#LOCAL_VERSUS}. */
+    public static GameplayAppState localVersus() {
+        return new GameplayAppState(Mode.LOCAL_VERSUS, null, null, false, null);
+    }
+
     /** A World Tour match against {@code opponent} - single-player, with the opponent's own arena,
      *  AI tuning, power-up kit, paddle look and match length instead of the quick-match ones. */
     public GameplayAppState(TourOpponent opponent) {
@@ -246,7 +261,14 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         // A spectator's mouse movement must never affect anything in the scene: skip registering
         // the mouse/gamepad-follows-paddle capture and the power-up hotkeys entirely, rather than
         // relying on the update loop simply never consuming them - see updateSpectator().
-        if (mode != Mode.SPECTATOR) {
+        if (mode == Mode.LOCAL_VERSUS) {
+            // Player 2 gets the first gamepad; Player 1 keeps the mouse, plus a second pad if any.
+            int pads = app.getInputManager().getJoysticks() == null ? 0 : app.getInputManager().getJoysticks().length;
+            inputGatherer.register(app.getInputManager(), pads >= 2 ? 1 : -1);
+            inputGatherer.registerPowerUpKeys(app.getInputManager(), this);
+            secondPlayer = new SecondPlayerInput();
+            secondPlayer.register(app.getInputManager());
+        } else if (mode != Mode.SPECTATOR) {
             inputGatherer.register(app.getInputManager());
             inputGatherer.registerPowerUpKeys(app.getInputManager(), this);
         }
@@ -274,6 +296,11 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             // actual orientation, so it self-corrects for the mirror with no further changes.
             simpleApp.getCamera().setLocation(new Vector3f(0, 7f, 11f));
             simpleApp.getCamera().lookAt(new Vector3f(0, 0, 1f), Vector3f.UNIT_Y);
+        } else if (mode == Mode.LOCAL_VERSUS) {
+            // A shared side-on view: the table runs left (Player 1) to right (Player 2), so
+            // neither player is "behind" their own paddle.
+            simpleApp.getCamera().setLocation(new Vector3f(-14f, 12f, 0f));
+            simpleApp.getCamera().lookAt(new Vector3f(0, 0, 0f), Vector3f.UNIT_Y);
         } else if (mode == Mode.SPECTATOR) {
             // Neither "side" of the table is the spectator's own - a raised, centered overhead
             // view of the whole table reads better than mirroring either player's own low,
@@ -340,10 +367,13 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         gameNode.attachChild(playerPaddle.getNode());
 
         ColorRGBA opponentColor = tourOpponent != null ? tourOpponent.paddleColor() : new ColorRGBA(1f, 0.35f, 0.3f, 1f);
-        float opponentSize = tourOpponent != null ? tourOpponent.paddleSize() : 1f;
+        float opponentSize = tourOpponent != null ? tourOpponent.paddleSize()
+                : mode == Mode.LOCAL_VERSUS ? paddleDef.getSizeMultiplier() : 1f;
+        // Local versus: Player 2 plays with Player 1's paddle stats so the match is even.
+        float opponentSpeed = mode == Mode.LOCAL_VERSUS ? paddleDef.getSpeedMultiplier() : 1f;
         opponentPaddle = new Paddle(getApplication().getAssetManager(), skinOnFar ? skin.getColor() : opponentColor,
                 skinOnFar ? skin.getTextureSet() : TextureSet.PLASTIC, PaddleModel.CLASSIC,
-                GameConstants.PADDLE_OPPONENT_Z, 1f, opponentSize);
+                GameConstants.PADDLE_OPPONENT_Z, opponentSpeed, opponentSize);
         gameNode.attachChild(opponentPaddle.getNode());
 
         // The level's own bounce energy stacks with the table's, so e.g. a bouncy table in the
@@ -362,8 +392,21 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         }
         resolveLoadout(profile);
 
-        gameNode.attachChild(SceneDecorBuilder.build(getApplication().getAssetManager(), level.getId(),
-                mode != Mode.SINGLE_PLAYER, scoreboardDisplays));
+        Node decor = SceneDecorBuilder.build(getApplication().getAssetManager(), level.getId(),
+                mode != Mode.SINGLE_PLAYER, scoreboardDisplays);
+        if (mode == Mode.LOCAL_VERSUS) {
+            // The side-on versus camera sits on the -x side, so props placed there (e.g. the
+            // Classic Court scoreboards) would stand between it and the table - drop them. By world
+            // bounds, not local translation: the scoreboard's digit panel has its vertices baked in
+            // world space under an identity transform.
+            decor.updateGeometricState();
+            for (Spatial prop : new ArrayList<>(decor.getChildren())) {
+                if (prop.getWorldBound() != null && prop.getWorldBound().getCenter().x < 0f) {
+                    prop.removeFromParent();
+                }
+            }
+        }
+        gameNode.attachChild(decor);
 
         replayController = new ReplayController(ball, playerPaddle, opponentPaddle, app.getInputManager());
 
@@ -454,9 +497,11 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         if (matchSimulation != null) {
             nearShield = matchSimulation.getPowerUpManager().hasEffect(true, PowerUpType.SHIELD);
             farShield = matchSimulation.getPowerUpManager().hasEffect(false, PowerUpType.SHIELD);
-            // The local viewer is always the "player" side of a local simulation.
-            ballHidden = matchSimulation.isBallHiddenFor(true);
-            ownShield = nearShield;
+            // The local viewer is always the "player" side of a local simulation - except in local
+            // versus, where both players share one screen: a Ghost Ball can't hide the ball from
+            // just one of them, and both goals are already in view (no own-shield HUD strip).
+            ballHidden = mode != Mode.LOCAL_VERSUS && matchSimulation.isBallHiddenFor(true);
+            ownShield = mode != Mode.LOCAL_VERSUS && nearShield;
         } else if (snapshot != null) {
             nearShield = snapshot.hasEffect(NetProtocol.EFFECT_HOST_SHIELD);
             farShield = snapshot.hasEffect(NetProtocol.EFFECT_JOINER_SHIELD);
@@ -524,6 +569,16 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
 
         replayController.buildHud(hudNode, font, simpleApp.getCamera().getWidth(), simpleApp.getCamera().getHeight());
 
+        if (mode == Mode.LOCAL_VERSUS) {
+            controlsHint = new BitmapText(font);
+            controlsHint.setSize(18);
+            controlsHint.setColor(Theme.TEXT);
+            controlsHint.setText(I18n.t("gameplay.versus_controls"));
+            controlsHint.setLocalTranslation((simpleApp.getCamera().getWidth() - controlsHint.getLineWidth()) / 2f, 70f, 1);
+            hudNode.attachChild(controlsHint);
+            controlsHintTimer = CONTROLS_HINT_SECONDS;
+        }
+
         float screenW = simpleApp.getCamera().getWidth();
         ownShieldStrip = new Geometry("ownShieldStrip", new com.jme3.scene.shape.Quad(screenW, 14f));
         Material stripMaterial = new Material(simpleApp.getAssetManager(), "Common/MatDefs/Misc/Unshaded.j3md");
@@ -575,6 +630,11 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             }
             // Read-only view: neither side is "you" - name both players plainly instead, and
             // show the scoreboard prop in host-then-joiner order to match.
+            case LOCAL_VERSUS -> {
+                mine = matchSimulation.getPlayerScore();
+                opponent = matchSimulation.getOpponentScore();
+                scoreText.setText(I18n.t("gameplay.score_versus", mine, opponent));
+            }
             case SPECTATOR -> {
                 mine = hostDisplayScore;
                 opponent = joinerDisplayScore;
@@ -660,6 +720,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             case HOST -> updateHost(tpf);
             case JOINER -> updateJoiner(tpf);
             case SPECTATOR -> updateSpectator(tpf);
+            case LOCAL_VERSUS -> updateLocalVersus(tpf);
         }
         updatePowerUpBanner(tpf);
     }
@@ -681,6 +742,11 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
      *  reliably tell apart (Slow Opponent's red/orange vs. Paddle Grow's green, for example).
      *  Overwrites any banner already showing, so the most recent activation always wins. */
     private void showPowerUpBanner(boolean activatedByLocalViewer, PowerUpType type) {
+        if (mode == Mode.LOCAL_VERSUS) {
+            // Both players share the screen - name them instead of YOU/OPPONENT.
+            showPowerUpBanner(activatedByLocalViewer ? I18n.t("gameplay.p1") : I18n.t("gameplay.p2"), type);
+            return;
+        }
         showPowerUpBanner(activatedByLocalViewer ? I18n.t("gameplay.powerup_you") : I18n.t("gameplay.powerup_opponent"), type);
     }
 
@@ -729,6 +795,29 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         applyTickResult(result);
         updatePowerUpHud();
         updatePowerUpVisuals(null);
+    }
+
+    /** Local versus: Player 1's mouse input vs Player 2's keyboard/gamepad input, same local
+     *  simulation and HUD flow as single-player minus the AI. */
+    private void updateLocalVersus(float tpf) {
+        PaddleInput p1 = computeLocalPaddleInput(tpf);
+        float[] p2Delta = secondPlayer.consumeWorldDelta(tpf, screenRightWorld, screenUpWorld);
+        Integer p2Slot = secondPlayer.consumePowerUpSlot();
+        PowerUpDefinition p2PowerUp = p2Slot != null ? powerUpLoadout[p2Slot] : null;
+        PaddleInput p2 = new PaddleInput(p2Delta[0], p2Delta[1], p2PowerUp);
+
+        TickResult result = matchSimulation.tick(tpf, p1, p2);
+        recordReplaySample(tpf);
+        applyTickResult(result);
+        updatePowerUpHud();
+        updatePowerUpVisuals(null);
+
+        if (controlsHint != null && controlsHintTimer > 0f) {
+            controlsHintTimer -= tpf;
+            if (controlsHintTimer <= 0f) {
+                controlsHint.setCullHint(Spatial.CullHint.Always);
+            }
+        }
     }
 
     private void updateHost(float tpf) {
@@ -1066,6 +1155,9 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         if (result.getScorer() == TickResult.Scorer.PLAYER) {
             // "Player" is the local viewer in single-player and host modes; they scored on the far goal.
             celebrateLocalPoint(GameConstants.TABLE_HALF_LENGTH);
+        } else if (result.getScorer() == TickResult.Scorer.OPPONENT && mode == Mode.LOCAL_VERSUS) {
+            // Player 2 is also a local player - they get the celebration on the near goal.
+            celebrateLocalPoint(-GameConstants.TABLE_HALF_LENGTH);
         }
         if (result.getScorer() != TickResult.Scorer.NONE) {
             updateScoreText();
@@ -1077,6 +1169,11 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                 Runnable endAction;
                 if (mode == Mode.HOST && ranked) {
                     endAction = () -> app.endRankedHostMatch(playerWon, finalPlayerScore, finalOpponentScore, netHost);
+                } else if (mode == Mode.LOCAL_VERSUS) {
+                    if (controlsHint != null) {
+                        controlsHint.setCullHint(Spatial.CullHint.Always);
+                    }
+                    endAction = () -> app.endLocalVersusMatch(playerWon, finalPlayerScore, finalOpponentScore);
                 } else {
                     // HOST mode here means an unranked LAN/lobby match (ranked HOST already
                     // handled above) - the opponent's playerId is known from HELLO the same way
@@ -1158,7 +1255,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
      *  host/single-player's own level; {@code null} for a joiner/spectator, whose scene uses its
      *  own equipped level rather than the host's. */
     public String getAuthoritativeLevelId() {
-        return mode == Mode.SINGLE_PLAYER || mode == Mode.HOST ? level.getId() : null;
+        return mode == Mode.SINGLE_PLAYER || mode == Mode.HOST || mode == Mode.LOCAL_VERSUS ? level.getId() : null;
     }
 
     /** The World Tour opponent this match is against, or {@code null} for any other match. */
@@ -1189,6 +1286,9 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             }
         }
         simpleApp.getInputManager().removeListener(this);
+        if (secondPlayer != null) {
+            secondPlayer.unregister(simpleApp.getInputManager());
+        }
         simpleApp.getViewPort().setBackgroundColor(ColorRGBA.Black);
         // Network resources (the UDP socket + its background receive thread) belong to this
         // match's lifetime, not the app shell's - close them whenever this state goes away,
@@ -1209,5 +1309,11 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     @Override
     protected void onDisable() {
         // Pause/store/options states manage cursor visibility themselves while active.
+        // The versus controls hint is only for the opening seconds of live play - never over the
+        // pause or result screens, whichever way the match stopped.
+        if (controlsHint != null) {
+            controlsHint.setCullHint(Spatial.CullHint.Always);
+            controlsHintTimer = 0f;
+        }
     }
 }

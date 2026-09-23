@@ -21,6 +21,9 @@ public final class ChallengeTracker {
     /** Records {@code outcome} against the challenges current on {@code date}; returns the ones
      *  it completed (their reward has already been added to the profile's credits). */
     public static List<Challenge> recordMatch(PlayerProfile profile, MatchOutcome outcome, LocalDate date) {
+        if (outcome.kind() == MatchOutcome.Kind.LOCAL_VERSUS) {
+            return List.of(); // farmable by one person playing both sides - see AchievementTracker
+        }
         List<Challenge> current = ChallengeGenerator.current(date);
         Set<String> currentIds = current.stream().map(Challenge::id).collect(Collectors.toSet());
         profile.pruneChallenges(currentIds);

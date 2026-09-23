@@ -194,6 +194,7 @@ public class MainMenuState extends BaseAppState {
         Container nav = new Container(new SpringGridLayout(Axis.Y, Axis.X));
         nav.setBackground(new QuadBackgroundComponent(Theme.BACKGROUND));
         addNavCard(nav, I18n.t("menu.multiplayer"), Theme.BLUE_DIM, cardWidth, nav1::showMultiplayer);
+        addNavCard(nav, I18n.t("menu.local_versus"), Theme.BLUE_DIM, cardWidth, nav1::startLocalVersus);
         addNavCard(nav, I18n.t("menu.leaderboard"), Theme.ORANGE_DIM, cardWidth, nav1::showLeaderboard);
         addNavCard(nav, I18n.t("menu.profile"), Theme.GREEN_DIM, cardWidth, nav1::showProfile);
         addNavCard(nav, I18n.t("menu.friends"), Theme.PANEL_HOVER, cardWidth, nav1::showFriends);
