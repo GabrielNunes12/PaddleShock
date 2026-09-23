@@ -39,6 +39,7 @@ public class OptionsState extends BaseAppState {
     private Label musicVolumeLabel;
     private Label videoQualityLabel;
     private Label fullscreenLabel;
+    private Label screenShakeLabel;
     private Label resolutionLabel;
 
     private Button enLangButton;
@@ -95,6 +96,8 @@ public class OptionsState extends BaseAppState {
                 () -> cycleVideoQuality(app, -1), () -> cycleVideoQuality(app, 1));
         fullscreenLabel = addStepperRow(videoCard, I18n.t("options.fullscreen"),
                 () -> toggleFullscreen(app), () -> toggleFullscreen(app));
+        screenShakeLabel = addStepperRow(videoCard, I18n.t("options.screen_shake"),
+                () -> toggleScreenShake(app), () -> toggleScreenShake(app));
         fixCardWidth(videoCard);
 
         Container controlsCard = addCard(columns, I18n.t("options.controls"), 16);
@@ -316,6 +319,13 @@ public class OptionsState extends BaseAppState {
         refreshLabels(settings);
     }
 
+    private void toggleScreenShake(PlayerContext app) {
+        GameSettings settings = app.getGameSettings();
+        settings.setScreenShake(!settings.isScreenShake());
+        app.saveGameSettings();
+        refreshLabels(settings);
+    }
+
     private void cycleResolution(PlayerContext app, int direction) {
         Resolution[] values = Resolution.values();
         GameSettings settings = app.getGameSettings();
@@ -336,6 +346,7 @@ public class OptionsState extends BaseAppState {
         videoQualityLabel.setText(settings.getVideoQuality().name());
         resolutionLabel.setText(settings.getResolution().toString());
         fullscreenLabel.setText(settings.isFullscreen() ? I18n.t("common.on") : I18n.t("common.off"));
+        screenShakeLabel.setText(settings.isScreenShake() ? I18n.t("common.on") : I18n.t("common.off"));
     }
 
     @Override

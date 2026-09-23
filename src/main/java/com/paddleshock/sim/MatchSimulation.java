@@ -184,8 +184,12 @@ public final class MatchSimulation {
         boolean withinReach = Math.abs(zGap) < (ball.getRadius() + GameConstants.PADDLE_HEIGHT);
         boolean withinPaddleWidth = Math.abs(ballPos.x - paddlePos.x) < paddle.getEffectiveRadius() + ball.getRadius();
         boolean lowEnoughToHit = ball.isWithinPaddleReach();
+        // Only a ball coming toward this paddle can be hit. The reach zone is deeper than one
+        // tick's travel at high frame rates, so without this a just-returned ball was re-hit on
+        // the next tick and bounced back into the paddle, trapping it there.
+        boolean movingToward = playerSide ? ball.getVelocity().z < 0f : ball.getVelocity().z > 0f;
 
-        if (withinReach && withinPaddleWidth && lowEnoughToHit) {
+        if (withinReach && withinPaddleWidth && lowEnoughToHit && movingToward) {
             ball.bounceOffPaddle(paddle);
             float spin = Ball.spinFromPaddleSpeed(paddleSpeedX);
             if (powerUpManager.consumeEffect(playerSide, PowerUpType.CURVEBALL)) {

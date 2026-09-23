@@ -118,6 +118,21 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     private float controlsHintTimer;
     private static final float CONTROLS_HINT_SECONDS = 7f;
 
+    /** Impact feedback (see docs/specs/09-visual-polish.md): shake, hit-stop, sparks, score flash. */
+    private final CameraShake cameraShake = new CameraShake();
+    private final HitStop hitStop = new HitStop();
+    private final com.paddleshock.entities.ParticleBurst[] sparks = new com.paddleshock.entities.ParticleBurst[4];
+    private int nextSpark;
+    private Vector3f cameraBaseLocation;
+    private Geometry scoreFlash;
+    private Material scoreFlashMaterial;
+    private final ColorRGBA scoreFlashColor = new ColorRGBA();
+    private float scoreFlashTimer;
+    private float scorePopTimer;
+    private static final float SCORE_FLASH_SECONDS = 0.35f;
+    private static final float SCORE_POP_SECONDS = 0.3f;
+    private static final ColorRGBA SPARK_COLOR = new ColorRGBA(1f, 0.88f, 0.55f, 1f);
+
     /** Rendering effects for this match (see docs/specs/09-visual-polish.md). */
     private DirectionalLight sun;
     private SceneEffects sceneEffects;
@@ -322,11 +337,86 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         // Map mouse movement to table-plane directions using the camera's actual
         // orientation, rather than assuming screen-right is world +X: the camera
         // is angled, so that assumption was inverting the paddle's controls.
+        cameraBaseLocation = simpleApp.getCamera().getLocation().clone();
+
         Vector3f camLeft = simpleApp.getCamera().getLeft();
         screenRightWorld.set(-camLeft.x, 0, -camLeft.z).normalizeLocal();
 
         Vector3f camDirection = simpleApp.getCamera().getDirection();
         screenUpWorld.set(camDirection.x, 0, camDirection.z).normalizeLocal();
+    }
+
+    /** Shake, ball pop, sparks and the score flash/pop - every frame, every mode. */
+    private void updateImpactFeedback(float tpf) {
+        // Read live, so turning it off from the pause menu's Options applies immediately.
+        cameraShake.setEnabled(app.getGameSettings().isScreenShake());
+        cameraShake.update(tpf);
+        if (cameraBaseLocation != null) {
+            com.jme3.renderer.Camera cam = ((SimpleApplication) getApplication()).getCamera();
+            float[] offset = cameraShake.offset();
+            cam.setLocation(cameraBaseLocation.add(cam.getLeft().mult(offset[0])).addLocal(cam.getUp().mult(offset[1])));
+        }
+        ball.animatePop(tpf);
+        for (com.paddleshock.entities.ParticleBurst spark : sparks) {
+            if (spark != null) {
+                spark.update(tpf);
+            }
+        }
+        if (scoreFlashTimer > 0f) {
+            scoreFlashTimer = Math.max(0f, scoreFlashTimer - tpf);
+            float t = scoreFlashTimer / SCORE_FLASH_SECONDS;
+            scoreFlashColor.a = 0.28f * t;
+            scoreFlashMaterial.setColor("Color", scoreFlashColor);
+            scoreFlash.setCullHint(scoreFlashTimer > 0f ? Spatial.CullHint.Never : Spatial.CullHint.Always);
+        }
+        if (scorePopTimer > 0f && scoreText != null) {
+            scorePopTimer = Math.max(0f, scorePopTimer - tpf);
+            float t = scorePopTimer / SCORE_POP_SECONDS;
+            scoreText.setLocalScale(1f + 0.35f * t * t);
+        }
+    }
+
+    private void spark(Vector3f at, ColorRGBA color) {
+        com.paddleshock.entities.ParticleBurst burst = sparks[nextSpark];
+        nextSpark = (nextSpark + 1) % sparks.length;
+        if (burst != null) {
+            burst.trigger(at, color, false);
+        }
+    }
+
+    /** A paddle hit: speed-mapped sound, sparks, ball pop, shake - and on a hard hit, a tiny
+     *  freeze (only honored by the purely local modes, see {@link #updateSinglePlayer}). */
+    private void onPaddleHitFeedback() {
+        float speed = ball.getVelocity().length();
+        float jitter = (float) (Math.random() * 2 - 1);
+        app.getAudioManager().playSfx("paddle_hit.ogg", com.paddleshock.audio.HitSoundMapping.volume(speed),
+                com.paddleshock.audio.HitSoundMapping.pitch(speed, jitter));
+        spark(ball.getPosition(), SPARK_COLOR);
+        ball.pop();
+        float intensity = Math.max(0f, Math.min(1f, (speed - GameConstants.BALL_BASE_SPEED)
+                / (GameConstants.BALL_MAX_SPEED - GameConstants.BALL_BASE_SPEED)));
+        cameraShake.addTrauma(0.2f + 0.3f * intensity);
+        if (intensity > 0.55f) {
+            hitStop.trigger(0.05f);
+        }
+    }
+
+    private void onWallBounceFeedback() {
+        float speed = ball.getVelocity().length();
+        app.getAudioManager().playSfx("wall_bounce.ogg", com.paddleshock.audio.HitSoundMapping.volume(speed) * 0.85f,
+                com.paddleshock.audio.HitSoundMapping.pitch(speed, (float) (Math.random() * 2 - 1)));
+        spark(ball.getPosition(), SPARK_COLOR);
+        cameraShake.addTrauma(0.08f);
+    }
+
+    /** A point: flash + score pop + shake. {@code localScored}: true yours (green), false
+     *  theirs (red), null when both sides are local or neither is yours (accent color). */
+    private void onPointFeedback(Boolean localScored) {
+        ColorRGBA color = localScored == null ? Theme.ORANGE : localScored ? Theme.GREEN : new ColorRGBA(0.9f, 0.25f, 0.25f, 1f);
+        scoreFlashColor.set(color.r, color.g, color.b, 0.28f);
+        scoreFlashTimer = SCORE_FLASH_SECONDS;
+        scorePopTimer = SCORE_POP_SECONDS;
+        cameraShake.addTrauma(Boolean.FALSE.equals(localScored) ? 0.45f : 0.3f);
     }
 
     /** Sky, shadow modes and the quality-dependent post-processing - see {@link SceneEffects}. */
@@ -353,6 +443,12 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         }
         if (celebrationBurst != null) {
             celebrationBurst.getNode().setShadowMode(com.jme3.renderer.queue.RenderQueue.ShadowMode.Off);
+        }
+        for (int i = 0; i < sparks.length; i++) {
+            sparks[i] = new com.paddleshock.entities.ParticleBurst(getApplication().getAssetManager(),
+                    com.paddleshock.entities.ParticleBurst.Style.SPARKS);
+            sparks[i].getNode().setShadowMode(com.jme3.renderer.queue.RenderQueue.ShadowMode.Off);
+            gameNode.attachChild(sparks[i].getNode());
         }
         if (profile.blobShadow()) {
             blobShadow = new com.paddleshock.entities.BlobShadow(getApplication().getAssetManager(), ball.getRadius());
@@ -617,6 +713,15 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
 
         replayController.buildHud(hudNode, font, simpleApp.getCamera().getWidth(), simpleApp.getCamera().getHeight());
 
+        scoreFlash = new Geometry("scoreFlash", new com.jme3.scene.shape.Quad(simpleApp.getCamera().getWidth(),
+                simpleApp.getCamera().getHeight()));
+        scoreFlashMaterial = new Material(simpleApp.getAssetManager(), "Common/MatDefs/Misc/Unshaded.j3md");
+        scoreFlashMaterial.getAdditionalRenderState().setBlendMode(RenderState.BlendMode.Alpha);
+        scoreFlash.setMaterial(scoreFlashMaterial);
+        scoreFlash.setLocalTranslation(0f, 0f, -1f);
+        scoreFlash.setCullHint(Spatial.CullHint.Always);
+        hudNode.attachChild(scoreFlash);
+
         if (mode == Mode.LOCAL_VERSUS) {
             controlsHint = new BitmapText(font);
             controlsHint.setSize(18);
@@ -783,6 +888,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         if (blobShadow != null) {
             blobShadow.update(ball.getPosition(), ballVisible);
         }
+        updateImpactFeedback(tpf);
         if (celebrationBurst != null) {
             celebrationBurst.update(tpf);
         }
@@ -838,6 +944,9 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     }
 
     private void updateSinglePlayer(float tpf) {
+        if (hitStop.apply(tpf) == 0f) {
+            return; // a hard hit's brief freeze - the scene keeps rendering, the rally pauses
+        }
         PaddleInput playerTickInput = computeLocalPaddleInput(tpf);
         PaddleInput opponentTickInput = computeOpponentAiInput(tpf);
 
@@ -852,6 +961,9 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     /** Local versus: Player 1's mouse input vs Player 2's keyboard/gamepad input, same local
      *  simulation and HUD flow as single-player minus the AI. */
     private void updateLocalVersus(float tpf) {
+        if (hitStop.apply(tpf) == 0f) {
+            return;
+        }
         PaddleInput p1 = computeLocalPaddleInput(tpf);
         float[] p2Delta = secondPlayer.consumeWorldDelta(tpf, screenRightWorld, screenUpWorld);
         Integer p2Slot = secondPlayer.consumePowerUpSlot();
@@ -1065,6 +1177,9 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         if (mode == Mode.JOINER && snapshot.joinerScore() > joinerDisplayScore) {
             // The joiner scores on the host's (near, -z) goal.
             celebrateLocalPoint(-GameConstants.TABLE_HALF_LENGTH);
+            onPointFeedback(true);
+        } else if (snapshot.hostScore() > hostDisplayScore || snapshot.joinerScore() > joinerDisplayScore) {
+            onPointFeedback(mode == Mode.JOINER ? Boolean.FALSE : null);
         }
         hostDisplayScore = snapshot.hostScore();
         joinerDisplayScore = snapshot.joinerScore();
@@ -1075,10 +1190,10 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         if (snapshot != lastAppliedSnapshot) {
             lastAppliedSnapshot = snapshot;
             if (snapshot.isWallBounce()) {
-                app.getAudioManager().playSfx("wall_bounce.ogg");
+                onWallBounceFeedback();
             }
             if (snapshot.isHostPaddleHit() || snapshot.isJoinerPaddleHit()) {
-                app.getAudioManager().playSfx("paddle_hit.ogg");
+                onPaddleHitFeedback();
             }
             if (snapshot.isShieldBlock()) {
                 onShieldBlocked();
@@ -1184,10 +1299,10 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     /** Translates what the simulation reported happened this tick into SFX/HUD/app side effects. */
     private void applyTickResult(TickResult result) {
         if (result.isWallBounce()) {
-            app.getAudioManager().playSfx("wall_bounce.ogg");
+            onWallBounceFeedback();
         }
         if (result.isAnyPaddleHit()) {
-            app.getAudioManager().playSfx("paddle_hit.ogg");
+            onPaddleHitFeedback();
         }
         if (result.isShieldBlocked()) {
             onShieldBlocked();
@@ -1212,6 +1327,8 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             celebrateLocalPoint(-GameConstants.TABLE_HALF_LENGTH);
         }
         if (result.getScorer() != TickResult.Scorer.NONE) {
+            // Single-player/host: "player" is you. Local versus: both sides are local players.
+            onPointFeedback(mode == Mode.LOCAL_VERSUS ? null : result.getScorer() == TickResult.Scorer.PLAYER);
             updateScoreText();
             app.getAudioManager().playSfx("score.ogg");
             if (result.isMatchOver()) {
@@ -1244,6 +1361,8 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
 
     /** A Shield stopped a goal: a distinct sound plus a text banner (not just the bar vanishing). */
     private void onShieldBlocked() {
+        spark(ball.getPosition(), PowerUpType.SHIELD.getColor());
+        cameraShake.addTrauma(0.3f);
         app.getAudioManager().playSfx("wall_bounce.ogg");
         app.getAudioManager().playSfx("powerup_activate.ogg");
         showBanner(I18n.t("gameplay.shield_blocked"), PowerUpType.SHIELD.getColor());
@@ -1369,6 +1488,11 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         if (controlsHint != null) {
             controlsHint.setCullHint(Spatial.CullHint.Always);
             controlsHintTimer = 0f;
+        }
+        // Same for a power-up banner: it would otherwise draw over the pause/options screens.
+        if (powerUpBannerText != null) {
+            powerUpBannerText.setCullHint(Spatial.CullHint.Always);
+            powerUpBannerTimer = 0f;
         }
     }
 }
