@@ -9,11 +9,16 @@ import com.simsilica.lemur.Axis;
 import com.simsilica.lemur.Button;
 import com.simsilica.lemur.Container;
 import com.simsilica.lemur.DefaultRangedValueModel;
+import com.simsilica.lemur.FillMode;
+import com.simsilica.lemur.HAlignment;
 import com.simsilica.lemur.Insets3f;
 import com.simsilica.lemur.Label;
+import com.simsilica.lemur.Panel;
 import com.simsilica.lemur.Slider;
+import com.simsilica.lemur.VAlignment;
 import com.simsilica.lemur.component.QuadBackgroundComponent;
 import com.simsilica.lemur.component.SpringGridLayout;
+import com.simsilica.lemur.core.GuiControl;
 import com.simsilica.lemur.core.VersionedReference;
 
 import com.paddleshock.app.PlayerContext;
@@ -164,7 +169,15 @@ public class OptionsState extends BaseAppState {
         border.setBackground(new QuadBackgroundComponent(Theme.PANEL_LINE));
         border.setInsets(new Insets3f(2, 2, 2, 2));
 
-        Container inner = border.addChild(new Container(new SpringGridLayout(Axis.Y, Axis.X)));
+        // FillMode.None on the main (row-stacking) axis matters here: the 4 cards sit side by side
+        // in a row that stretches every card to match the tallest one's height (VIDEO, with its 4
+        // rows) - without this, the default Even fill would then redistribute THAT extra height
+        // across AUDIO/CONTROLS's own (fewer) rows, inflating each row well past its own preferred
+        // height. That's what was stretching every row's contents - stepper buttons included, just
+        // less obviously than the sliders - into tall slivers; any leftover height now just becomes
+        // blank space at the bottom of the shorter cards instead.
+        Container inner = border.addChild(
+                new Container(new SpringGridLayout(Axis.Y, Axis.X, FillMode.None, FillMode.Even)));
         inner.setBackground(new QuadBackgroundComponent(Theme.PANEL));
         inner.setInsets(new Insets3f(14, 16, 14, 16));
 
@@ -238,7 +251,7 @@ public class OptionsState extends BaseAppState {
         button.setBackground(new QuadBackgroundComponent(active ? Theme.GREEN_DIM : Theme.PANEL_HOVER));
         button.setColor(active ? Theme.TEXT : Theme.TEXT_DIM);
         button.setFontSize(12);
-        button.setTextHAlignment(com.simsilica.lemur.HAlignment.Left);
+        button.setTextHAlignment(HAlignment.Left);
         button.setPreferredSize(new Vector3f(CARD_WIDTH - 32, 44, 0));
     }
 
@@ -277,7 +290,7 @@ public class OptionsState extends BaseAppState {
         valueLabel.setColor(Theme.TEXT);
         valueLabel.setFontSize(12);
         valueLabel.setPreferredSize(new Vector3f(82, 28, 0));
-        valueLabel.setTextHAlignment(com.simsilica.lemur.HAlignment.Center);
+        valueLabel.setTextHAlignment(HAlignment.Center);
 
         Button plus = row.addChild(new Button("+"));
         plus.setBackground(new QuadBackgroundComponent(Theme.PANEL_HOVER));
@@ -297,15 +310,31 @@ public class OptionsState extends BaseAppState {
     private record SliderRow(Slider slider, Label valueLabel) {
     }
 
+    /** Card content width (matches {@link #addCard}'s 16px left/right insets on {@link
+     *  #CARD_WIDTH}) - the budget {@link #addSliderRow} divides between its name/slider/value
+     *  columns so the slider can be as wide as the card allows. */
+    private static final float CARD_CONTENT_WIDTH = CARD_WIDTH - 32f;
+    // Matches SLIDER_ARROW_SIZE exactly (with the slider's own 2px top+bottom style insets, its
+    // preferred height is also 24) so the row's minor-axis fill has nothing to stretch: every cell
+    // (name label, slider, value label) already wants the same height, so the arrow buttons render
+    // at their real 22x22 instead of being inflated to match a taller sibling cell.
+    private static final float SLIDER_ROW_HEIGHT = 24f;
+    private static final float SLIDER_ARROW_SIZE = 22f;
+    private static final float SLIDER_NAME_WIDTH = 100f;
+    private static final float SLIDER_VALUE_WIDTH = 36f;
+    /** Everything left over for the track between the two arrow buttons. */
+    private static final float SLIDER_TRACK_WIDTH =
+            CARD_CONTENT_WIDTH - SLIDER_NAME_WIDTH - SLIDER_VALUE_WIDTH - 2 * SLIDER_ARROW_SIZE;
+
     /**
      * Builds a NAME / {@code <--0-->} / value row: a real drag-and-arrow-button {@link Slider}
      * (see {@link UiStyle}'s {@code "slider.*"} overrides for how its look is pulled away from
-     * Lemur's default teal "glass" gradient) sized to fit the same 256px of card content width the
-     * stepper rows use, plus a label mirroring the slider's current value. The slider's arrow
-     * buttons get the same click sound as the stepper rows'; dragging the thumb stays silent.
-     * Reading the live value back out of the model and persisting it is the caller's job (see
-     * {@link #update(float)}) - a {@code Slider} only fires click commands for its arrow buttons,
-     * never for a drag, so nothing here can just be an {@code addClickCommands} callback.
+     * Lemur's default teal "glass" gradient), sized to use all of the card's content width, plus
+     * a label mirroring the slider's current value. The slider's arrow buttons get the same click
+     * sound as the stepper rows'; dragging the thumb stays silent. Reading the live value back out
+     * of the model and persisting it is the caller's job (see {@link #update(float)}) - a
+     * {@code Slider} only fires click commands for its arrow buttons, never for a drag, so nothing
+     * here can just be an {@code addClickCommands} callback.
      */
     private SliderRow addSliderRow(Container parent, String name, double min, double max, double value,
             double delta) {
@@ -315,26 +344,52 @@ public class OptionsState extends BaseAppState {
         Label nameLabel = row.addChild(new Label(name));
         nameLabel.setColor(Theme.TEXT_DIM);
         nameLabel.setFontSize(12);
-        nameLabel.setPreferredSize(new Vector3f(108, 28, 0));
+        nameLabel.setPreferredSize(new Vector3f(SLIDER_NAME_WIDTH, SLIDER_ROW_HEIGHT, 0));
+        nameLabel.setTextVAlignment(VAlignment.Center);
 
         Slider slider = row.addChild(new Slider(new DefaultRangedValueModel(min, max, value), Axis.X));
         slider.setDelta(delta);
-        slider.setPreferredSize(new Vector3f(96, 24, 0));
+
+        // Rather than fight the Slider container's own preferred-size recompute (it's managed by
+        // its OWN internal BorderLayout, which recalculates the container's size from its children
+        // every pass - a plain setPreferredSize on the Slider itself doesn't stick), size the
+        // pieces that actually determine that computed size: the two arrow buttons (their preferred
+        // size sets both their own on-screen size AND the slider's overall height, since
+        // BorderLayout stretches the center "range" region to whatever height the East/West
+        // buttons need) and the range/track panel (its preferred width is the main driver of the
+        // slider's overall width).
+        Vector3f arrowSize = new Vector3f(SLIDER_ARROW_SIZE, SLIDER_ARROW_SIZE, 0);
+        for (Button arrow : new Button[] {slider.getDecrementButton(), slider.getIncrementButton()}) {
+            arrow.setPreferredSize(arrowSize);
+            arrow.setTextHAlignment(HAlignment.Center);
+            arrow.setTextVAlignment(VAlignment.Center);
+            arrow.addClickCommands(source -> playClick());
+        }
+
+        // The default track (Lemur calls it the "range" panel) is the same Theme.PANEL as the
+        // card behind it, so it was invisible - the knob looked like it floated in empty space.
+        // QuadBackgroundComponent's margin insets the drawn quad without affecting layout size, so
+        // this reads as a thin PANEL_LINE bar vertically centered in the row instead of a big block.
+        Panel range = slider.getRangePanel();
+        range.setPreferredSize(new Vector3f(SLIDER_TRACK_WIDTH, SLIDER_ARROW_SIZE, 0));
+        QuadBackgroundComponent trackBackground = new QuadBackgroundComponent(Theme.PANEL_LINE);
+        trackBackground.setMargin(0, (SLIDER_ARROW_SIZE - 4f) / 2f);
+        range.setBackground(trackBackground);
+
         // The thumb button isn't managed by the slider's own BorderLayout (it's positioned by hand
         // in Slider.resetStateView, based on its CURRENT size, not its preferred one), so a plain
         // setPreferredSize wouldn't actually resize the rendered knob - set its GuiControl size
         // directly to get a knob wide enough to see and grab.
-        Vector3f thumbSize = new Vector3f(10, 20, 0);
+        Vector3f thumbSize = new Vector3f(14, SLIDER_ARROW_SIZE, 0);
         slider.getThumbButton().setPreferredSize(thumbSize);
-        slider.getThumbButton().getControl(com.simsilica.lemur.core.GuiControl.class).setSize(thumbSize.clone());
-        slider.getDecrementButton().addClickCommands(source -> playClick());
-        slider.getIncrementButton().addClickCommands(source -> playClick());
+        slider.getThumbButton().getControl(GuiControl.class).setSize(thumbSize.clone());
 
         Label valueLabel = row.addChild(new Label(""));
         valueLabel.setColor(Theme.TEXT);
         valueLabel.setFontSize(12);
-        valueLabel.setPreferredSize(new Vector3f(44, 28, 0));
-        valueLabel.setTextHAlignment(com.simsilica.lemur.HAlignment.Center);
+        valueLabel.setPreferredSize(new Vector3f(SLIDER_VALUE_WIDTH, SLIDER_ROW_HEIGHT, 0));
+        valueLabel.setTextHAlignment(HAlignment.Center);
+        valueLabel.setTextVAlignment(VAlignment.Center);
 
         return new SliderRow(slider, valueLabel);
     }
