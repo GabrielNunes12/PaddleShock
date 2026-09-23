@@ -135,4 +135,16 @@ class PlayerProfileTest {
         RivalRecord rival = profile.getRivals().get(0);
         assertEquals("Player-12345678", rival.displayName());
     }
+
+    @Test
+    void tourProgressIsEmptyForOldSavesAndRecordsBeatenOpponents() {
+        com.google.gson.Gson gson = new com.google.gson.Gson();
+        assertTrue(gson.fromJson("{}", PlayerProfile.class).getTourBeatenIds().isEmpty());
+        PlayerProfile nulled = gson.fromJson("{\"tourBeatenIds\":null}", PlayerProfile.class);
+        assertTrue(nulled.getTourBeatenIds().isEmpty());
+
+        nulled.markTourBeaten("rookie_rex");
+        PlayerProfile roundTripped = gson.fromJson(gson.toJson(nulled), PlayerProfile.class);
+        assertEquals(java.util.Set.of("rookie_rex"), roundTripped.getTourBeatenIds());
+    }
 }

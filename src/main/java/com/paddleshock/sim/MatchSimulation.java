@@ -3,11 +3,13 @@ package com.paddleshock.sim;
 import com.jme3.math.Vector3f;
 
 import com.paddleshock.GameConstants;
+import com.paddleshock.data.LevelHazard;
 import com.paddleshock.data.PowerUpDefinition;
 import com.paddleshock.entities.Ball;
 import com.paddleshock.entities.Paddle;
 import com.paddleshock.entities.Table;
 import com.paddleshock.powerups.PowerUpManager;
+import com.paddleshock.powerups.PowerUpType;
 
 /**
  * Owns the authoritative state of a single match - the ball, both paddles, power-ups and score -
@@ -29,11 +31,32 @@ public final class MatchSimulation {
     private final Paddle opponentPaddle;
     private final Table table;
     private final PowerUpManager powerUpManager;
+    /** Points needed to win - {@link GameConstants#WIN_SCORE} except for shorter World Tour matches. */
+    private final int winScore;
+    private final LevelHazard hazard;
+    private final IceSlide playerIce = new IceSlide();
+    private final IceSlide opponentIce = new IceSlide();
+    /** Seconds since the match started - drives the Pinball bumpers' slide. */
+    private float matchTime;
+
+    private float playerPaddleSpeedX;
+    private float opponentPaddleSpeedX;
 
     private int playerScore;
     private int opponentScore;
 
     public MatchSimulation(Ball ball, Paddle playerPaddle, Paddle opponentPaddle, Table table) {
+        this(ball, playerPaddle, opponentPaddle, table, GameConstants.WIN_SCORE);
+    }
+
+    public MatchSimulation(Ball ball, Paddle playerPaddle, Paddle opponentPaddle, Table table, int winScore) {
+        this(ball, playerPaddle, opponentPaddle, table, winScore, LevelHazard.NONE);
+    }
+
+    public MatchSimulation(Ball ball, Paddle playerPaddle, Paddle opponentPaddle, Table table, int winScore,
+            LevelHazard hazard) {
+        this.hazard = hazard;
+        this.winScore = winScore;
         this.ball = ball;
         this.playerPaddle = playerPaddle;
         this.opponentPaddle = opponentPaddle;
@@ -45,6 +68,7 @@ public final class MatchSimulation {
     public void startNewMatch() {
         playerScore = 0;
         opponentScore = 0;
+        matchTime = 0f;
         ball.launch(Math.random() < 0.5 ? 1f : -1f);
     }
 
@@ -52,8 +76,12 @@ public final class MatchSimulation {
     public TickResult tick(float tpf, PaddleInput playerInput, PaddleInput opponentInput) {
         TickResult result = new TickResult();
 
-        playerPaddle.moveDelta(playerInput.getDeltaX(), playerInput.getDeltaZ());
-        opponentPaddle.moveDelta(opponentInput.getDeltaX(), opponentInput.getDeltaZ());
+        matchTime += tpf;
+        movePaddle(playerPaddle, playerIce, playerInput, tpf);
+        movePaddle(opponentPaddle, opponentIce, opponentInput, tpf);
+        // Sideways swipe speed this tick, which becomes spin if that paddle hits the ball.
+        playerPaddleSpeedX = tpf > 0f ? playerPaddle.getLastMoveX() / tpf : 0f;
+        opponentPaddleSpeedX = tpf > 0f ? opponentPaddle.getLastMoveX() / tpf : 0f;
 
         PowerUpDefinition playerPowerUp = playerInput.getActivatedPowerUp();
         if (playerPowerUp != null) {
@@ -79,25 +107,58 @@ public final class MatchSimulation {
         return result;
     }
 
+    /** Applies one side's movement input - straight through, or through its ice slide on Glacier Rink. */
+    private void movePaddle(Paddle paddle, IceSlide ice, PaddleInput input, float tpf) {
+        if (hazard != LevelHazard.ICE) {
+            paddle.moveDelta(input.getDeltaX(), input.getDeltaZ());
+            return;
+        }
+        float[] slid = ice.step(input.getDeltaX(), input.getDeltaZ(), tpf);
+        paddle.moveDelta(slid[0], slid[1]);
+        // moveDelta scales by the paddle's speed multipliers; compare in input units.
+        float multiplier = paddle.getEffectiveSpeedMultiplier();
+        ice.onBlocked(slid[0], multiplier > 0f ? paddle.getLastMoveX() / multiplier : 0f, tpf);
+    }
+
+    /** The near Pinball bumper's current x (the far one is its mirror); 0 on any other arena. */
+    public float getBumperOffset() {
+        return hazard == LevelHazard.BUMPERS ? Bumpers.offsetAt(matchTime) : 0f;
+    }
+
+    public LevelHazard getHazard() {
+        return hazard;
+    }
+
     private void handleCollisions(TickResult result) {
         Vector3f pos = ball.getPosition();
+
+        if (hazard == LevelHazard.BUMPERS && Bumpers.collide(ball, getBumperOffset())) {
+            result.setWallBounce(true);
+        }
 
         if (table.isOutsideSideRails(pos, ball.getRadius())) {
             ball.bounceOffSideRail();
             result.setWallBounce(true);
         }
 
-        if (tryPaddleBounce(playerPaddle)) {
+        if (tryPaddleBounce(playerPaddle, playerPaddleSpeedX, true)) {
             result.setPlayerPaddleHit(true);
         }
-        if (tryPaddleBounce(opponentPaddle)) {
+        if (tryPaddleBounce(opponentPaddle, opponentPaddleSpeedX, false)) {
             result.setOpponentPaddleHit(true);
         }
 
-        if (pos.z < -GameConstants.TABLE_HALF_LENGTH) {
+        // A live Shield turns a would-be goal into a rebound off the goal line (one block each).
+        if (pos.z < -GameConstants.TABLE_HALF_LENGTH && powerUpManager.consumeEffect(true, PowerUpType.SHIELD)) {
+            ball.reboundFromGoal(-GameConstants.TABLE_HALF_LENGTH);
+            result.setShieldBlocked(true);
+        } else if (pos.z > GameConstants.TABLE_HALF_LENGTH && powerUpManager.consumeEffect(false, PowerUpType.SHIELD)) {
+            ball.reboundFromGoal(GameConstants.TABLE_HALF_LENGTH);
+            result.setShieldBlocked(true);
+        } else if (pos.z < -GameConstants.TABLE_HALF_LENGTH) {
             opponentScore++;
             result.setScorer(TickResult.Scorer.OPPONENT);
-            if (opponentScore >= GameConstants.WIN_SCORE) {
+            if (opponentScore >= winScore) {
                 result.setMatchOver(true);
                 result.setPlayerWon(false);
             } else {
@@ -106,7 +167,7 @@ public final class MatchSimulation {
         } else if (pos.z > GameConstants.TABLE_HALF_LENGTH) {
             playerScore++;
             result.setScorer(TickResult.Scorer.PLAYER);
-            if (playerScore >= GameConstants.WIN_SCORE) {
+            if (playerScore >= winScore) {
                 result.setMatchOver(true);
                 result.setPlayerWon(true);
             } else {
@@ -115,7 +176,7 @@ public final class MatchSimulation {
         }
     }
 
-    private boolean tryPaddleBounce(Paddle paddle) {
+    private boolean tryPaddleBounce(Paddle paddle, float paddleSpeedX, boolean playerSide) {
         Vector3f ballPos = ball.getPosition();
         Vector3f paddlePos = paddle.getPosition();
 
@@ -126,9 +187,38 @@ public final class MatchSimulation {
 
         if (withinReach && withinPaddleWidth && lowEnoughToHit) {
             ball.bounceOffPaddle(paddle);
+            float spin = Ball.spinFromPaddleSpeed(paddleSpeedX);
+            if (powerUpManager.consumeEffect(playerSide, PowerUpType.CURVEBALL)) {
+                Paddle other = playerSide ? opponentPaddle : playerPaddle;
+                spin = curveballSpin(paddleSpeedX, ballPos.x, other.getPosition().x);
+            }
+            ball.setSpin(spin);
             return true;
         }
         return false;
+    }
+
+    /** A Curveball hit: maximum spin, in the swipe direction - or, for a still paddle, curving
+     *  away from where the opponent's paddle is. */
+    static float curveballSpin(float paddleSpeedX, float ballX, float otherPaddleX) {
+        float direction;
+        if (Math.abs(paddleSpeedX) >= GameConstants.CURVEBALL_MIN_SWIPE_SPEED) {
+            direction = Math.signum(paddleSpeedX);
+        } else {
+            direction = otherPaddleX >= ballX ? -1f : 1f;
+        }
+        return direction * GameConstants.SPIN_MAX;
+    }
+
+    /** Ghost Ball: whether the ball should be hidden from the player ({@code forPlayerSide}) or
+     *  the opponent right now - only while a Ghost Ball is live on that side and the ball is over
+     *  the middle of the table. */
+    public boolean isBallHiddenFor(boolean forPlayerSide) {
+        return powerUpManager.hasEffect(forPlayerSide, PowerUpType.GHOST_BALL) && isInGhostZone(ball.getPosition().z);
+    }
+
+    public static boolean isInGhostZone(float ballZ) {
+        return Math.abs(ballZ) < GameConstants.GHOST_ZONE_HALF_DEPTH;
     }
 
     public Ball getBall() {
@@ -153,5 +243,9 @@ public final class MatchSimulation {
 
     public int getOpponentScore() {
         return opponentScore;
+    }
+
+    public int getWinScore() {
+        return winScore;
     }
 }

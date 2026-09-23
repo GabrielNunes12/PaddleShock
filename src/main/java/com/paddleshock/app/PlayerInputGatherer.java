@@ -41,6 +41,11 @@ final class PlayerInputGatherer {
         playerInput.register(inputManager);
     }
 
+    /** Same, but driven by the given gamepad index (-1 = mouse only) - see {@code PlayerInput}. */
+    void register(InputManager inputManager, int joystickIndex) {
+        playerInput.register(inputManager, joystickIndex);
+    }
+
     void registerPowerUpKeys(InputManager inputManager, ActionListener listener) {
         for (int i = 0; i < POWERUP_ACTIONS.length; i++) {
             inputManager.addMapping(POWERUP_ACTIONS[i], new KeyTrigger(POWERUP_KEYS[i]));

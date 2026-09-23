@@ -22,11 +22,21 @@ public class LevelDefinition extends ItemDefinition {
     private final float windAccelX;
     private final float bounceMultiplier;
     private final boolean floating;
+    private final LevelHazard hazard;
 
     public LevelDefinition(String id, String displayName, int price, ColorRGBA skyColor, ColorRGBA sunTint,
             ColorRGBA ambientTint, ColorRGBA groundColor, TextureSet groundTexture, ColorRGBA backdropColor,
             String tagline, float gravityMultiplier, float windAccelX, float bounceMultiplier, boolean floating) {
+        this(id, displayName, price, skyColor, sunTint, ambientTint, groundColor, groundTexture, backdropColor,
+                tagline, gravityMultiplier, windAccelX, bounceMultiplier, floating, LevelHazard.NONE);
+    }
+
+    public LevelDefinition(String id, String displayName, int price, ColorRGBA skyColor, ColorRGBA sunTint,
+            ColorRGBA ambientTint, ColorRGBA groundColor, TextureSet groundTexture, ColorRGBA backdropColor,
+            String tagline, float gravityMultiplier, float windAccelX, float bounceMultiplier, boolean floating,
+            LevelHazard hazard) {
         super(id, displayName, price);
+        this.hazard = hazard;
         this.skyColor = skyColor;
         this.sunTint = sunTint;
         this.ambientTint = ambientTint;
@@ -87,5 +97,10 @@ public class LevelDefinition extends ItemDefinition {
      *  in favor of a starfield and a planet. */
     public boolean isFloating() {
         return floating;
+    }
+
+    /** This arena's interactive hazard, if any. */
+    public LevelHazard getHazard() {
+        return hazard;
     }
 }

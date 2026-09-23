@@ -2,20 +2,27 @@
 
 A 3D paddle/air-hockey game built with Java + jMonkeyEngine, targeting a Steam release.
 
-## Current state: prototype
+## Features
 
-Main menu → play vs. a basic AI paddle, pause mid-match, adjust options, or visit the store.
-No leaderboards/Steamworks/real multiplayer yet.
+- **Solo:** quick match vs AI (Easy/Normal/Hard) and **World Tour**, an 18-opponent campaign
+  across all six arenas with a boss per arena.
+- **Online:** ranked ladder (Copper to Diamond), unranked lobbies, tournaments, spectating,
+  friends and invites (AWS-brokered P2P - see `aws/README.md`).
+- **Local versus:** two players on one PC (mouse vs arrow keys/gamepad) - also works with
+  Steam Remote Play Together.
+- **Gameplay:** spin (swipe through the ball to curve it), 7 power-ups (Paddle Grow, Speed Boost,
+  Slow Opponent, Tiny Paddle, Curveball, Shield, Ghost Ball), 6 arenas including two hazard
+  arenas (Pinball Palace bumpers, Glacier Rink ice), instant replay.
+- **Progression:** credits for wins (and a small amount for losses), a store with gear and
+  cosmetics (paddle skins, ball trails, score celebrations), 15 achievements mirrored to Steam
+  (`docs/steam-achievements.md`), and daily/weekly challenges.
+- **Languages:** English and Brazilian Portuguese.
+- Save data: `~/.paddleshock/profile.dat` and `settings.dat`, AES-GCM encrypted (see below).
 
-Controls:
-- Mouse: move paddle (left/right and forward/back within your half)
-- Esc: pause (only available vs. AI)
+Controls: mouse moves your paddle, 1/2/3 fire power-ups, Esc pauses. In local versus, Player 2
+uses the arrow keys (or a gamepad) and 8/9/0.
 
-Features in this pass:
-- Store: buy/equip paddles, tables, and balls, each with different stats (speed/size/bounciness)
-- 3 power-ups that spawn on the table: Paddle Grow, Speed Boost, Slow Opponent
-- Options: mouse sensitivity, brightness, sound volume (persisted, not yet wired to audio), video quality (antialiasing, requires restart to apply)
-- Save data: `~/.paddleshock/profile.dat` (currency + owned/equipped items) and `~/.paddleshock/settings.dat`, AES-GCM encrypted (see Save data security below)
+Design notes for each content feature live in `docs/specs/`.
 
 ## Running
 
@@ -48,15 +55,6 @@ LWJGL natives for the build OS are included, and the Steam redistributable (`nat
   `java tools/IconGen.java` and picked up automatically.
 - The packaged JVM won't start from an `ntfs3`-mounted drive on Linux (segfaults on launch); copy
   the image to a native Linux filesystem to test it there.
-
-## Planned features
-
-- Power-ups for paddles
-- Store: buy paddles, tables, balls with different stats
-- Leaderboards (Steamworks)
-- Multiplayer (Steamworks Networking)
-- AI opponent difficulty levels
-- Steam release
 
 ## Stack
 

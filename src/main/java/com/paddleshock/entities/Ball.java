@@ -24,6 +24,9 @@ public class Ball {
     private final float gravityMultiplier;
     private final float windAccelX;
     private float verticalVelocity;
+    /** Sideways spin - see docs/specs/03-spin.md. Positive curves the ball toward +x. */
+    private float spin;
+    private final Spatial model;
 
     public Ball(AssetManager assetManager, ColorRGBA color, TextureSet textureSet, BallModel ballModel,
             float speedMultiplier, float sizeMultiplier, float restitutionMultiplier,
@@ -34,7 +37,7 @@ public class Ball {
         this.gravityMultiplier = gravityMultiplier;
         this.windAccelX = windAccelX;
 
-        Spatial model = ballModel.getPath() != null
+        model = ballModel.getPath() != null
                 ? assetManager.loadModel(ballModel.getPath())
                 : new Geometry("ballShape", new Sphere(16, 16, 1f));
 
@@ -70,7 +73,31 @@ public class Ball {
                 0,
                 Math.signum(directionZ) * (float) Math.cos(angle) * baseSpeed);
         verticalVelocity = GameConstants.BALL_SERVE_POP;
+        spin = 0f;
         node.setLocalTranslation(0, radius, 0);
+    }
+
+    /** Spin imparted by a paddle moving sideways at {@code paddleSpeedX} (units/s) at contact:
+     *  proportional to the swipe, in the swipe's direction, clamped to {@link GameConstants#SPIN_MAX}. */
+    public static float spinFromPaddleSpeed(float paddleSpeedX) {
+        float spin = paddleSpeedX * GameConstants.SPIN_PER_PADDLE_SPEED;
+        return Math.max(-GameConstants.SPIN_MAX, Math.min(GameConstants.SPIN_MAX, spin));
+    }
+
+    public float getSpin() {
+        return spin;
+    }
+
+    public void setSpin(float spin) {
+        this.spin = spin;
+    }
+
+    /** Turns the model about its vertical axis in proportion to spin - purely visual, so every
+     *  client (including a joiner that only renders snapshots) can call it each frame. */
+    public void animateSpin(float tpf) {
+        if (spin != 0f) {
+            model.rotate(0f, spin * GameConstants.SPIN_VISUAL_RATE * tpf, 0f);
+        }
     }
 
     public void update(float tpf) {
@@ -87,6 +114,9 @@ public class Ball {
         }
 
         velocity.x += windAccelX * tpf;
+        velocity.x += spin * GameConstants.SPIN_CURVE_ACCEL * tpf;
+        spin *= Math.max(0f, 1f - GameConstants.SPIN_DECAY_PER_SECOND * tpf);
+        animateSpin(tpf);
 
         Vector3f horizontal = velocity.mult(tpf);
         node.setLocalTranslation(position.x + horizontal.x, newY, position.z + horizontal.z);
@@ -109,6 +139,16 @@ public class Ball {
         float clampedX = Math.max(-maxX, Math.min(maxX, position.x));
         node.setLocalTranslation(clampedX, position.y, position.z);
         velocity.x = -velocity.x * restitutionMultiplier;
+        // Reverse and halve spin, or it would keep pushing the ball back into the same rail.
+        spin = -spin * 0.5f;
+    }
+
+    /** Shield block: puts the ball back on the goal line at {@code goalZ} and sends it back the
+     *  way it came, as if it hit a wall. */
+    public void reboundFromGoal(float goalZ) {
+        Vector3f position = node.getLocalTranslation();
+        node.setLocalTranslation(position.x, position.y, goalZ);
+        velocity.z = -velocity.z;
     }
 
     /** Reflects off a paddle, biasing X based on where the ball hit the paddle. */
@@ -158,5 +198,11 @@ public class Ball {
         node.setLocalTranslation(x, y, z);
         velocity.set(velX, 0, velZ);
         verticalVelocity = verticalVel;
+    }
+
+    /** Same, plus the host's spin (drives the joiner's spin animation only - it runs no physics). */
+    public void setNetworkState(float x, float y, float z, float velX, float velZ, float verticalVel, float spin) {
+        setNetworkState(x, y, z, velX, velZ, verticalVel);
+        this.spin = spin;
     }
 }

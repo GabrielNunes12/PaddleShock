@@ -23,6 +23,8 @@ public class Paddle {
     private final float homeZ;
     private float x = 0f;
     private float zOffset = 0f;
+    /** Actual x displacement of the last {@link #moveDelta} call, after clamping - see {@link #getLastMoveX()}. */
+    private float lastMoveX = 0f;
 
     private final float baseSpeedMultiplier;
     private final float baseRadiusMultiplier;
@@ -54,14 +56,22 @@ public class Paddle {
     /** Adds a raw position delta (already scaled by the caller) and clamps to bounds. */
     public void moveDelta(float deltaX, float deltaZ) {
         float effectiveSpeed = baseSpeedMultiplier * buffSpeedMultiplier;
+        float xBefore = x;
         x += deltaX * effectiveSpeed;
         zOffset += deltaZ * effectiveSpeed;
 
         float maxX = GameConstants.TABLE_HALF_WIDTH - getEffectiveRadius();
         x = FastMath.clamp(x, -maxX, maxX);
         zOffset = FastMath.clamp(zOffset, -GameConstants.PADDLE_Z_RANGE, GameConstants.PADDLE_Z_RANGE);
+        lastMoveX = x - xBefore;
 
         updateTransform();
+    }
+
+    /** How far the paddle actually moved sideways in the last {@link #moveDelta} (0 against a
+     *  rail) - divided by the tick's tpf, this is the swipe speed that becomes spin on contact. */
+    public float getLastMoveX() {
+        return lastMoveX;
     }
 
     private void updateTransform() {
@@ -80,6 +90,7 @@ public class Paddle {
     public void setNetworkPosition(float worldX, float worldZ) {
         this.x = worldX;
         this.zOffset = worldZ - homeZ;
+        this.lastMoveX = 0f;
         updateTransform();
     }
 
@@ -89,6 +100,11 @@ public class Paddle {
 
     public float getEffectiveRadius() {
         return GameConstants.PADDLE_RADIUS * baseRadiusMultiplier * buffRadiusMultiplier;
+    }
+
+    /** Base (paddle item) x power-up speed multiplier that {@link #moveDelta} applies to its input. */
+    public float getEffectiveSpeedMultiplier() {
+        return baseSpeedMultiplier * buffSpeedMultiplier;
     }
 
     /** Temporary multiplier from a power-up; pass 1f to clear it. */

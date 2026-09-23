@@ -28,6 +28,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.paddleshock.GameConstants;
 import com.paddleshock.i18n.I18n;
+import com.paddleshock.tour.TourOpponent;
+import com.paddleshock.tour.WorldTour;
 import com.paddleshock.app.GameplayAppState;
 import com.paddleshock.app.Navigator;
 import com.paddleshock.app.PlayerContext;
@@ -52,6 +54,16 @@ public class MatchEndState extends BaseAppState {
     private int rewardEarned;
     private int playerScore;
     private int opponentScore;
+
+    /** Set (via {@link #setTourResult}) when the match was a World Tour match - swaps the REMATCH
+     *  button for NEXT/RETRY + WORLD TOUR. Cleared by every {@link #setResult}. */
+    private TourOpponent tourOpponent;
+
+    /** 1 or 2 when the match was local versus (the winning player), else 0 - see {@link #setLocalVersusResult}. */
+    private int localVersusWinner;
+
+    /** The match's target score, for the defeat screen's "first to N" line. */
+    private int winScore = GameConstants.WIN_SCORE;
 
     // Ranked-match rank display: the actual RankClient call happens on a background thread owned
     // by PaddleShockApp (see endRankedHostMatch/endRankedJoinerMatch) - this just polls for its
@@ -94,8 +106,37 @@ public class MatchEndState extends BaseAppState {
         this.ranked = false;
         this.connectionLost = false;
         this.extraNotice = null;
+        this.tourOpponent = null;
+        this.localVersusWinner = 0;
+        this.winScore = GameConstants.WIN_SCORE;
         this.rematchPhase = RematchPhase.NONE;
         this.keepAliveTimer = 0f;
+    }
+
+    /** A local versus result: always the celebratory layout, titled with the winning player, no
+     *  credits; scores are Player 1 : Player 2. REMATCH replays locally. */
+    public void setLocalVersusResult(boolean player1Won, int player1Score, int player2Score) {
+        setResult(true, 0, player1Score, player2Score);
+        this.localVersusWinner = player1Won ? 1 : 2;
+    }
+
+    /** Marks the result just set via {@link #setResult} as a World Tour match against
+     *  {@code opponent}; {@code firstWin} adds the "beaten / next unlocked" notice. */
+    public void setTourResult(TourOpponent opponent, boolean firstWin) {
+        this.tourOpponent = opponent;
+        this.winScore = opponent.winScore();
+        if (!firstWin) {
+            return;
+        }
+        TourOpponent next = nextInLadder(opponent);
+        this.extraNotice = next != null
+                ? I18n.t("matchend.tour_beaten_next", opponent.name().toUpperCase(), next.name().toUpperCase())
+                : I18n.t("matchend.tour_complete");
+    }
+
+    private static TourOpponent nextInLadder(TourOpponent opponent) {
+        int index = WorldTour.OPPONENTS.indexOf(opponent);
+        return index >= 0 && index + 1 < WorldTour.OPPONENTS.size() ? WorldTour.OPPONENTS.get(index + 1) : null;
     }
 
     /** Same as {@link #setResult}, but for a ranked multiplayer match - shows a "looking up
@@ -152,8 +193,9 @@ public class MatchEndState extends BaseAppState {
         PlayerContext ctx = (PlayerContext) getApplication();
         Navigator nav = (Navigator) getApplication();
         GameplayAppState gp = ctx.getGameplayState();
-        if (gp == null || gp.getMode() == GameplayAppState.Mode.SINGLE_PLAYER) {
-            return;
+        if (gp == null || gp.getMode() == GameplayAppState.Mode.SINGLE_PLAYER
+                || gp.getMode() == GameplayAppState.Mode.LOCAL_VERSUS) {
+            return; // no network peer to keep alive or negotiate with
         }
         NetHost host = gp.getNetHost();
         NetClient client = gp.getNetClient();
@@ -236,6 +278,10 @@ public class MatchEndState extends BaseAppState {
         GameplayAppState gp = ctx.getGameplayState();
         if (gp == null || gp.getMode() == GameplayAppState.Mode.SINGLE_PLAYER) {
             nav.showLoadout();
+            return;
+        }
+        if (gp.getMode() == GameplayAppState.Mode.LOCAL_VERSUS) {
+            nav.startLocalVersus();
             return;
         }
 
@@ -384,8 +430,30 @@ public class MatchEndState extends BaseAppState {
                 addMenuButton(actions, I18n.t("matchend.accept_rematch"), Theme.ORANGE, Theme.ON_ACCENT, this::onAcceptRematchClicked);
                 addMenuButton(actions, I18n.t("matchend.decline"), Theme.PANEL_HOVER, Theme.TEXT, this::onDeclineRematchClicked);
             }
-            case NONE -> addMenuButton(actions, I18n.t("matchend.rematch"), Theme.ORANGE, Theme.ON_ACCENT, this::onRematchClicked);
+            case NONE -> {
+                if (tourOpponent != null) {
+                    attachTourControls(actions);
+                } else {
+                    addMenuButton(actions, I18n.t("matchend.rematch"), Theme.ORANGE, Theme.ON_ACCENT, this::onRematchClicked);
+                }
+            }
         }
+    }
+
+    /** World Tour result actions: NEXT (after a win, if there is a next opponent) or RETRY, then
+     *  back to the ladder. */
+    private void attachTourControls(Container actions) {
+        Navigator nav = (Navigator) getApplication();
+        TourOpponent next = playerWon ? nextInLadder(tourOpponent) : null;
+        if (next != null) {
+            addMenuButton(actions, I18n.t("matchend.tour_next", next.name().toUpperCase()), Theme.ORANGE, Theme.ON_ACCENT,
+                    () -> nav.startTourMatch(next));
+        } else {
+            TourOpponent same = tourOpponent;
+            addMenuButton(actions, I18n.t(playerWon ? "matchend.tour_play_again" : "matchend.tour_retry"), Theme.ORANGE, Theme.ON_ACCENT,
+                    () -> nav.startTourMatch(same));
+        }
+        addMenuButton(actions, I18n.t("matchend.world_tour"), Theme.PANEL_HOVER, Theme.TEXT, nav::showWorldTour);
     }
 
     private void buildDimOverlay(float screenW, float screenH) {
@@ -399,21 +467,29 @@ public class MatchEndState extends BaseAppState {
     private void buildWinLayout(Navigator nav, float screenW, float screenH) {
         // Headline banner: bleeds off the left edge, orange fill, dark (ON_ACCENT) text.
         attachAngledQuad(-60, screenH - 84, 148, 0, 660, 660 * 0.86f, 0, Theme.ORANGE, 1);
-        attachText(36, screenH - 124, I18n.t("matchend.you_win"), 56, Theme.ON_ACCENT);
+        String headline = localVersusWinner == 1 ? I18n.t("matchend.p1_wins")
+                : localVersusWinner == 2 ? I18n.t("matchend.p2_wins") : I18n.t("matchend.you_win");
+        attachText(36, screenH - 124, headline, 56, Theme.ON_ACCENT);
 
         // Scoreboard tile: winner's number bright, loser's dim.
         attachAngledQuad(40, screenH - 268, 128, 0, 460, 460, 24, Theme.PANEL_HOVER, 1);
-        attachScoreboard(40, 460, screenH - 268, 128, playerScore, opponentScore, Theme.TEXT, Theme.TEXT_DIM);
+        // Winner's number bright: Player 2's is the right-hand one when they won a local match.
+        boolean rightWon = localVersusWinner == 2;
+        attachScoreboard(40, 460, screenH - 268, 128, playerScore, opponentScore,
+                rightWon ? Theme.TEXT_DIM : Theme.TEXT, rightWon ? Theme.TEXT : Theme.TEXT_DIM);
 
-        // Reward chip.
-        attachAngledQuad(528, screenH - 316, 60, 14, 232, 232, 0, Theme.GREEN, 1);
-        attachText(550, screenH - 335, I18n.t("matchend.credits_reward", rewardEarned), 20, Theme.ON_ACCENT);
+        // Reward chip (local versus pays nothing, so it has none).
+        if (localVersusWinner == 0) {
+            attachAngledQuad(528, screenH - 316, 60, 14, 232, 232, 0, Theme.GREEN, 1);
+            attachText(550, screenH - 335, I18n.t("matchend.credits_reward", rewardEarned), 20, Theme.ON_ACCENT);
+        }
 
         if (ranked) {
-            attachText(40, screenH - 358, rankLineText(), 15, rankLineColor());
+            // Below the scoreboard tile (screenH - 268 .. screenH - 396), not on top of it.
+            attachText(40, screenH - 408, rankLineText(), 15, rankLineColor());
         }
         if (extraNotice != null) {
-            attachText(40, screenH - (ranked ? 380 : 358), extraNotice, 13, Theme.TEXT_DIM);
+            attachText(40, screenH - (ranked ? 430 : 408), extraNotice, 13, Theme.TEXT_DIM);
         }
 
         // Actions: left-anchored, matching the banner's asymmetric composition.
@@ -440,7 +516,11 @@ public class MatchEndState extends BaseAppState {
         attachScoreboard(centerX - scoreWidth / 2f, scoreWidth, scoreY, 108, playerScore, opponentScore, Theme.TEXT_DIM, Theme.TEXT);
 
         float consolationY = scoreY - 108 - 20;
-        attachCenteredText(centerX, consolationY, I18n.t("matchend.try_again", GameConstants.WIN_SCORE), 16, Theme.TEXT_DIM);
+        String consolation = I18n.t("matchend.try_again", winScore);
+        if (rewardEarned > 0) {
+            consolation += "   " + I18n.t("matchend.consolation_reward", rewardEarned);
+        }
+        attachCenteredText(centerX, consolationY, consolation, 16, Theme.TEXT_DIM);
 
         float actionsY = consolationY - 24;
         if (ranked) {

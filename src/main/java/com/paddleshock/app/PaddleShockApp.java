@@ -13,7 +13,9 @@ import com.simsilica.lemur.style.BaseStyles;
 import java.io.IOException;
 import java.net.SocketException;
 
-import com.paddleshock.GameConstants;
+import com.paddleshock.achievements.Achievement;
+import com.paddleshock.achievements.AchievementTracker;
+import com.paddleshock.achievements.MatchOutcome;
 import com.paddleshock.audio.AudioManager;
 import com.paddleshock.data.MatchHistoryEntry;
 import com.paddleshock.data.PlayerProfile;
@@ -31,7 +33,12 @@ import com.paddleshock.net.TournamentClient;
 import com.paddleshock.net.TournamentService;
 import com.paddleshock.settings.GameSettings;
 import com.paddleshock.steam.SteamManager;
+import com.paddleshock.tour.TourOpponent;
+import com.paddleshock.tour.WorldTour;
+import com.paddleshock.ui.AchievementsState;
 import com.paddleshock.ui.CreditsState;
+import com.paddleshock.ui.ToastState;
+import com.paddleshock.ui.WorldTourState;
 import com.paddleshock.ui.FriendsState;
 import com.paddleshock.ui.LeaderboardState;
 import com.paddleshock.ui.LoadoutState;
@@ -76,6 +83,18 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
     private MultiplayerState multiplayerState;
     private com.paddleshock.ui.HowToPlayState howToPlayState;
     private CreditsState creditsState;
+    private WorldTourState worldTourState;
+    private AchievementsState achievementsState;
+    private ToastState toastState;
+
+    /** What the match that just ended was, captured on the render thread when it stopped (see
+     *  {@link #beginMatchEnd}) because ranked matches record their history later, from a network
+     *  thread, after the gameplay state may already be gone. */
+    private record MatchContext(MatchOutcome.Kind kind, String levelId,
+            com.paddleshock.settings.AiDifficulty aiDifficulty, int powerUpsUsed) {
+    }
+
+    private volatile MatchContext lastMatchContext;
     private LeaderboardState leaderboardState;
     private ProfileState profileState;
     private TournamentState tournamentState;
@@ -136,6 +155,9 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
         multiplayerState = new MultiplayerState();
         howToPlayState = new com.paddleshock.ui.HowToPlayState();
         creditsState = new CreditsState();
+        worldTourState = new WorldTourState();
+        achievementsState = new AchievementsState();
+        toastState = new ToastState();
         leaderboardState = new LeaderboardState();
         profileState = new ProfileState();
         tournamentState = new TournamentState();
@@ -143,6 +165,10 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
 
         rankedMatchCoordinator = new RankedMatchCoordinator(rankService, matchEndState,
                 this::endMatchCommon, this::recordMatchHistory);
+        // Rank results arrive on network threads - hop back to the render thread before touching
+        // the profile, Steam or the UI.
+        rankedMatchCoordinator.setRankListener(state -> enqueue(() ->
+                grantAchievements(AchievementTracker.recordRank(profile, state.getTier()), true)));
 
         stateManager.attach(splashState);
         stateManager.attach(mainMenuState);
@@ -154,6 +180,9 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
         stateManager.attach(multiplayerState);
         stateManager.attach(howToPlayState);
         stateManager.attach(creditsState);
+        stateManager.attach(worldTourState);
+        stateManager.attach(achievementsState);
+        stateManager.attach(toastState);
         stateManager.attach(leaderboardState);
         stateManager.attach(profileState);
         stateManager.attach(tournamentState);
@@ -168,10 +197,51 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
         multiplayerState.setEnabled(false);
         howToPlayState.setEnabled(false);
         creditsState.setEnabled(false);
+        worldTourState.setEnabled(false);
+        achievementsState.setEnabled(false);
         leaderboardState.setEnabled(false);
         profileState.setEnabled(false);
         tournamentState.setEnabled(false);
         friendsState.setEnabled(false);
+
+        syncAchievementsAtStartup();
+    }
+
+    /** Startup: credit an existing save for anything it already qualifies for (quietly - no toast
+     *  storm on launch), then re-send every local unlock to Steam so ones earned offline, or before
+     *  this build, still reach it. Called at the end of {@link #simpleInitApp}. */
+    private void syncAchievementsAtStartup() {
+        grantAchievements(AchievementTracker.checkProfileState(profile), false);
+        steamManager.unlockAchievements(profile.getUnlockedAchievements().stream()
+                .map(name -> "ACH_" + name).toList());
+    }
+
+    /** Persists, mirrors to Steam and (optionally) toasts newly unlocked achievements. Render thread only. */
+    private void grantAchievements(List<Achievement> unlocked, boolean toast) {
+        if (unlocked.isEmpty()) {
+            return;
+        }
+        saveProfile();
+        steamManager.unlockAchievements(unlocked.stream().map(Achievement::steamApiName).toList());
+        if (toast) {
+            for (Achievement achievement : unlocked) {
+                toastState.show(com.paddleshock.i18n.I18n.t("toast.achievement_unlocked"),
+                        com.paddleshock.i18n.I18n.t(achievement.titleKey()),
+                        com.paddleshock.i18n.I18n.t(achievement.descKey()));
+            }
+        }
+    }
+
+    @Override
+    public void checkAchievements() {
+        grantAchievements(AchievementTracker.checkProfileState(profile), true);
+    }
+
+    /** Opens the achievements list (from the PROFILE screen). */
+    public void showAchievements(Runnable backAction) {
+        achievementsState.setBackAction(backAction);
+        profileState.setEnabled(false);
+        achievementsState.setEnabled(true);
     }
 
     @Override
@@ -209,6 +279,7 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
             case HOST -> "host";
             case JOINER -> "joiner";
             case SPECTATOR -> "spectator";
+            case LOCAL_VERSUS -> "local versus";
         };
         return mode + " match in progress";
     }
@@ -263,6 +334,8 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
         multiplayerState.setEnabled(false);
         howToPlayState.setEnabled(false);
         creditsState.setEnabled(false);
+        worldTourState.setEnabled(false);
+        achievementsState.setEnabled(false);
         leaderboardState.setEnabled(false);
         profileState.setEnabled(false);
         tournamentState.setEnabled(false);
@@ -287,6 +360,33 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
         creditsState.setBackAction(backAction);
         mainMenuState.setEnabled(false);
         creditsState.setEnabled(true);
+    }
+
+    /** Shows the World Tour ladder (main menu CTA, or back from a tour match's result screen). */
+    public void showWorldTour() {
+        if (gameplayState != null) {
+            stateManager.detach(gameplayState);
+            gameplayState = null;
+        }
+        mainMenuState.setEnabled(false);
+        matchEndState.setEnabled(false);
+        loadoutState.setEnabled(false);
+        // Disable first so a re-show while already open still rebuilds with fresh progress.
+        worldTourState.setEnabled(false);
+        worldTourState.setEnabled(true);
+        audioManager.playMenuMusic();
+    }
+
+    /** Starts a World Tour match against {@code opponent} with the player's equipped gear. */
+    public void startTourMatch(TourOpponent opponent) {
+        worldTourState.setEnabled(false);
+        matchEndState.setEnabled(false);
+        if (gameplayState != null) {
+            stateManager.detach(gameplayState);
+        }
+        gameplayState = new GameplayAppState(opponent);
+        stateManager.attach(gameplayState);
+        audioManager.playRandomMatchMusic();
     }
 
     /** Shows the HOST/JOIN LAN multiplayer screen (wired up from the main menu's MULTIPLAYER button). */
@@ -470,12 +570,58 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
      *  see {@code NetHost#getJoinerPlayerId}/{@code NetClient#getHostPlayerId}), used to update the
      *  local rival tracker; {@code null} for single-player, which has no real opponent. */
     public void endMatch(boolean playerWon, int playerScore, int opponentScore, String opponentPlayerId) {
+        TourOpponent tourOpponent = gameplayState.getTourOpponent();
+        if (tourOpponent != null) {
+            endTourMatch(tourOpponent, playerWon, playerScore, opponentScore);
+            return;
+        }
         String mode = matchModeFor(gameplayState);
         int reward = endMatchCommon(playerWon, playerScore, opponentScore);
         matchEndState.setResult(playerWon, reward, playerScore, opponentScore);
         matchEndState.setEnabled(true);
         recordMatchHistory(mode, playerScore, opponentScore, playerWon, 0, opponentPlayerId);
         reportTournamentResultIfActive(playerWon);
+    }
+
+    /** Starts a two-players-on-one-PC match on the equipped arena (main menu LOCAL VERSUS). */
+    public void startLocalVersus() {
+        mainMenuState.setEnabled(false);
+        matchEndState.setEnabled(false);
+        if (gameplayState != null) {
+            stateManager.detach(gameplayState);
+        }
+        gameplayState = GameplayAppState.localVersus();
+        stateManager.attach(gameplayState);
+        audioManager.playRandomMatchMusic();
+    }
+
+    /** Local versus match end: no credits (one person could play both sides to farm them) - the
+     *  match is just recorded in history. {@code player1Won}/scores are Player 1's perspective. */
+    public void endLocalVersusMatch(boolean player1Won, int player1Score, int player2Score) {
+        beginMatchEnd(true);
+        matchEndState.setLocalVersusResult(player1Won, player1Score, player2Score);
+        matchEndState.setEnabled(true);
+        recordMatchHistory(matchModeFor(gameplayState), player1Score, player2Score, player1Won, 0, null);
+    }
+
+    /** World Tour match end: a first win against {@code opponent} pays its one-time reward and
+     *  unlocks the next opponent; a replay win pays the normal random reward - see
+     *  {@link WorldTour#winReward}. */
+    private void endTourMatch(TourOpponent opponent, boolean playerWon, int playerScore, int opponentScore) {
+        beginMatchEnd(playerWon);
+        java.util.Set<String> beatenBefore = profile.getTourBeatenIds();
+        int reward = playerWon
+                ? WorldTour.winReward(beatenBefore, opponent, randomMatchReward())
+                : MatchRewards.forResult(false, ThreadLocalRandom.current());
+        profile.addCurrency(reward);
+        if (playerWon) {
+            profile.markTourBeaten(opponent.id());
+        }
+        boolean firstWin = playerWon && !beatenBefore.contains(opponent.id());
+        matchEndState.setResult(playerWon, reward, playerScore, opponentScore);
+        matchEndState.setTourResult(opponent, firstWin);
+        matchEndState.setEnabled(true);
+        recordMatchHistory("World Tour", playerScore, opponentScore, playerWon, 0, null);
     }
 
     /** If this match was one bracket pairing of a live tournament (see
@@ -515,6 +661,7 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
             // endSpectatedMatch instead, which never calls this - but the switch must still be
             // exhaustive.
             case SPECTATOR -> "Spectator";
+            case LOCAL_VERSUS -> "Local Versus";
         };
     }
 
@@ -531,6 +678,8 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
             profile.recordRivalResult(opponentPlayerId, null, won);
         }
         saveProfile();
+        // Ranked matches get here from a network thread - achievements run on the render thread.
+        enqueue(() -> recordMatchAchievements(won, playerScore, opponentScore));
     }
 
     /** Same as {@link #endMatch}, but for the HOST side of a ranked multiplayer match: also
@@ -590,17 +739,54 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
     }
 
     private int endMatchCommon(boolean playerWon, int playerScore, int opponentScore) {
+        beginMatchEnd(playerWon);
+
+        // A completed match always pays something - the win range, or a small consolation on a loss.
+        int reward = MatchRewards.forResult(playerWon, ThreadLocalRandom.current());
+        profile.addCurrency(reward);
+        saveProfile();
+        return reward;
+    }
+
+    /** Evaluates achievements and daily/weekly challenges for the match captured in
+     *  {@link #lastMatchContext}. Render thread. */
+    private void recordMatchAchievements(boolean won, int playerScore, int opponentScore) {
+        MatchContext context = lastMatchContext;
+        if (context == null) {
+            return;
+        }
+        lastMatchContext = null;
+        MatchOutcome outcome = new MatchOutcome(context.kind(), won, playerScore, opponentScore,
+                context.levelId(), context.aiDifficulty(), context.powerUpsUsed());
+        grantAchievements(AchievementTracker.recordMatch(profile, outcome), true);
+
+        List<com.paddleshock.challenges.Challenge> completed =
+                com.paddleshock.challenges.ChallengeTracker.recordMatch(profile, outcome, java.time.LocalDate.now());
+        saveProfile();
+        for (com.paddleshock.challenges.Challenge challenge : completed) {
+            toastState.show(com.paddleshock.i18n.I18n.t(challenge.weekly() ? "toast.weekly_complete" : "toast.daily_complete"),
+                    com.paddleshock.ui.ChallengeText.describe(challenge),
+                    com.paddleshock.i18n.I18n.t("toast.challenge_reward", challenge.reward()));
+        }
+    }
+
+    /** Stops the match and plays the win/defeat sting - shared by every match-end path. Also
+     *  snapshots the match for achievements, while the gameplay state is still guaranteed to exist. */
+    private void beginMatchEnd(boolean playerWon) {
+        MatchOutcome.Kind kind = gameplayState.getTourOpponent() != null ? MatchOutcome.Kind.WORLD_TOUR
+                : gameplayState.getMode() == GameplayAppState.Mode.LOCAL_VERSUS ? MatchOutcome.Kind.LOCAL_VERSUS
+                : gameplayState.getMode() == GameplayAppState.Mode.SINGLE_PLAYER ? MatchOutcome.Kind.QUICK_MATCH
+                : MatchOutcome.Kind.ONLINE;
+        lastMatchContext = new MatchContext(kind, gameplayState.getAuthoritativeLevelId(),
+                kind == MatchOutcome.Kind.QUICK_MATCH ? gameSettings.getAiDifficulty() : null,
+                gameplayState.getLocalPowerUpsUsed());
         gameplayState.setEnabled(false);
         audioManager.stopMusic();
         audioManager.playSfx(playerWon ? "match_win.ogg" : "match_defeat.ogg");
+    }
 
-        int reward = 0;
-        if (playerWon) {
-            reward = ThreadLocalRandom.current().nextInt(GameConstants.MATCH_REWARD_MIN, GameConstants.MATCH_REWARD_MAX + 1);
-            profile.addCurrency(reward);
-            saveProfile();
-        }
-        return reward;
+    private static int randomMatchReward() {
+        return MatchRewards.forResult(true, ThreadLocalRandom.current());
     }
 
     public void showStore() {

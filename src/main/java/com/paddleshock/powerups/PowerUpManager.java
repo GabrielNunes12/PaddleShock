@@ -43,6 +43,18 @@ public class PowerUpManager {
         return aiCooldowns.getOrDefault(type, 0f) <= 0f;
     }
 
+    /** Whether {@code type} is currently live on the player's side ({@code onPlayerSide}) or the
+     *  opponent's. Buffs live on their caster's side; debuffs (e.g. Ghost Ball) on the target's. */
+    public boolean hasEffect(boolean onPlayerSide, PowerUpType type) {
+        return (onPlayerSide ? playerPaddleEffects : opponentPaddleEffects).containsKey(type);
+    }
+
+    /** Ends a live one-shot effect early because it was used (a Curveball hit, a Shield block);
+     *  returns whether it was live. */
+    public boolean consumeEffect(boolean onPlayerSide, PowerUpType type) {
+        return (onPlayerSide ? playerPaddleEffects : opponentPaddleEffects).remove(type) != null;
+    }
+
     public float getPlayerCooldownRemaining(PowerUpType type) {
         return Math.max(0f, playerCooldowns.getOrDefault(type, 0f));
     }

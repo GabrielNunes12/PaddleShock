@@ -17,6 +17,14 @@ public interface Navigator {
 
     void showCredits(Runnable backAction);
 
+    void showWorldTour();
+
+    void startLocalVersus();
+
+    void showAchievements(Runnable backAction);
+
+    void startTourMatch(com.paddleshock.tour.TourOpponent opponent);
+
     void showMultiplayer();
 
     void showTournament();

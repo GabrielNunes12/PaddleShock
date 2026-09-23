@@ -256,6 +256,16 @@ public final class NetProtocol {
     public static final int FLAG_POWERUP_ACTIVATED = 1 << 3;
     public static final int FLAG_MATCH_OVER = 1 << 4;
     public static final int FLAG_HOST_WON = 1 << 5;
+    public static final int FLAG_SHIELD_BLOCK = 1 << 6;
+
+    /** Bits of {@link SnapshotMessage#effects}: live behavior power-ups, host-perspective sides. */
+    public static final int EFFECT_HOST_SHIELD = 1;
+    public static final int EFFECT_JOINER_SHIELD = 1 << 1;
+    /** Ghost Ball live on the host (the ball is hidden from the host mid-table). */
+    public static final int EFFECT_HOST_GHOSTED = 1 << 2;
+    public static final int EFFECT_JOINER_GHOSTED = 1 << 3;
+    public static final int EFFECT_HOST_CURVEBALL = 1 << 4;
+    public static final int EFFECT_JOINER_CURVEBALL = 1 << 5;
 
     public record SnapshotMessage(
             float ballX, float ballY, float ballZ,
@@ -264,7 +274,46 @@ public final class NetProtocol {
             float joinerPaddleX, float joinerPaddleZ,
             int hostScore, int joinerScore,
             int flags,
-            int powerUpActorSide, int powerUpTypeOrdinal) {
+            int powerUpActorSide, int powerUpTypeOrdinal,
+            float ballSpin, int effects, float hazardOffset) {
+
+        /** The pre-hazard field list; no arena hazard (bumper offset 0). */
+        public SnapshotMessage(float ballX, float ballY, float ballZ, float ballVelX, float ballVelZ,
+                float ballVerticalVel, float hostPaddleX, float hostPaddleZ, float joinerPaddleX,
+                float joinerPaddleZ, int hostScore, int joinerScore, int flags, int powerUpActorSide,
+                int powerUpTypeOrdinal, float ballSpin, int effects) {
+            this(ballX, ballY, ballZ, ballVelX, ballVelZ, ballVerticalVel, hostPaddleX, hostPaddleZ,
+                    joinerPaddleX, joinerPaddleZ, hostScore, joinerScore, flags, powerUpActorSide,
+                    powerUpTypeOrdinal, ballSpin, effects, 0f);
+        }
+
+        /** The pre-effects field list; no live behavior power-ups. */
+        public SnapshotMessage(float ballX, float ballY, float ballZ, float ballVelX, float ballVelZ,
+                float ballVerticalVel, float hostPaddleX, float hostPaddleZ, float joinerPaddleX,
+                float joinerPaddleZ, int hostScore, int joinerScore, int flags, int powerUpActorSide,
+                int powerUpTypeOrdinal, float ballSpin) {
+            this(ballX, ballY, ballZ, ballVelX, ballVelZ, ballVerticalVel, hostPaddleX, hostPaddleZ,
+                    joinerPaddleX, joinerPaddleZ, hostScore, joinerScore, flags, powerUpActorSide,
+                    powerUpTypeOrdinal, ballSpin, 0, 0f);
+        }
+
+        public boolean hasEffect(int effectBit) {
+            return (effects & effectBit) != 0;
+        }
+
+        public boolean isShieldBlock() {
+            return (flags & FLAG_SHIELD_BLOCK) != 0;
+        }
+
+        /** The pre-spin field list; spin defaults to 0. */
+        public SnapshotMessage(float ballX, float ballY, float ballZ, float ballVelX, float ballVelZ,
+                float ballVerticalVel, float hostPaddleX, float hostPaddleZ, float joinerPaddleX,
+                float joinerPaddleZ, int hostScore, int joinerScore, int flags, int powerUpActorSide,
+                int powerUpTypeOrdinal) {
+            this(ballX, ballY, ballZ, ballVelX, ballVelZ, ballVerticalVel, hostPaddleX, hostPaddleZ,
+                    joinerPaddleX, joinerPaddleZ, hostScore, joinerScore, flags, powerUpActorSide,
+                    powerUpTypeOrdinal, 0f, 0, 0f);
+        }
 
         /** {@link #powerUpActorSide} values: who activated the power-up this tick (if any). */
         public static final int ACTOR_NONE = 0;
@@ -323,6 +372,9 @@ public final class NetProtocol {
             out.writeByte(snap.flags());
             out.writeByte(snap.powerUpActorSide());
             out.writeByte(snap.powerUpTypeOrdinal());
+            out.writeFloat(snap.ballSpin());
+            out.writeByte(snap.effects());
+            out.writeFloat(snap.hazardOffset());
             return bytes.toByteArray();
         } catch (IOException e) {
             throw new IllegalStateException("Failed to encode snapshot packet", e);
@@ -354,9 +406,14 @@ public final class NetProtocol {
             powerUpActorSide = in.readByte();
             powerUpTypeOrdinal = in.readByte();
         }
+        // Spin: likewise optional - an older host never sends it, which reads as no spin.
+        float ballSpin = in.available() >= 4 ? in.readFloat() : 0f;
+        int effects = in.available() >= 1 ? in.readByte() & 0xFF : 0;
+        // The Pinball bumpers' offset - optional too (an older host has no hazards to report).
+        float hazardOffset = in.available() >= 4 ? in.readFloat() : 0f;
         return new SnapshotMessage(ballX, ballY, ballZ, ballVelX, ballVelZ, ballVerticalVel,
                 hostPaddleX, hostPaddleZ, joinerPaddleX, joinerPaddleZ, hostScore, joinerScore, flags,
-                powerUpActorSide, powerUpTypeOrdinal);
+                powerUpActorSide, powerUpTypeOrdinal, ballSpin, effects, hazardOffset);
     }
 
     // ---- RANK_RESULT (host -> joiner) ----

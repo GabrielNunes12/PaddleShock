@@ -34,6 +34,12 @@ public class PlayerInput implements AnalogListener {
     private boolean gamepadConnected = false;
 
     public void register(InputManager inputManager) {
+        register(inputManager, 0);
+    }
+
+    /** {@code joystickIndex}: which connected gamepad drives this player (-1 = mouse only) - local
+     *  versus hands the first pad to Player 2 (see {@code SecondPlayerInput}). */
+    public void register(InputManager inputManager, int joystickIndex) {
         inputManager.setCursorVisible(false);
 
         inputManager.addMapping(MOUSE_X_POS, new MouseAxisTrigger(MouseInput.AXIS_X, false));
@@ -42,7 +48,9 @@ public class PlayerInput implements AnalogListener {
         inputManager.addMapping(MOUSE_Y_NEG, new MouseAxisTrigger(MouseInput.AXIS_Y, true));
         inputManager.addListener(this, MOUSE_X_POS, MOUSE_X_NEG, MOUSE_Y_POS, MOUSE_Y_NEG);
 
-        registerGamepad(inputManager);
+        if (joystickIndex >= 0) {
+            registerGamepad(inputManager, joystickIndex);
+        }
     }
 
     /**
@@ -50,14 +58,14 @@ public class PlayerInput implements AnalogListener {
      * Gracefully does nothing when no gamepad is connected (the overwhelmingly common case),
      * since jME3's joystick backend (LWJGL3/GLFW) simply reports an empty array in that case.
      */
-    private void registerGamepad(InputManager inputManager) {
+    private void registerGamepad(InputManager inputManager, int joystickIndex) {
         try {
             Joystick[] joysticks = inputManager.getJoysticks();
-            if (joysticks == null || joysticks.length == 0) {
+            if (joysticks == null || joysticks.length <= joystickIndex) {
                 return;
             }
 
-            Joystick pad = joysticks[0];
+            Joystick pad = joysticks[joystickIndex];
             JoystickAxis xAxis = pad.getXAxis();
             JoystickAxis yAxis = pad.getYAxis();
             if (xAxis == null || yAxis == null) {

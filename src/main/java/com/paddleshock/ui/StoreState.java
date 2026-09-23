@@ -1,5 +1,7 @@
 package com.paddleshock.ui;
 
+import java.util.List;
+
 import com.jme3.app.Application;
 import com.jme3.app.SimpleApplication;
 import com.jme3.app.state.BaseAppState;
@@ -40,8 +42,14 @@ public class StoreState extends BaseAppState {
     private static final int AVG_MATCH_REWARD = (com.paddleshock.GameConstants.MATCH_REWARD_MIN
             + com.paddleshock.GameConstants.MATCH_REWARD_MAX + 1) / 2;
 
+    /** Most cards shown at once; a longer category pages with < > arrows (see {@link #pageCount}). */
+    static final int PAGE_SIZE = 4;
+    private static final float PAGE_ARROW_WIDTH = 48f;
+
     private final Node uiRoot = new Node("storeUi");
     private String selectedCategory = "paddle";
+    /** Current page of {@link #selectedCategory}; reset whenever the category changes or the store opens. */
+    private int page = 0;
 
     /** When true, renders as a dimmed overlay panel (opened from match setup) instead of a full screen. */
     private boolean modal = false;
@@ -54,12 +62,14 @@ public class StoreState extends BaseAppState {
     /** Opens as a full-screen browse (main menu / match-end "STORE" buttons); returns to onClose. */
     public void showFull(Runnable onClose) {
         this.modal = false;
+        this.page = 0;
         this.backAction = onClose;
     }
 
     /** Opens as a dimmed modal on top of whatever's currently shown (match setup); returns via onClose. */
     public void showAsModal(Runnable onClose) {
         this.modal = true;
+        this.page = 0;
         this.backAction = onClose;
     }
 
@@ -79,13 +89,14 @@ public class StoreState extends BaseAppState {
         cardHeight = modal ? MODAL_CARD_HEIGHT : FULL_CARD_HEIGHT;
         swatchHeight = modal ? MODAL_SWATCH_HEIGHT : FULL_SWATCH_HEIGHT;
 
-        // A category with more items than the 3 every other tab has (currently just POWER-UPS,
-        // at 4) would otherwise overflow past the screen edge at the fixed card width - shrink
-        // proportionally to whatever actually fits instead of letting cards run off-screen.
-        int itemCount = itemCountFor(selectedCategory);
-        float maxRowWidth = screenW - (modal ? 80f : 112f);
-        if (itemCount > 0 && itemCount * cardWidth > maxRowWidth) {
-            cardWidth = maxRowWidth / itemCount;
+        // At most PAGE_SIZE cards are shown at once (a longer category pages); if even those
+        // don't fit at the fixed card width, shrink proportionally instead of running off-screen.
+        int totalItems = itemCountFor(selectedCategory);
+        page = clampPage(page, totalItems);
+        int shownItems = Math.min(totalItems, PAGE_SIZE);
+        float maxRowWidth = screenW - (modal ? 80f : 112f) - (totalItems > PAGE_SIZE ? 2 * PAGE_ARROW_WIDTH : 0f);
+        if (shownItems > 0 && shownItems * cardWidth > maxRowWidth) {
+            cardWidth = maxRowWidth / shownItems;
         }
 
         if (modal) {
@@ -127,6 +138,9 @@ public class StoreState extends BaseAppState {
         addTab(tabs, app, I18n.t("store.tab_tables"), "table");
         addTab(tabs, app, I18n.t("store.tab_balls"), "ball");
         addTab(tabs, app, I18n.t("store.tab_powerups"), "powerup");
+        addTab(tabs, app, I18n.t("store.tab_skins"), "skin");
+        addTab(tabs, app, I18n.t("store.tab_trails"), "trail");
+        addTab(tabs, app, I18n.t("store.tab_celebrations"), "celebration");
 
         Container cardsRow = panel.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
         cardsRow.setInsets(new Insets3f(0, 0, 16, 0));
@@ -189,6 +203,9 @@ public class StoreState extends BaseAppState {
         addTab(tabs, app, I18n.t("store.tab_tables"), "table");
         addTab(tabs, app, I18n.t("store.tab_balls"), "ball");
         addTab(tabs, app, I18n.t("store.tab_powerups"), "powerup");
+        addTab(tabs, app, I18n.t("store.tab_skins"), "skin");
+        addTab(tabs, app, I18n.t("store.tab_trails"), "trail");
+        addTab(tabs, app, I18n.t("store.tab_celebrations"), "celebration");
         Vector3f tabsSize = tabs.getPreferredSize();
         tabs.setLocalTranslation((screenW - tabsSize.x) / 2f, screenH - (HEADER_HEIGHT - tabsSize.y) / 2f, 2);
         uiRoot.attachChild(tabs);
@@ -231,6 +248,7 @@ public class StoreState extends BaseAppState {
         tab.addClickCommands(source -> {
             app.getAudioManager().playSfx("button_click.ogg");
             selectedCategory = category;
+            page = 0;
             rebuild(app);
         });
     }
@@ -241,6 +259,7 @@ public class StoreState extends BaseAppState {
             case "table" -> Catalog.TABLES.size();
             case "ball" -> Catalog.BALLS.size();
             case "powerup" -> Catalog.POWERUPS.size();
+            case "skin", "trail", "celebration" -> Catalog.cosmeticsFor(category).size();
             default -> 0;
         };
     }
@@ -256,10 +275,58 @@ public class StoreState extends BaseAppState {
         uiRoot.attachChild(cardsRow);
     }
 
+    /** Pages needed to show {@code items} cards, {@link #PAGE_SIZE} at a time (at least 1). */
+    static int pageCount(int items) {
+        return Math.max(1, (items + PAGE_SIZE - 1) / PAGE_SIZE);
+    }
+
+    /** {@code page} kept inside {@code [0, pageCount(items) - 1]}. */
+    static int clampPage(int page, int items) {
+        return Math.max(0, Math.min(page, pageCount(items) - 1));
+    }
+
+    /** The slice of {@code items} on the current page. */
+    private <T> List<T> onPage(List<T> items) {
+        int from = Math.min(items.size(), page * PAGE_SIZE);
+        return items.subList(from, Math.min(items.size(), from + PAGE_SIZE));
+    }
+
+    /** A < or > page arrow at one end of the card row; inert (dimmed) at the first/last page. */
+    private void addPageArrow(Container cardsRow, PlayerContext app, boolean forward) {
+        int pages = pageCount(itemCountFor(selectedCategory));
+        boolean enabled = forward ? page < pages - 1 : page > 0;
+        Button arrow = cardsRow.addChild(new Button(forward ? ">" : "<"));
+        arrow.setBackground(quad(enabled ? Theme.PANEL_HOVER : Theme.PANEL));
+        arrow.setColor(enabled ? Theme.TEXT : Theme.TEXT_DIM2);
+        arrow.setFontSize(24);
+        arrow.setTextHAlignment(com.simsilica.lemur.HAlignment.Center);
+        arrow.setTextVAlignment(com.simsilica.lemur.VAlignment.Center);
+        arrow.setPreferredSize(new Vector3f(PAGE_ARROW_WIDTH - 8, cardHeight, 0));
+        arrow.setInsets(new Insets3f(0, forward ? 8 : 0, 0, forward ? 0 : 8));
+        if (enabled) {
+            arrow.addClickCommands(source -> {
+                app.getAudioManager().playSfx("button_click.ogg");
+                page += forward ? 1 : -1;
+                rebuild(app);
+            });
+        }
+    }
+
     private void populateCards(Container cardsRow, PlayerContext app, PlayerProfile profile) {
+        boolean paged = itemCountFor(selectedCategory) > PAGE_SIZE;
+        if (paged) {
+            addPageArrow(cardsRow, app, false);
+        }
+        populateCardsOnPage(cardsRow, app, profile);
+        if (paged) {
+            addPageArrow(cardsRow, app, true);
+        }
+    }
+
+    private void populateCardsOnPage(Container cardsRow, PlayerContext app, PlayerProfile profile) {
         switch (selectedCategory) {
             case "paddle" -> {
-                for (PaddleDefinition item : Catalog.PADDLES) {
+                for (PaddleDefinition item : onPage(Catalog.PADDLES)) {
                     String[] stats = { I18n.t("store.stat_speed", percent(item.getSpeedMultiplier())),
                             I18n.t("store.stat_size", percent(item.getSizeMultiplier())) };
                     addCard(cardsRow, app, profile, "paddle", item.getId(), item.getDisplayName(),
@@ -267,14 +334,14 @@ public class StoreState extends BaseAppState {
                 }
             }
             case "table" -> {
-                for (TableDefinition item : Catalog.TABLES) {
+                for (TableDefinition item : onPage(Catalog.TABLES)) {
                     String[] stats = { I18n.t("store.stat_bounce", percent(item.getRestitutionMultiplier())) };
                     addCard(cardsRow, app, profile, "table", item.getId(), item.getDisplayName(),
                             item.getPrice(), item.getSurfaceColor(), stats);
                 }
             }
             case "ball" -> {
-                for (BallDefinition item : Catalog.BALLS) {
+                for (BallDefinition item : onPage(Catalog.BALLS)) {
                     String[] stats = { I18n.t("store.stat_speed", percent(item.getSpeedMultiplier())),
                             I18n.t("store.stat_size", percent(item.getSizeMultiplier())) };
                     addCard(cardsRow, app, profile, "ball", item.getId(), item.getDisplayName(),
@@ -282,8 +349,18 @@ public class StoreState extends BaseAppState {
                 }
             }
             case "powerup" -> {
-                for (PowerUpDefinition item : Catalog.POWERUPS) {
+                for (PowerUpDefinition item : onPage(Catalog.POWERUPS)) {
                     addPowerUpCard(cardsRow, app, profile, item);
+                }
+            }
+            case "skin", "trail", "celebration" -> {
+                String[] stats = { I18n.t("store.cosmetic_tag") };
+                String[] defaultStats = { I18n.t("store.cosmetic_default") };
+                for (com.paddleshock.data.CosmeticDefinition item : onPage(Catalog.cosmeticsFor(selectedCategory))) {
+                    // A rainbow item has no single color; show it with the brand orange swatch.
+                    ColorRGBA swatch = item.isRainbow() ? Theme.ORANGE : item.getColor();
+                    addCard(cardsRow, app, profile, selectedCategory, item.getId(), item.getDisplayName(),
+                            item.getPrice(), swatch, item.isNone() ? defaultStats : stats);
                 }
             }
             default -> throw new IllegalStateException("Unknown category: " + selectedCategory);
@@ -350,6 +427,9 @@ public class StoreState extends BaseAppState {
                 success = profile.purchase(category, id, price);
             }
             app.saveProfile();
+            if (success && !owned) {
+                app.checkAchievements();
+            }
             app.getAudioManager().playSfx(success ? "button_confirm.ogg" : "purchase_denied.ogg");
             rebuild(app);
         });
@@ -388,6 +468,11 @@ public class StoreState extends BaseAppState {
         status.setFontSize(14);
         status.setColor(Theme.TEXT_DIM);
 
+        Label description = card.addChild(new Label(I18n.t(powerUpDescriptionKey(item.getType()))));
+        description.setInsets(new Insets3f(0, 16, 6, 16));
+        description.setFontSize(12);
+        description.setColor(Theme.TEXT);
+
         String[] statTags = {
             I18n.t("store.stat_cooldown", Math.round(item.getCooldownSeconds())),
             I18n.t("store.stat_duration", Math.round(item.getType().getDuration()))
@@ -412,6 +497,9 @@ public class StoreState extends BaseAppState {
             buy.addClickCommands((Command<Button>) source -> {
                 boolean success = profile.purchasePowerUp(item.getId(), item.getPrice());
                 app.saveProfile();
+                if (success) {
+                    app.checkAchievements();
+                }
                 app.getAudioManager().playSfx(success ? "button_confirm.ogg" : "purchase_denied.ogg");
                 rebuild(app);
             });
@@ -450,6 +538,11 @@ public class StoreState extends BaseAppState {
      * {@code currentCredits}, rounded up. 0 if it's already affordable. Package-visible (rather
      * than private) so it's directly unit-testable without touching any Lemur/jME UI code.
      */
+    /** i18n key of a power-up's one-line store description, e.g. {@code powerup.desc.shield}. */
+    static String powerUpDescriptionKey(com.paddleshock.powerups.PowerUpType type) {
+        return "powerup.desc." + type.name().toLowerCase();
+    }
+
     static int estimateWinsNeeded(int price, int currentCredits) {
         int shortfall = price - currentCredits;
         if (shortfall <= 0) {

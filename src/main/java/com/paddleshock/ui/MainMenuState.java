@@ -24,6 +24,10 @@ import com.simsilica.lemur.component.SpringGridLayout;
 
 import com.paddleshock.app.Navigator;
 import com.paddleshock.app.PlayerContext;
+import com.paddleshock.challenges.Challenge;
+import com.paddleshock.challenges.ChallengeGenerator;
+import com.paddleshock.challenges.ChallengeTracker;
+import com.paddleshock.data.PlayerProfile;
 import com.paddleshock.i18n.I18n;
 import com.paddleshock.net.InviteClient;
 
@@ -125,6 +129,55 @@ public class MainMenuState extends BaseAppState {
         });
         uiRoot.attachChild(playVsAi);
         playVsAi.setLocalTranslation(32, taglineY - 40, 2);
+
+        // Secondary CTA: the single-player campaign, with progress right on the button.
+        java.util.Set<String> beaten = ((PlayerContext) getApplication()).getProfile().getTourBeatenIds();
+        Button worldTour = new Button(I18n.t("menu.world_tour",
+                com.paddleshock.tour.WorldTour.beatenCount(beaten), com.paddleshock.tour.WorldTour.OPPONENTS.size()));
+        worldTour.setBackground(new QuadBackgroundComponent(Theme.PANEL_HOVER));
+        worldTour.setColor(Theme.TEXT);
+        worldTour.setFontSize(18);
+        worldTour.setPreferredSize(new Vector3f(ctaWidth, 46, 0));
+        worldTour.addClickCommands(source -> {
+            ((PlayerContext) getApplication()).getAudioManager().playSfx("button_click.ogg");
+            ((Navigator) getApplication()).showWorldTour();
+        });
+        uiRoot.attachChild(worldTour);
+        worldTour.setLocalTranslation(32, taglineY - 40 - ctaHeight - 12, 2);
+
+        Container challenges = buildChallengePanel(ctaWidth);
+        uiRoot.attachChild(challenges);
+        challenges.setLocalTranslation(32, taglineY - 40 - ctaHeight - 12 - 46 - 24, 2);
+    }
+
+    /** Today's and this week's challenge: what to do, progress so far and the reward. */
+    private Container buildChallengePanel(float width) {
+        PlayerProfile profile = ((PlayerContext) getApplication()).getProfile();
+        // Lemur draws insets outside a container's background, so the padding comes from an inner
+        // container's insets showing the outer one's background.
+        Container outer = new Container(new SpringGridLayout(Axis.Y, Axis.X));
+        outer.setBackground(new QuadBackgroundComponent(Theme.PANEL));
+        Container panel = outer.addChild(new Container(new SpringGridLayout(Axis.Y, Axis.X, FillMode.None, FillMode.Even)));
+        panel.setBackground(new QuadBackgroundComponent(Theme.PANEL));
+        panel.setInsets(new Insets3f(12, 14, 4, 14));
+        for (Challenge challenge : ChallengeGenerator.current(java.time.LocalDate.now())) {
+            boolean done = ChallengeTracker.isComplete(profile, challenge);
+            Label heading = panel.addChild(new Label(I18n.t(challenge.weekly() ? "menu.weekly_challenge" : "menu.daily_challenge")));
+            heading.setFontSize(11);
+            heading.setColor(Theme.ORANGE);
+            Label description = panel.addChild(new Label(ChallengeText.describe(challenge)));
+            description.setFontSize(15);
+            description.setColor(done ? Theme.TEXT_DIM : Theme.TEXT);
+            String status = done ? I18n.t("menu.challenge_done", challenge.reward())
+                    : I18n.t("menu.challenge_progress", ChallengeTracker.progress(profile, challenge), challenge.target(),
+                            challenge.reward());
+            Label progress = panel.addChild(new Label(status));
+            progress.setFontSize(12);
+            progress.setColor(done ? Theme.GREEN : Theme.TEXT_DIM);
+            progress.setInsets(new Insets3f(0, 0, 8, 0));
+        }
+        outer.setPreferredSize(new Vector3f(width, outer.getPreferredSize().y, 0));
+        return outer;
     }
 
     /** Right panel: the other destinations as bordered nav-card rows. */
@@ -141,6 +194,7 @@ public class MainMenuState extends BaseAppState {
         Container nav = new Container(new SpringGridLayout(Axis.Y, Axis.X));
         nav.setBackground(new QuadBackgroundComponent(Theme.BACKGROUND));
         addNavCard(nav, I18n.t("menu.multiplayer"), Theme.BLUE_DIM, cardWidth, nav1::showMultiplayer);
+        addNavCard(nav, I18n.t("menu.local_versus"), Theme.BLUE_DIM, cardWidth, nav1::startLocalVersus);
         addNavCard(nav, I18n.t("menu.leaderboard"), Theme.ORANGE_DIM, cardWidth, nav1::showLeaderboard);
         addNavCard(nav, I18n.t("menu.profile"), Theme.GREEN_DIM, cardWidth, nav1::showProfile);
         addNavCard(nav, I18n.t("menu.friends"), Theme.PANEL_HOVER, cardWidth, nav1::showFriends);

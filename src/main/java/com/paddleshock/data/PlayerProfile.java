@@ -75,6 +75,26 @@ public class PlayerProfile {
     // treated as unclaimed.
     private int lastRewardedSeason = -1;
 
+    // World Tour opponents this player has beaten at least once (see com.paddleshock.tour.WorldTour).
+    // Old saves predate this field and deserialize it as null; getTourBeatenIds()/markTourBeaten()
+    // treat that as an empty set, same no-migration-needed treatment as rivals/friends above.
+    private Set<String> tourBeatenIds = new HashSet<>();
+
+    // Achievements (see com.paddleshock.achievements.AchievementTracker): unlocked Achievement enum
+    // names, plus the lifetime counters some of them need. Match history is capped, so these are
+    // kept separately. Old saves predate all four; null sets read as empty, and the counters simply
+    // start at 0 from the first match played on this build.
+    private Set<String> unlockedAchievements = new HashSet<>();
+    private int totalWins;
+    private int powerUpsUsed;
+    private Set<String> levelsWonOn = new HashSet<>();
+
+    // Daily/weekly challenges (see com.paddleshock.challenges): progress by challenge id and the
+    // ids already paid out. Pruned to the current day's/week's ids, so they never grow. Old saves
+    // predate both and deserialize them as null, which reads as "nothing yet".
+    private Map<String, Integer> challengeProgress = new HashMap<>();
+    private Set<String> challengesClaimed = new HashSet<>();
+
     private Set<String> ownedPaddleIds = new HashSet<>(Set.of("paddle_classic"));
     private Set<String> ownedTableIds = new HashSet<>(Set.of("table_classic"));
     private Set<String> ownedBallIds = new HashSet<>(Set.of("ball_classic"));
@@ -84,6 +104,15 @@ public class PlayerProfile {
     private String equippedTableId = "table_classic";
     private String equippedBallId = "ball_classic";
     private String equippedLevelId = "level_classic";
+
+    // Cosmetics (see CosmeticDefinition). Old saves predate these and deserialize them as null;
+    // ownedSetFor()/getEquippedId() fall back to the free "none" defaults.
+    private Set<String> ownedSkinIds = new HashSet<>(Set.of("skin_none"));
+    private Set<String> ownedTrailIds = new HashSet<>(Set.of("trail_none"));
+    private Set<String> ownedCelebrationIds = new HashSet<>(Set.of("celebration_none"));
+    private String equippedSkinId = "skin_none";
+    private String equippedTrailId = "trail_none";
+    private String equippedCelebrationId = "celebration_none";
 
     /** Up to 3 owned power-up ids, one per key slot (1/2/3); a slot is empty when null. */
     private List<String> powerUpLoadout = new ArrayList<>(List.of("", "", ""));
@@ -249,6 +278,92 @@ public class PlayerProfile {
         }
     }
 
+    /** World Tour opponent ids beaten at least once. Never {@code null}; read-only. */
+    public Set<String> getTourBeatenIds() {
+        return tourBeatenIds == null ? Set.of() : Set.copyOf(tourBeatenIds);
+    }
+
+    public void markTourBeaten(String opponentId) {
+        if (tourBeatenIds == null) {
+            tourBeatenIds = new HashSet<>();
+        }
+        tourBeatenIds.add(opponentId);
+    }
+
+    public int getChallengeProgress(String challengeId) {
+        return challengeProgress == null ? 0 : challengeProgress.getOrDefault(challengeId, 0);
+    }
+
+    public void setChallengeProgress(String challengeId, int progress) {
+        if (challengeProgress == null) {
+            challengeProgress = new HashMap<>();
+        }
+        challengeProgress.put(challengeId, progress);
+    }
+
+    public boolean isChallengeClaimed(String challengeId) {
+        return challengesClaimed != null && challengesClaimed.contains(challengeId);
+    }
+
+    /** Marks a challenge paid; returns {@code true} only the first time. */
+    public boolean claimChallenge(String challengeId) {
+        if (challengesClaimed == null) {
+            challengesClaimed = new HashSet<>();
+        }
+        return challengesClaimed.add(challengeId);
+    }
+
+    /** Drops progress/claims for any challenge that isn't one of {@code currentIds} (old days/weeks). */
+    public void pruneChallenges(Set<String> currentIds) {
+        if (challengeProgress != null) {
+            challengeProgress.keySet().retainAll(currentIds);
+        }
+        if (challengesClaimed != null) {
+            challengesClaimed.retainAll(currentIds);
+        }
+    }
+
+    /** Unlocked achievement names (see {@code Achievement}). Never {@code null}; read-only. */
+    public Set<String> getUnlockedAchievements() {
+        return unlockedAchievements == null ? Set.of() : Set.copyOf(unlockedAchievements);
+    }
+
+    /** Marks an achievement unlocked; returns {@code true} only if it wasn't already. */
+    public boolean unlockAchievement(String name) {
+        if (unlockedAchievements == null) {
+            unlockedAchievements = new HashSet<>();
+        }
+        return unlockedAchievements.add(name);
+    }
+
+    public int getTotalWins() {
+        return totalWins;
+    }
+
+    public int getPowerUpsUsed() {
+        return powerUpsUsed;
+    }
+
+    public void addPowerUpsUsed(int count) {
+        powerUpsUsed += Math.max(0, count);
+    }
+
+    /** Arenas (level ids) this player has won at least one match on. Never {@code null}; read-only. */
+    public Set<String> getLevelsWonOn() {
+        return levelsWonOn == null ? Set.of() : Set.copyOf(levelsWonOn);
+    }
+
+    /** Counts a win; {@code levelId} may be {@code null} when the arena isn't known. */
+    public void addWin(String levelId) {
+        totalWins++;
+        if (levelId != null) {
+            if (levelsWonOn == null) {
+                levelsWonOn = new HashSet<>();
+            }
+            levelsWonOn.add(levelId);
+        }
+    }
+
     public boolean owns(String category, String id) {
         // Levels are free for everyone, regardless of save history - never gated like paddle/table/ball.
         if ("level".equals(category)) {
@@ -276,6 +391,9 @@ public class PlayerProfile {
             case "table" -> equippedTableId = id;
             case "ball" -> equippedBallId = id;
             case "level" -> equippedLevelId = id;
+            case "skin" -> equippedSkinId = id;
+            case "trail" -> equippedTrailId = id;
+            case "celebration" -> equippedCelebrationId = id;
             default -> throw new IllegalArgumentException("Unknown category: " + category);
         }
     }
@@ -286,6 +404,9 @@ public class PlayerProfile {
             case "table" -> equippedTableId;
             case "ball" -> equippedBallId;
             case "level" -> equippedLevelId;
+            case "skin" -> equippedSkinId != null ? equippedSkinId : "skin_none";
+            case "trail" -> equippedTrailId != null ? equippedTrailId : "trail_none";
+            case "celebration" -> equippedCelebrationId != null ? equippedCelebrationId : "celebration_none";
             default -> throw new IllegalArgumentException("Unknown category: " + category);
         };
     }
@@ -296,8 +417,18 @@ public class PlayerProfile {
             case "paddle" -> ownedPaddleIds;
             case "table" -> ownedTableIds;
             case "ball" -> ownedBallIds;
+            case "skin" -> ownedSkinIds = withDefault(ownedSkinIds, "skin_none");
+            case "trail" -> ownedTrailIds = withDefault(ownedTrailIds, "trail_none");
+            case "celebration" -> ownedCelebrationIds = withDefault(ownedCelebrationIds, "celebration_none");
             default -> throw new IllegalArgumentException("Unknown category: " + category);
         };
+    }
+
+    /** An old save's missing cosmetic set becomes a fresh set holding just the free default. */
+    private static Set<String> withDefault(Set<String> owned, String defaultId) {
+        Set<String> set = owned != null ? owned : new HashSet<>();
+        set.add(defaultId);
+        return set;
     }
 
     public boolean ownsPowerUp(String id) {
