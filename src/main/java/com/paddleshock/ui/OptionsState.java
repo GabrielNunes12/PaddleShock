@@ -8,10 +8,13 @@ import com.jme3.scene.Node;
 import com.simsilica.lemur.Axis;
 import com.simsilica.lemur.Button;
 import com.simsilica.lemur.Container;
+import com.simsilica.lemur.DefaultRangedValueModel;
 import com.simsilica.lemur.Insets3f;
 import com.simsilica.lemur.Label;
+import com.simsilica.lemur.Slider;
 import com.simsilica.lemur.component.QuadBackgroundComponent;
 import com.simsilica.lemur.component.SpringGridLayout;
+import com.simsilica.lemur.core.VersionedReference;
 
 import com.paddleshock.app.PlayerContext;
 import com.paddleshock.i18n.I18n;
@@ -21,26 +24,34 @@ import com.paddleshock.settings.Resolution;
 import com.paddleshock.settings.VideoQuality;
 
 /**
- * Settings screen: the same 7 stepper-controlled settings as before, now grouped into 3
- * side-by-side cards (AUDIO/VIDEO/CONTROLS) instead of one flat vertical list - a pure
- * reskin/relayout (redesign mockup). Every row keeps its exact {@code -}/value/{@code +} stepper
- * mechanism and the same {@link GameSettings} calls it always made; only which card a row lives
- * in, and how the row itself is styled, changed.
+ * Settings screen: 8 settings grouped into 3 side-by-side cards (AUDIO/VIDEO/CONTROLS). Discrete
+ * settings (brightness, video quality, fullscreen, screen shake, resolution) keep their original
+ * {@code -}/value/{@code +} stepper mechanism. Continuous ones a player wants to drag straight to
+ * a value (sound volume, music volume, mouse sensitivity) are real {@link Slider}s instead - see
+ * {@link #addSliderRow} and {@link #update(float)} for how those apply live and persist.
  */
 public class OptionsState extends BaseAppState {
 
     private static final float CARD_WIDTH = 288f;
 
     private final Node uiRoot = new Node("optionsUi");
+    private final SaveDebounce saveDebounce = new SaveDebounce();
 
-    private Label mouseSensitivityLabel;
     private Label brightnessLabel;
-    private Label soundVolumeLabel;
-    private Label musicVolumeLabel;
     private Label videoQualityLabel;
     private Label fullscreenLabel;
     private Label screenShakeLabel;
     private Label resolutionLabel;
+
+    private Label mouseSensitivityLabel;
+    private Label soundVolumeLabel;
+    private Label musicVolumeLabel;
+    private Slider mouseSensitivitySlider;
+    private Slider soundVolumeSlider;
+    private Slider musicVolumeSlider;
+    private VersionedReference<Double> mouseSensitivityRef;
+    private VersionedReference<Double> soundVolumeRef;
+    private VersionedReference<Double> musicVolumeRef;
 
     private Button enLangButton;
     private Button ptBrLangButton;
@@ -60,6 +71,7 @@ public class OptionsState extends BaseAppState {
     private void rebuild(PlayerContext app) {
         uiRoot.detachAllChildren();
 
+        GameSettings settings = app.getGameSettings();
         SimpleApplication simpleApp = (SimpleApplication) getApplication();
         float screenW = simpleApp.getCamera().getWidth();
         float screenH = simpleApp.getCamera().getHeight();
@@ -83,10 +95,17 @@ public class OptionsState extends BaseAppState {
         columns.setInsets(new Insets3f(0, 0, 18, 0));
 
         Container audioCard = addCard(columns, I18n.t("options.audio"), 16);
-        soundVolumeLabel = addStepperRow(audioCard, I18n.t("options.sound_volume"),
-                () -> adjustSoundVolume(app, -0.1f), () -> adjustSoundVolume(app, 0.1f));
-        musicVolumeLabel = addStepperRow(audioCard, I18n.t("options.music_volume"),
-                () -> adjustMusicVolume(app, -0.1f), () -> adjustMusicVolume(app, 0.1f));
+        SliderRow soundVolumeRow = addSliderRow(audioCard, I18n.t("options.sound_volume"),
+                0.0, 1.0, settings.getSoundVolume(), 0.1);
+        soundVolumeSlider = soundVolumeRow.slider();
+        soundVolumeLabel = soundVolumeRow.valueLabel();
+        soundVolumeRef = soundVolumeSlider.getModel().createReference();
+
+        SliderRow musicVolumeRow = addSliderRow(audioCard, I18n.t("options.music_volume"),
+                0.0, 1.0, settings.getMusicVolume(), 0.1);
+        musicVolumeSlider = musicVolumeRow.slider();
+        musicVolumeLabel = musicVolumeRow.valueLabel();
+        musicVolumeRef = musicVolumeSlider.getModel().createReference();
         fixCardWidth(audioCard);
 
         Container videoCard = addCard(columns, I18n.t("options.video"), 16);
@@ -101,8 +120,12 @@ public class OptionsState extends BaseAppState {
         fixCardWidth(videoCard);
 
         Container controlsCard = addCard(columns, I18n.t("options.controls"), 16);
-        mouseSensitivityLabel = addStepperRow(controlsCard, I18n.t("options.mouse_sens"),
-                () -> adjustMouseSensitivity(app, -0.1f), () -> adjustMouseSensitivity(app, 0.1f));
+        SliderRow mouseSensitivityRow = addSliderRow(controlsCard, I18n.t("options.mouse_sens"),
+                0.1, 5.0, settings.getMouseSensitivity(), 0.1);
+        mouseSensitivitySlider = mouseSensitivityRow.slider();
+        mouseSensitivityLabel = mouseSensitivityRow.valueLabel();
+        mouseSensitivityRef = mouseSensitivitySlider.getModel().createReference();
+
         resolutionLabel = addStepperRow(controlsCard, I18n.t("options.resolution"),
                 () -> cycleResolution(app, -1), () -> cycleResolution(app, 1));
         fixCardWidth(controlsCard);
@@ -268,36 +291,62 @@ public class OptionsState extends BaseAppState {
         return valueLabel;
     }
 
-    private void playClick() {
-        ((PlayerContext) getApplication()).getAudioManager().playSfx("button_click.ogg");
+    /** A slider row's two live-updated parts, returned to the caller so it can keep the
+     *  {@code Slider} (for its model/reference, polled in {@link #update(float)}) and the value
+     *  label (for {@link #refreshLabels}) in dedicated fields. */
+    private record SliderRow(Slider slider, Label valueLabel) {
     }
 
-    private void adjustMouseSensitivity(PlayerContext app, float delta) {
-        GameSettings settings = app.getGameSettings();
-        settings.setMouseSensitivity(settings.getMouseSensitivity() + delta);
-        app.saveGameSettings();
-        refreshLabels(settings);
+    /**
+     * Builds a NAME / {@code <--0-->} / value row: a real drag-and-arrow-button {@link Slider}
+     * (see {@link UiStyle}'s {@code "slider.*"} overrides for how its look is pulled away from
+     * Lemur's default teal "glass" gradient) sized to fit the same 256px of card content width the
+     * stepper rows use, plus a label mirroring the slider's current value. The slider's arrow
+     * buttons get the same click sound as the stepper rows'; dragging the thumb stays silent.
+     * Reading the live value back out of the model and persisting it is the caller's job (see
+     * {@link #update(float)}) - a {@code Slider} only fires click commands for its arrow buttons,
+     * never for a drag, so nothing here can just be an {@code addClickCommands} callback.
+     */
+    private SliderRow addSliderRow(Container parent, String name, double min, double max, double value,
+            double delta) {
+        Container row = parent.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
+        row.setInsets(new Insets3f(4, 0, 4, 0));
+
+        Label nameLabel = row.addChild(new Label(name));
+        nameLabel.setColor(Theme.TEXT_DIM);
+        nameLabel.setFontSize(12);
+        nameLabel.setPreferredSize(new Vector3f(108, 28, 0));
+
+        Slider slider = row.addChild(new Slider(new DefaultRangedValueModel(min, max, value), Axis.X));
+        slider.setDelta(delta);
+        slider.setPreferredSize(new Vector3f(96, 24, 0));
+        // The thumb button isn't managed by the slider's own BorderLayout (it's positioned by hand
+        // in Slider.resetStateView, based on its CURRENT size, not its preferred one), so a plain
+        // setPreferredSize wouldn't actually resize the rendered knob - set its GuiControl size
+        // directly to get a knob wide enough to see and grab.
+        Vector3f thumbSize = new Vector3f(10, 20, 0);
+        slider.getThumbButton().setPreferredSize(thumbSize);
+        slider.getThumbButton().getControl(com.simsilica.lemur.core.GuiControl.class).setSize(thumbSize.clone());
+        slider.getDecrementButton().addClickCommands(source -> playClick());
+        slider.getIncrementButton().addClickCommands(source -> playClick());
+
+        Label valueLabel = row.addChild(new Label(""));
+        valueLabel.setColor(Theme.TEXT);
+        valueLabel.setFontSize(12);
+        valueLabel.setPreferredSize(new Vector3f(44, 28, 0));
+        valueLabel.setTextHAlignment(com.simsilica.lemur.HAlignment.Center);
+
+        return new SliderRow(slider, valueLabel);
+    }
+
+    private void playClick() {
+        ((PlayerContext) getApplication()).getAudioManager().playSfx("button_click.ogg");
     }
 
     private void adjustBrightness(PlayerContext app, float delta) {
         GameSettings settings = app.getGameSettings();
         settings.setBrightness(settings.getBrightness() + delta);
         app.saveGameSettings();
-        refreshLabels(settings);
-    }
-
-    private void adjustSoundVolume(PlayerContext app, float delta) {
-        GameSettings settings = app.getGameSettings();
-        settings.setSoundVolume(settings.getSoundVolume() + delta);
-        app.saveGameSettings();
-        refreshLabels(settings);
-    }
-
-    private void adjustMusicVolume(PlayerContext app, float delta) {
-        GameSettings settings = app.getGameSettings();
-        settings.setMusicVolume(settings.getMusicVolume() + delta);
-        app.saveGameSettings();
-        app.getAudioManager().refreshMusicVolume();
         refreshLabels(settings);
     }
 
@@ -339,14 +388,53 @@ public class OptionsState extends BaseAppState {
     }
 
     private void refreshLabels(GameSettings settings) {
-        mouseSensitivityLabel.setText(String.format("%.1f", settings.getMouseSensitivity()));
-        brightnessLabel.setText(String.format("%.1f", settings.getBrightness()));
-        soundVolumeLabel.setText(String.format("%.1f", settings.getSoundVolume()));
-        musicVolumeLabel.setText(String.format("%.1f", settings.getMusicVolume()));
+        mouseSensitivityLabel.setText(OptionsSliderFormat.multiplier(settings.getMouseSensitivity()));
+        brightnessLabel.setText(String.format(java.util.Locale.ROOT, "%.1f", settings.getBrightness()));
+        soundVolumeLabel.setText(OptionsSliderFormat.percent(settings.getSoundVolume()));
+        musicVolumeLabel.setText(OptionsSliderFormat.percent(settings.getMusicVolume()));
         videoQualityLabel.setText(settings.getVideoQuality().name());
         resolutionLabel.setText(settings.getResolution().toString());
         fullscreenLabel.setText(settings.isFullscreen() ? I18n.t("common.on") : I18n.t("common.off"));
         screenShakeLabel.setText(settings.isScreenShake() ? I18n.t("common.on") : I18n.t("common.off"));
+    }
+
+    /**
+     * Polls the 3 slider models for changes every frame - dragging a thumb (unlike clicking an
+     * arrow button, or any stepper) never fires a click command, so this is the only way to notice
+     * it. Each changed slider is applied to {@link GameSettings} immediately (so sound/music
+     * volume and mouse sensitivity take effect on the very next SFX/frame), but the settings file
+     * itself is only written after {@link #saveDebounce} has seen {@link SaveDebounce#DELAY_SECONDS}
+     * of quiet - see that class for why.
+     */
+    @Override
+    public void update(float tpf) {
+        PlayerContext app = (PlayerContext) getApplication();
+        GameSettings settings = app.getGameSettings();
+        boolean changed = false;
+
+        if (soundVolumeRef != null && soundVolumeRef.update()) {
+            settings.setSoundVolume((float) soundVolumeSlider.getModel().getValue());
+            soundVolumeLabel.setText(OptionsSliderFormat.percent(settings.getSoundVolume()));
+            changed = true;
+        }
+        if (musicVolumeRef != null && musicVolumeRef.update()) {
+            settings.setMusicVolume((float) musicVolumeSlider.getModel().getValue());
+            app.getAudioManager().refreshMusicVolume();
+            musicVolumeLabel.setText(OptionsSliderFormat.percent(settings.getMusicVolume()));
+            changed = true;
+        }
+        if (mouseSensitivityRef != null && mouseSensitivityRef.update()) {
+            settings.setMouseSensitivity((float) mouseSensitivitySlider.getModel().getValue());
+            mouseSensitivityLabel.setText(OptionsSliderFormat.multiplier(settings.getMouseSensitivity()));
+            changed = true;
+        }
+
+        if (changed) {
+            saveDebounce.markChanged();
+        }
+        if (saveDebounce.update(tpf)) {
+            app.saveGameSettings();
+        }
     }
 
     @Override
@@ -364,5 +452,10 @@ public class OptionsState extends BaseAppState {
     @Override
     protected void onDisable() {
         uiRoot.removeFromParent();
+        // A drag right before backing out shouldn't be lost just because it hadn't been quiet for
+        // DELAY_SECONDS yet.
+        if (saveDebounce.flush()) {
+            ((PlayerContext) getApplication()).saveGameSettings();
+        }
     }
 }

@@ -39,5 +39,35 @@ public final class UiStyle {
         Attributes label = styles.getSelector("label", STYLE);
         label.set("color", Theme.TEXT, true);
         label.set("shadowColor", NO_SHADOW, true);
+
+        // Lemur's glass base style paints the slider's own background AND its range/track with
+        // the same translucent teal gradient as everything else (see glass-styles.groovy) - the
+        // exact look the rest of this class exists to remove. Style every part of Slider
+        // (element ids per com.simsilica.lemur.Slider: "slider" root, "range", "thumb.button",
+        // "left.button", "right.button") explicitly instead.
+        Attributes slider = styles.getSelector("slider", STYLE);
+        slider.set("background", null, true);
+
+        Attributes sliderRange = styles.getSelector("slider.range", STYLE);
+        sliderRange.set("background", new QuadBackgroundComponent(Theme.PANEL), true);
+
+        Attributes sliderThumb = styles.getSelector("slider.thumb.button", STYLE);
+        sliderThumb.set("background", new QuadBackgroundComponent(Theme.ORANGE), true);
+        sliderThumb.set("text", "", true);
+        sliderThumb.set("shadowColor", NO_SHADOW, true);
+
+        Attributes sliderLeft = styles.getSelector("slider.left.button", STYLE);
+        sliderLeft.set("background", new QuadBackgroundComponent(Theme.PANEL_HOVER), true);
+        sliderLeft.set("color", Theme.TEXT, true);
+        sliderLeft.set("highlightColor", HOVER_TEXT, true);
+        sliderLeft.set("shadowColor", NO_SHADOW, true);
+        sliderLeft.set("text", "<", true);
+
+        Attributes sliderRight = styles.getSelector("slider.right.button", STYLE);
+        sliderRight.set("background", new QuadBackgroundComponent(Theme.PANEL_HOVER), true);
+        sliderRight.set("color", Theme.TEXT, true);
+        sliderRight.set("highlightColor", HOVER_TEXT, true);
+        sliderRight.set("shadowColor", NO_SHADOW, true);
+        sliderRight.set("text", ">", true);
     }
 }
