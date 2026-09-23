@@ -8,6 +8,7 @@ import com.paddleshock.entities.Ball;
 import com.paddleshock.entities.Paddle;
 import com.paddleshock.entities.Table;
 import com.paddleshock.powerups.PowerUpManager;
+import com.paddleshock.powerups.PowerUpType;
 
 /**
  * Owns the authoritative state of a single match - the ball, both paddles, power-ups and score -
@@ -100,14 +101,21 @@ public final class MatchSimulation {
             result.setWallBounce(true);
         }
 
-        if (tryPaddleBounce(playerPaddle, playerPaddleSpeedX)) {
+        if (tryPaddleBounce(playerPaddle, playerPaddleSpeedX, true)) {
             result.setPlayerPaddleHit(true);
         }
-        if (tryPaddleBounce(opponentPaddle, opponentPaddleSpeedX)) {
+        if (tryPaddleBounce(opponentPaddle, opponentPaddleSpeedX, false)) {
             result.setOpponentPaddleHit(true);
         }
 
-        if (pos.z < -GameConstants.TABLE_HALF_LENGTH) {
+        // A live Shield turns a would-be goal into a rebound off the goal line (one block each).
+        if (pos.z < -GameConstants.TABLE_HALF_LENGTH && powerUpManager.consumeEffect(true, PowerUpType.SHIELD)) {
+            ball.reboundFromGoal(-GameConstants.TABLE_HALF_LENGTH);
+            result.setShieldBlocked(true);
+        } else if (pos.z > GameConstants.TABLE_HALF_LENGTH && powerUpManager.consumeEffect(false, PowerUpType.SHIELD)) {
+            ball.reboundFromGoal(GameConstants.TABLE_HALF_LENGTH);
+            result.setShieldBlocked(true);
+        } else if (pos.z < -GameConstants.TABLE_HALF_LENGTH) {
             opponentScore++;
             result.setScorer(TickResult.Scorer.OPPONENT);
             if (opponentScore >= winScore) {
@@ -128,7 +136,7 @@ public final class MatchSimulation {
         }
     }
 
-    private boolean tryPaddleBounce(Paddle paddle, float paddleSpeedX) {
+    private boolean tryPaddleBounce(Paddle paddle, float paddleSpeedX, boolean playerSide) {
         Vector3f ballPos = ball.getPosition();
         Vector3f paddlePos = paddle.getPosition();
 
@@ -139,10 +147,38 @@ public final class MatchSimulation {
 
         if (withinReach && withinPaddleWidth && lowEnoughToHit) {
             ball.bounceOffPaddle(paddle);
-            ball.setSpin(Ball.spinFromPaddleSpeed(paddleSpeedX));
+            float spin = Ball.spinFromPaddleSpeed(paddleSpeedX);
+            if (powerUpManager.consumeEffect(playerSide, PowerUpType.CURVEBALL)) {
+                Paddle other = playerSide ? opponentPaddle : playerPaddle;
+                spin = curveballSpin(paddleSpeedX, ballPos.x, other.getPosition().x);
+            }
+            ball.setSpin(spin);
             return true;
         }
         return false;
+    }
+
+    /** A Curveball hit: maximum spin, in the swipe direction - or, for a still paddle, curving
+     *  away from where the opponent's paddle is. */
+    static float curveballSpin(float paddleSpeedX, float ballX, float otherPaddleX) {
+        float direction;
+        if (Math.abs(paddleSpeedX) >= GameConstants.CURVEBALL_MIN_SWIPE_SPEED) {
+            direction = Math.signum(paddleSpeedX);
+        } else {
+            direction = otherPaddleX >= ballX ? -1f : 1f;
+        }
+        return direction * GameConstants.SPIN_MAX;
+    }
+
+    /** Ghost Ball: whether the ball should be hidden from the player ({@code forPlayerSide}) or
+     *  the opponent right now - only while a Ghost Ball is live on that side and the ball is over
+     *  the middle of the table. */
+    public boolean isBallHiddenFor(boolean forPlayerSide) {
+        return powerUpManager.hasEffect(forPlayerSide, PowerUpType.GHOST_BALL) && isInGhostZone(ball.getPosition().z);
+    }
+
+    public static boolean isInGhostZone(float ballZ) {
+        return Math.abs(ballZ) < GameConstants.GHOST_ZONE_HALF_DEPTH;
     }
 
     public Ball getBall() {

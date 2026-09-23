@@ -27,4 +27,20 @@ class StoreStateTest {
         // Shortfall of 120 credits at ~13/win -> ceil(120/13) = 10.
         assertEquals(10, StoreState.estimateWinsNeeded(120, 0));
     }
+
+    @Test
+    void categoriesPageInGroupsOfFour() {
+        assertEquals(1, StoreState.pageCount(0));
+        assertEquals(1, StoreState.pageCount(StoreState.PAGE_SIZE));
+        assertEquals(2, StoreState.pageCount(StoreState.PAGE_SIZE + 1));
+        assertEquals(2, StoreState.pageCount(7));
+        assertEquals(3, StoreState.pageCount(9));
+    }
+
+    @Test
+    void pageIsClampedToTheCategory() {
+        assertEquals(0, StoreState.clampPage(-1, 7));
+        assertEquals(1, StoreState.clampPage(5, 7));
+        assertEquals(0, StoreState.clampPage(1, 3), "switching to a short category drops back to page 1");
+    }
 }

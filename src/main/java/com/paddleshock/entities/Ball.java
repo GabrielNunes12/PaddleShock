@@ -143,6 +143,14 @@ public class Ball {
         spin = -spin * 0.5f;
     }
 
+    /** Shield block: puts the ball back on the goal line at {@code goalZ} and sends it back the
+     *  way it came, as if it hit a wall. */
+    public void reboundFromGoal(float goalZ) {
+        Vector3f position = node.getLocalTranslation();
+        node.setLocalTranslation(position.x, position.y, goalZ);
+        velocity.z = -velocity.z;
+    }
+
     /** Reflects off a paddle, biasing X based on where the ball hit the paddle. */
     public void bounceOffPaddle(Paddle paddle) {
         float offsetX = node.getLocalTranslation().x - paddle.getPosition().x;

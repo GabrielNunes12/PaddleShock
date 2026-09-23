@@ -42,7 +42,10 @@ public final class Catalog {
             new PowerUpDefinition("powerup_paddle_grow", "Paddle Grow", 120, PowerUpType.PADDLE_GROW, 20f),
             new PowerUpDefinition("powerup_speed_boost", "Speed Boost", 120, PowerUpType.SPEED_BOOST, 20f),
             new PowerUpDefinition("powerup_slow_opponent", "Slow Opponent", 120, PowerUpType.SLOW_OPPONENT, 20f),
-            new PowerUpDefinition("powerup_tiny_paddle", "Tiny Paddle", 120, PowerUpType.SHRINK_OPPONENT, 20f));
+            new PowerUpDefinition("powerup_tiny_paddle", "Tiny Paddle", 120, PowerUpType.SHRINK_OPPONENT, 20f),
+            new PowerUpDefinition("powerup_curveball", "Curveball", 150, PowerUpType.CURVEBALL, 18f),
+            new PowerUpDefinition("powerup_shield", "Shield", 180, PowerUpType.SHIELD, 25f),
+            new PowerUpDefinition("powerup_ghost_ball", "Ghost Ball", 160, PowerUpType.GHOST_BALL, 22f));
 
     /** Arenas: free for everyone. Each has its own environment AND its own ball-physics quirk
      *  (gravity/wind/bounce energy), layered on top of whatever paddle/table/ball is equipped. */

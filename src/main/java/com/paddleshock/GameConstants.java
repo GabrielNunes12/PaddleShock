@@ -49,6 +49,11 @@ public final class GameConstants {
     public static final float SPIN_DECAY_PER_SECOND = 0.8f;
     /** How fast the ball model visibly rotates per unit of spin (radians/s) - cosmetic only. */
     public static final float SPIN_VISUAL_RATE = 9f;
+
+    /** Ghost Ball: the ball is hidden from the target while |z| is below this (mid-table band). */
+    public static final float GHOST_ZONE_HALF_DEPTH = 3.5f;
+    /** Curveball on a still-paddle hit: below this swipe speed, curve away from the opponent instead. */
+    public static final float CURVEBALL_MIN_SWIPE_SPEED = 0.5f;
     public static final float PADDLE_POP_BASE = 4f;
     public static final float PADDLE_POP_SPEED_FACTOR = 0.15f;
     public static final float PADDLE_REACH_HEIGHT = 2.0f;

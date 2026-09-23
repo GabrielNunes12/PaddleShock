@@ -25,6 +25,9 @@ public final class WorldTour {
     private static final String BOOST = "powerup_speed_boost";
     private static final String SLOW = "powerup_slow_opponent";
     private static final String TINY = "powerup_tiny_paddle";
+    private static final String CURVE = "powerup_curveball";
+    private static final String SHIELD = "powerup_shield";
+    private static final String GHOST = "powerup_ghost_ball";
 
     public static final List<TourOpponent> OPPONENTS = List.of(
             // Classic Court - learn the basics.
@@ -37,7 +40,7 @@ public final class WorldTour {
             // Neon Arcade - high bounce.
             new TourOpponent("pixel", "Pixel", "level_neon", 5.4f, 0.7f, List.of(TINY), 6f, 9f,
                     new ColorRGBA(0.3f, 1f, 0.9f, 1f), 0.9f, 7, 50, false),
-            new TourOpponent("glitch", "Glitch", "level_neon", 6.6f, 1.3f, List.of(BOOST, TINY), 4f, 7f,
+            new TourOpponent("glitch", "Glitch", "level_neon", 6.6f, 1.3f, List.of(BOOST, GHOST), 4f, 7f,
                     new ColorRGBA(0.9f, 0.2f, 0.9f, 1f), 1f, 7, 60, false),
             new TourOpponent("neon_viper", "Neon Viper", "level_neon", 7.2f, 0.4f, List.of(BOOST, TINY), 4f, 6f,
                     new ColorRGBA(0.55f, 1f, 0.2f, 1f), 1f, 10, 120, true),
@@ -46,14 +49,14 @@ public final class WorldTour {
                     new ColorRGBA(0.95f, 0.8f, 0.45f, 1f), 1.25f, 7, 60, false),
             new TourOpponent("breeze", "Breeze", "level_sunset", 6.4f, 0.6f, List.of(SLOW), 5f, 8f,
                     new ColorRGBA(0.5f, 0.85f, 1f, 1f), 1f, 7, 70, false),
-            new TourOpponent("captain_tide", "Captain Tide", "level_sunset", 7.6f, 0.35f, List.of(GROW, SLOW), 3.5f, 6f,
+            new TourOpponent("captain_tide", "Captain Tide", "level_sunset", 7.6f, 0.35f, List.of(GROW, SLOW, SHIELD), 3.5f, 6f,
                     new ColorRGBA(0.1f, 0.35f, 0.7f, 1f), 1.1f, 10, 150, true),
             // Space Station - low gravity.
             new TourOpponent("cosmo", "Cosmo", "level_space", 7f, 0.5f, List.of(BOOST), 4f, 7f,
                     new ColorRGBA(0.85f, 0.85f, 0.95f, 1f), 1f, 7, 80, false),
-            new TourOpponent("nova", "Nova", "level_space", 8f, 0.4f, List.of(BOOST, TINY), 3f, 6f,
+            new TourOpponent("nova", "Nova", "level_space", 8f, 0.4f, List.of(BOOST, TINY, CURVE), 3f, 6f,
                     new ColorRGBA(1f, 0.55f, 0.2f, 1f), 1f, 10, 100, false),
-            new TourOpponent("the_void", "The Void", "level_space", 9.2f, 0.2f, List.of(GROW, BOOST, SLOW, TINY), 2.5f, 4.5f,
+            new TourOpponent("the_void", "The Void", "level_space", 9.2f, 0.2f, List.of(GROW, BOOST, SLOW, TINY, CURVE, SHIELD, GHOST), 2.5f, 4.5f,
                     new ColorRGBA(0.25f, 0.1f, 0.4f, 1f), 1.15f, 10, 250, true));
 
     public static Optional<TourOpponent> find(String id) {

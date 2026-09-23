@@ -13,10 +13,15 @@ import com.jme3.input.controls.KeyTrigger;
 import com.jme3.input.controls.MouseButtonTrigger;
 import com.jme3.light.AmbientLight;
 import com.jme3.light.DirectionalLight;
+import com.jme3.material.Material;
+import com.jme3.material.RenderState;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.Vector3f;
 import com.jme3.scene.Node;
+import com.jme3.scene.Geometry;
 import com.jme3.scene.Spatial;
+import com.jme3.renderer.queue.RenderQueue;
+import com.jme3.scene.shape.Box;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -94,6 +99,18 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     private float aiPowerUpMinInterval;
     private float aiPowerUpMaxInterval;
     private float aiPowerUpTimer;
+
+    /** Shield power-up barriers across each goal line, in host/world coordinates: index 0 is the
+     *  near (player/host, z < 0) goal, index 1 the far one. Shown while that side's Shield is live. */
+    private final Geometry[] shieldBars = new Geometry[2];
+
+    /** The local viewer's own goal line sits just below the camera's view, so their own live
+     *  Shield is shown as a glowing strip + label along the bottom of the HUD instead. */
+    private Geometry ownShieldStrip;
+    private BitmapText ownShieldLabel;
+
+    /** Where the AI last saw the ball while a Ghost Ball hides it from the AI - see {@link #computeOpponentAiInput}. */
+    private float aiLastSeenBallX;
 
     /** Power-ups the local player activated this match - for the POWER_PLAYER achievement. */
     private int localPowerUpsUsed;
@@ -334,6 +351,58 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                 mode != Mode.SINGLE_PLAYER, scoreboardDisplays));
 
         replayController = new ReplayController(ball, playerPaddle, opponentPaddle, app.getInputManager());
+
+        for (int i = 0; i < shieldBars.length; i++) {
+            shieldBars[i] = buildShieldBar(i == 0 ? -GameConstants.TABLE_HALF_LENGTH : GameConstants.TABLE_HALF_LENGTH);
+            gameNode.attachChild(shieldBars[i]);
+        }
+    }
+
+    /** A translucent glowing wall across one goal line, hidden until that side's Shield is live. */
+    private Geometry buildShieldBar(float goalZ) {
+        Geometry bar = new Geometry("shieldBar", new Box(GameConstants.TABLE_HALF_WIDTH, 0.45f, 0.06f));
+        Material material = new Material(getApplication().getAssetManager(), "Common/MatDefs/Misc/Unshaded.j3md");
+        material.setColor("Color", new ColorRGBA(0.3f, 0.9f, 1f, 0.55f));
+        material.getAdditionalRenderState().setBlendMode(RenderState.BlendMode.Alpha);
+        bar.setMaterial(material);
+        bar.setQueueBucket(RenderQueue.Bucket.Transparent);
+        bar.setLocalTranslation(0f, 0.45f, goalZ);
+        bar.setCullHint(Spatial.CullHint.Always);
+        return bar;
+    }
+
+    /** Shows/hides the shield bars and the ghosted ball from the current state: the local
+     *  simulation in single-player/host, the host's snapshot for a joiner/spectator. */
+    private void updatePowerUpVisuals(NetProtocol.SnapshotMessage snapshot) {
+        boolean nearShield;
+        boolean farShield;
+        boolean ballHidden;
+        boolean ownShield;
+        if (matchSimulation != null) {
+            nearShield = matchSimulation.getPowerUpManager().hasEffect(true, PowerUpType.SHIELD);
+            farShield = matchSimulation.getPowerUpManager().hasEffect(false, PowerUpType.SHIELD);
+            // The local viewer is always the "player" side of a local simulation.
+            ballHidden = matchSimulation.isBallHiddenFor(true);
+            ownShield = nearShield;
+        } else if (snapshot != null) {
+            nearShield = snapshot.hasEffect(NetProtocol.EFFECT_HOST_SHIELD);
+            farShield = snapshot.hasEffect(NetProtocol.EFFECT_JOINER_SHIELD);
+            // A spectator isn't anyone's target, so it always sees the ball.
+            ballHidden = mode == Mode.JOINER && snapshot.hasEffect(NetProtocol.EFFECT_JOINER_GHOSTED)
+                    && MatchSimulation.isInGhostZone(snapshot.ballZ());
+            // A joiner's own goal is the far (+z) one; a spectator has no goal of its own.
+            ownShield = mode == Mode.JOINER && farShield;
+        } else {
+            return;
+        }
+        shieldBars[0].setCullHint(nearShield ? Spatial.CullHint.Never : Spatial.CullHint.Always);
+        shieldBars[1].setCullHint(farShield ? Spatial.CullHint.Never : Spatial.CullHint.Always);
+        ball.getNode().setCullHint(ballHidden ? Spatial.CullHint.Always : Spatial.CullHint.Inherit);
+        if (ownShieldStrip != null) {
+            Spatial.CullHint hint = ownShield ? Spatial.CullHint.Never : Spatial.CullHint.Always;
+            ownShieldStrip.setCullHint(hint);
+            ownShieldLabel.setCullHint(hint);
+        }
     }
 
     /** Resolves the player's 3 store-configured power-up slots into their catalog definitions. */
@@ -367,6 +436,22 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         powerUpBannerTimer = 0f;
 
         replayController.buildHud(hudNode, font, simpleApp.getCamera().getWidth(), simpleApp.getCamera().getHeight());
+
+        float screenW = simpleApp.getCamera().getWidth();
+        ownShieldStrip = new Geometry("ownShieldStrip", new com.jme3.scene.shape.Quad(screenW, 14f));
+        Material stripMaterial = new Material(simpleApp.getAssetManager(), "Common/MatDefs/Misc/Unshaded.j3md");
+        stripMaterial.setColor("Color", new ColorRGBA(0.3f, 0.9f, 1f, 0.75f));
+        stripMaterial.getAdditionalRenderState().setBlendMode(RenderState.BlendMode.Alpha);
+        ownShieldStrip.setMaterial(stripMaterial);
+        ownShieldStrip.setCullHint(Spatial.CullHint.Always);
+        hudNode.attachChild(ownShieldStrip);
+        ownShieldLabel = new BitmapText(font);
+        ownShieldLabel.setSize(16);
+        ownShieldLabel.setColor(PowerUpType.SHIELD.getColor());
+        ownShieldLabel.setText(I18n.t("gameplay.shield_up"));
+        ownShieldLabel.setLocalTranslation((screenW - ownShieldLabel.getLineWidth()) / 2f, 14f + 22f, 1);
+        ownShieldLabel.setCullHint(Spatial.CullHint.Always);
+        hudNode.attachChild(ownShieldLabel);
 
         // A spectator has nothing to activate - its own equipped loadout isn't even relevant to
         // the match it's watching, so skip the power-up slot HUD entirely rather than showing a
@@ -508,9 +593,16 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             return;
         }
         String kind = type.isDebuff() ? I18n.t("gameplay.powerup_debuff") : I18n.t("gameplay.powerup_buff");
-        String text = I18n.t("gameplay.powerup_banner", kind, who, type.getLabel().toUpperCase());
+        showBanner(I18n.t("gameplay.powerup_banner", kind, who, type.getLabel().toUpperCase()), type.getColor());
+    }
+
+    /** The centered timed HUD banner with arbitrary text - see {@link #showPowerUpBanner}. */
+    private void showBanner(String text, ColorRGBA color) {
+        if (powerUpBannerText == null) {
+            return;
+        }
         powerUpBannerText.setText(text);
-        powerUpBannerText.setColor(type.getColor());
+        powerUpBannerText.setColor(color);
         float screenW = ((SimpleApplication) getApplication()).getCamera().getWidth();
         powerUpBannerText.setLocalTranslation(
                 (screenW - powerUpBannerText.getLineWidth()) / 2f, powerUpBannerText.getLocalTranslation().y, 2);
@@ -537,6 +629,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
 
         applyTickResult(result);
         updatePowerUpHud();
+        updatePowerUpVisuals(null);
     }
 
     private void updateHost(float tpf) {
@@ -553,6 +646,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
 
         applyTickResult(result);
         updatePowerUpHud();
+        updatePowerUpVisuals(null);
 
         // Broadcast whenever there's anyone to broadcast to - a real joiner, or any spectators
         // (spectating and playing are independent; a spectator-only host still runs the match and
@@ -581,6 +675,9 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         if (result.isAnyPowerUpActivated()) {
             flags |= NetProtocol.FLAG_POWERUP_ACTIVATED;
         }
+        if (result.isShieldBlocked()) {
+            flags |= NetProtocol.FLAG_SHIELD_BLOCK;
+        }
         if (result.isMatchOver()) {
             flags |= NetProtocol.FLAG_MATCH_OVER;
             if (result.isPlayerWon()) {
@@ -608,7 +705,33 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                 hostPaddlePos.x, hostPaddlePos.z,
                 joinerPaddlePos.x, joinerPaddlePos.z,
                 matchSimulation.getPlayerScore(), matchSimulation.getOpponentScore(),
-                flags, powerUpActorSide, powerUpTypeOrdinal, matchSimulation.getBall().getSpin());
+                flags, powerUpActorSide, powerUpTypeOrdinal, matchSimulation.getBall().getSpin(),
+                effectBits());
+    }
+
+    /** Live behavior power-ups for the snapshot - "player" in the host's simulation is the host. */
+    private int effectBits() {
+        com.paddleshock.powerups.PowerUpManager manager = matchSimulation.getPowerUpManager();
+        int bits = 0;
+        if (manager.hasEffect(true, PowerUpType.SHIELD)) {
+            bits |= NetProtocol.EFFECT_HOST_SHIELD;
+        }
+        if (manager.hasEffect(false, PowerUpType.SHIELD)) {
+            bits |= NetProtocol.EFFECT_JOINER_SHIELD;
+        }
+        if (manager.hasEffect(true, PowerUpType.GHOST_BALL)) {
+            bits |= NetProtocol.EFFECT_HOST_GHOSTED;
+        }
+        if (manager.hasEffect(false, PowerUpType.GHOST_BALL)) {
+            bits |= NetProtocol.EFFECT_JOINER_GHOSTED;
+        }
+        if (manager.hasEffect(true, PowerUpType.CURVEBALL)) {
+            bits |= NetProtocol.EFFECT_HOST_CURVEBALL;
+        }
+        if (manager.hasEffect(false, PowerUpType.CURVEBALL)) {
+            bits |= NetProtocol.EFFECT_JOINER_CURVEBALL;
+        }
+        return bits;
     }
 
     /** The host stops applying stale input and hangs the match forever if a joiner's process dies
@@ -681,6 +804,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         ball.setNetworkState(snapshot.ballX(), snapshot.ballY(), snapshot.ballZ(),
                 snapshot.ballVelX(), snapshot.ballVelZ(), snapshot.ballVerticalVel(), snapshot.ballSpin());
         ball.animateSpin(tpf);
+        updatePowerUpVisuals(snapshot);
         // playerPaddle/opponentPaddle here just mean "the two paddle nodes in this scene": on the
         // joiner, playerPaddle renders the host's paddle and opponentPaddle renders the joiner's
         // own paddle (i.e. the one this client's own mouse/gamepad input drives, authoritatively
@@ -711,6 +835,9 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             }
             if (snapshot.isHostPaddleHit() || snapshot.isJoinerPaddleHit()) {
                 app.getAudioManager().playSfx("paddle_hit.ogg");
+            }
+            if (snapshot.isShieldBlock()) {
+                onShieldBlocked();
             }
             if (snapshot.isPowerUpActivated()) {
                 app.getAudioManager().playSfx("powerup_activate.ogg");
@@ -778,8 +905,11 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
      *  than in {@code MatchSimulation}, but its output is packaged into the same {@link PaddleInput}
      *  shape a networked opponent will eventually be fed through instead. */
     private PaddleInput computeOpponentAiInput(float tpf) {
-        float step = aiBrain.step(matchSimulation.getBall().getPosition().x,
-                matchSimulation.getOpponentPaddle().getPosition().x, tpf);
+        // A Ghost Ball on the AI hides the ball from it mid-table: it keeps chasing where it last saw it.
+        if (!matchSimulation.isBallHiddenFor(false)) {
+            aiLastSeenBallX = matchSimulation.getBall().getPosition().x;
+        }
+        float step = aiBrain.step(aiLastSeenBallX, matchSimulation.getOpponentPaddle().getPosition().x, tpf);
 
         PowerUpDefinition chosen = pickAiPowerUp(tpf);
         return new PaddleInput(step, 0, chosen);
@@ -814,6 +944,9 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         }
         if (result.isAnyPaddleHit()) {
             app.getAudioManager().playSfx("paddle_hit.ogg");
+        }
+        if (result.isShieldBlocked()) {
+            onShieldBlocked();
         }
         if (result.isAnyPowerUpActivated()) {
             app.getAudioManager().playSfx("powerup_activate.ogg");
@@ -851,6 +984,13 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                 startReplay(endAction);
             }
         }
+    }
+
+    /** A Shield stopped a goal: a distinct sound plus a text banner (not just the bar vanishing). */
+    private void onShieldBlocked() {
+        app.getAudioManager().playSfx("wall_bounce.ogg");
+        app.getAudioManager().playSfx("powerup_activate.ogg");
+        showBanner(I18n.t("gameplay.shield_blocked"), PowerUpType.SHIELD.getColor());
     }
 
     /** Samples the current tick's renderable state (ball + both paddles + score) into

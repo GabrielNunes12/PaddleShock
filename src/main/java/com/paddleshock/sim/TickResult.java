@@ -20,6 +20,16 @@ public final class TickResult {
     private Scorer scorer = Scorer.NONE;
     private boolean matchOver;
     private boolean playerWon;
+    /** A Shield power-up stopped a would-be goal this tick (either side). */
+    private boolean shieldBlocked;
+
+    public boolean isShieldBlocked() {
+        return shieldBlocked;
+    }
+
+    void setShieldBlocked(boolean shieldBlocked) {
+        this.shieldBlocked = shieldBlocked;
+    }
 
     public boolean isWallBounce() {
         return wallBounce;

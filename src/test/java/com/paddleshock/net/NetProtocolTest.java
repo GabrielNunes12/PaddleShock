@@ -284,4 +284,28 @@ class NetProtocolTest {
         assertEquals(1, decoded.powerUpTypeOrdinal());
         assertEquals(10f, decoded.joinerPaddleZ());
     }
+
+    @Test
+    void snapshotRoundTripsEffectsAndShieldFlag() throws IOException {
+        int effects = NetProtocol.EFFECT_HOST_SHIELD | NetProtocol.EFFECT_JOINER_GHOSTED | NetProtocol.EFFECT_JOINER_CURVEBALL;
+        NetProtocol.SnapshotMessage original = new NetProtocol.SnapshotMessage(
+                1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f, 9f, 10f, 3, 4, NetProtocol.FLAG_SHIELD_BLOCK,
+                NetProtocol.SnapshotMessage.ACTOR_NONE, -1, 0.5f, effects);
+        NetProtocol.SnapshotMessage decoded = NetProtocol.decodeSnapshot(NetProtocol.encodeSnapshot(original));
+        assertEquals(original, decoded);
+        assertTrue(decoded.isShieldBlock());
+        assertTrue(decoded.hasEffect(NetProtocol.EFFECT_HOST_SHIELD));
+        assertFalse(decoded.hasEffect(NetProtocol.EFFECT_JOINER_SHIELD));
+    }
+
+    @Test
+    void snapshotFromAHostWithSpinButNoEffectsDecodesAsNoEffects() throws IOException {
+        NetProtocol.SnapshotMessage original = new NetProtocol.SnapshotMessage(
+                1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f, 9f, 10f, 3, 4, 0,
+                NetProtocol.SnapshotMessage.ACTOR_NONE, -1, 1.5f, NetProtocol.EFFECT_HOST_SHIELD);
+        byte[] full = NetProtocol.encodeSnapshot(original);
+        NetProtocol.SnapshotMessage decoded = NetProtocol.decodeSnapshot(java.util.Arrays.copyOf(full, full.length - 1));
+        assertEquals(0, decoded.effects());
+        assertEquals(1.5f, decoded.ballSpin());
+    }
 }
