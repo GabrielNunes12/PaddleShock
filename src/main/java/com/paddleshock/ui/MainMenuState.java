@@ -24,6 +24,10 @@ import com.simsilica.lemur.component.SpringGridLayout;
 
 import com.paddleshock.app.Navigator;
 import com.paddleshock.app.PlayerContext;
+import com.paddleshock.challenges.Challenge;
+import com.paddleshock.challenges.ChallengeGenerator;
+import com.paddleshock.challenges.ChallengeTracker;
+import com.paddleshock.data.PlayerProfile;
 import com.paddleshock.i18n.I18n;
 import com.paddleshock.net.InviteClient;
 
@@ -140,6 +144,40 @@ public class MainMenuState extends BaseAppState {
         });
         uiRoot.attachChild(worldTour);
         worldTour.setLocalTranslation(32, taglineY - 40 - ctaHeight - 12, 2);
+
+        Container challenges = buildChallengePanel(ctaWidth);
+        uiRoot.attachChild(challenges);
+        challenges.setLocalTranslation(32, taglineY - 40 - ctaHeight - 12 - 46 - 24, 2);
+    }
+
+    /** Today's and this week's challenge: what to do, progress so far and the reward. */
+    private Container buildChallengePanel(float width) {
+        PlayerProfile profile = ((PlayerContext) getApplication()).getProfile();
+        // Lemur draws insets outside a container's background, so the padding comes from an inner
+        // container's insets showing the outer one's background.
+        Container outer = new Container(new SpringGridLayout(Axis.Y, Axis.X));
+        outer.setBackground(new QuadBackgroundComponent(Theme.PANEL));
+        Container panel = outer.addChild(new Container(new SpringGridLayout(Axis.Y, Axis.X, FillMode.None, FillMode.Even)));
+        panel.setBackground(new QuadBackgroundComponent(Theme.PANEL));
+        panel.setInsets(new Insets3f(12, 14, 4, 14));
+        for (Challenge challenge : ChallengeGenerator.current(java.time.LocalDate.now())) {
+            boolean done = ChallengeTracker.isComplete(profile, challenge);
+            Label heading = panel.addChild(new Label(I18n.t(challenge.weekly() ? "menu.weekly_challenge" : "menu.daily_challenge")));
+            heading.setFontSize(11);
+            heading.setColor(Theme.ORANGE);
+            Label description = panel.addChild(new Label(ChallengeText.describe(challenge)));
+            description.setFontSize(15);
+            description.setColor(done ? Theme.TEXT_DIM : Theme.TEXT);
+            String status = done ? I18n.t("menu.challenge_done", challenge.reward())
+                    : I18n.t("menu.challenge_progress", ChallengeTracker.progress(profile, challenge), challenge.target(),
+                            challenge.reward());
+            Label progress = panel.addChild(new Label(status));
+            progress.setFontSize(12);
+            progress.setColor(done ? Theme.GREEN : Theme.TEXT_DIM);
+            progress.setInsets(new Insets3f(0, 0, 8, 0));
+        }
+        outer.setPreferredSize(new Vector3f(width, outer.getPreferredSize().y, 0));
+        return outer;
     }
 
     /** Right panel: the other destinations as bordered nav-card rows. */

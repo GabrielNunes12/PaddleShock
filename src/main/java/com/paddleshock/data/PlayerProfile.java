@@ -89,6 +89,12 @@ public class PlayerProfile {
     private int powerUpsUsed;
     private Set<String> levelsWonOn = new HashSet<>();
 
+    // Daily/weekly challenges (see com.paddleshock.challenges): progress by challenge id and the
+    // ids already paid out. Pruned to the current day's/week's ids, so they never grow. Old saves
+    // predate both and deserialize them as null, which reads as "nothing yet".
+    private Map<String, Integer> challengeProgress = new HashMap<>();
+    private Set<String> challengesClaimed = new HashSet<>();
+
     private Set<String> ownedPaddleIds = new HashSet<>(Set.of("paddle_classic"));
     private Set<String> ownedTableIds = new HashSet<>(Set.of("table_classic"));
     private Set<String> ownedBallIds = new HashSet<>(Set.of("ball_classic"));
@@ -282,6 +288,39 @@ public class PlayerProfile {
             tourBeatenIds = new HashSet<>();
         }
         tourBeatenIds.add(opponentId);
+    }
+
+    public int getChallengeProgress(String challengeId) {
+        return challengeProgress == null ? 0 : challengeProgress.getOrDefault(challengeId, 0);
+    }
+
+    public void setChallengeProgress(String challengeId, int progress) {
+        if (challengeProgress == null) {
+            challengeProgress = new HashMap<>();
+        }
+        challengeProgress.put(challengeId, progress);
+    }
+
+    public boolean isChallengeClaimed(String challengeId) {
+        return challengesClaimed != null && challengesClaimed.contains(challengeId);
+    }
+
+    /** Marks a challenge paid; returns {@code true} only the first time. */
+    public boolean claimChallenge(String challengeId) {
+        if (challengesClaimed == null) {
+            challengesClaimed = new HashSet<>();
+        }
+        return challengesClaimed.add(challengeId);
+    }
+
+    /** Drops progress/claims for any challenge that isn't one of {@code currentIds} (old days/weeks). */
+    public void pruneChallenges(Set<String> currentIds) {
+        if (challengeProgress != null) {
+            challengeProgress.keySet().retainAll(currentIds);
+        }
+        if (challengesClaimed != null) {
+            challengesClaimed.retainAll(currentIds);
+        }
     }
 
     /** Unlocked achievement names (see {@code Achievement}). Never {@code null}; read-only. */

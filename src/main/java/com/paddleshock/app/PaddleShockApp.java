@@ -725,7 +725,8 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
         return reward;
     }
 
-    /** Evaluates achievements for the match captured in {@link #lastMatchContext}. Render thread. */
+    /** Evaluates achievements and daily/weekly challenges for the match captured in
+     *  {@link #lastMatchContext}. Render thread. */
     private void recordMatchAchievements(boolean won, int playerScore, int opponentScore) {
         MatchContext context = lastMatchContext;
         if (context == null) {
@@ -735,6 +736,15 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
         MatchOutcome outcome = new MatchOutcome(context.kind(), won, playerScore, opponentScore,
                 context.levelId(), context.aiDifficulty(), context.powerUpsUsed());
         grantAchievements(AchievementTracker.recordMatch(profile, outcome), true);
+
+        List<com.paddleshock.challenges.Challenge> completed =
+                com.paddleshock.challenges.ChallengeTracker.recordMatch(profile, outcome, java.time.LocalDate.now());
+        saveProfile();
+        for (com.paddleshock.challenges.Challenge challenge : completed) {
+            toastState.show(com.paddleshock.i18n.I18n.t(challenge.weekly() ? "toast.weekly_complete" : "toast.daily_complete"),
+                    com.paddleshock.ui.ChallengeText.describe(challenge),
+                    com.paddleshock.i18n.I18n.t("toast.challenge_reward", challenge.reward()));
+        }
     }
 
     /** Stops the match and plays the win/defeat sting - shared by every match-end path. Also
