@@ -14,6 +14,9 @@ import java.io.IOException;
 import java.net.SocketException;
 
 import com.paddleshock.GameConstants;
+import com.paddleshock.achievements.Achievement;
+import com.paddleshock.achievements.AchievementTracker;
+import com.paddleshock.achievements.MatchOutcome;
 import com.paddleshock.audio.AudioManager;
 import com.paddleshock.data.MatchHistoryEntry;
 import com.paddleshock.data.PlayerProfile;
@@ -33,7 +36,9 @@ import com.paddleshock.settings.GameSettings;
 import com.paddleshock.steam.SteamManager;
 import com.paddleshock.tour.TourOpponent;
 import com.paddleshock.tour.WorldTour;
+import com.paddleshock.ui.AchievementsState;
 import com.paddleshock.ui.CreditsState;
+import com.paddleshock.ui.ToastState;
 import com.paddleshock.ui.WorldTourState;
 import com.paddleshock.ui.FriendsState;
 import com.paddleshock.ui.LeaderboardState;
@@ -80,6 +85,17 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
     private com.paddleshock.ui.HowToPlayState howToPlayState;
     private CreditsState creditsState;
     private WorldTourState worldTourState;
+    private AchievementsState achievementsState;
+    private ToastState toastState;
+
+    /** What the match that just ended was, captured on the render thread when it stopped (see
+     *  {@link #beginMatchEnd}) because ranked matches record their history later, from a network
+     *  thread, after the gameplay state may already be gone. */
+    private record MatchContext(MatchOutcome.Kind kind, String levelId,
+            com.paddleshock.settings.AiDifficulty aiDifficulty, int powerUpsUsed) {
+    }
+
+    private volatile MatchContext lastMatchContext;
     private LeaderboardState leaderboardState;
     private ProfileState profileState;
     private TournamentState tournamentState;
@@ -141,6 +157,8 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
         howToPlayState = new com.paddleshock.ui.HowToPlayState();
         creditsState = new CreditsState();
         worldTourState = new WorldTourState();
+        achievementsState = new AchievementsState();
+        toastState = new ToastState();
         leaderboardState = new LeaderboardState();
         profileState = new ProfileState();
         tournamentState = new TournamentState();
@@ -148,6 +166,10 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
 
         rankedMatchCoordinator = new RankedMatchCoordinator(rankService, matchEndState,
                 this::endMatchCommon, this::recordMatchHistory);
+        // Rank results arrive on network threads - hop back to the render thread before touching
+        // the profile, Steam or the UI.
+        rankedMatchCoordinator.setRankListener(state -> enqueue(() ->
+                grantAchievements(AchievementTracker.recordRank(profile, state.getTier()), true)));
 
         stateManager.attach(splashState);
         stateManager.attach(mainMenuState);
@@ -160,6 +182,8 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
         stateManager.attach(howToPlayState);
         stateManager.attach(creditsState);
         stateManager.attach(worldTourState);
+        stateManager.attach(achievementsState);
+        stateManager.attach(toastState);
         stateManager.attach(leaderboardState);
         stateManager.attach(profileState);
         stateManager.attach(tournamentState);
@@ -175,10 +199,50 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
         howToPlayState.setEnabled(false);
         creditsState.setEnabled(false);
         worldTourState.setEnabled(false);
+        achievementsState.setEnabled(false);
         leaderboardState.setEnabled(false);
         profileState.setEnabled(false);
         tournamentState.setEnabled(false);
         friendsState.setEnabled(false);
+
+        syncAchievementsAtStartup();
+    }
+
+    /** Startup: credit an existing save for anything it already qualifies for (quietly - no toast
+     *  storm on launch), then re-send every local unlock to Steam so ones earned offline, or before
+     *  this build, still reach it. Called at the end of {@link #simpleInitApp}. */
+    private void syncAchievementsAtStartup() {
+        grantAchievements(AchievementTracker.checkProfileState(profile), false);
+        steamManager.unlockAchievements(profile.getUnlockedAchievements().stream()
+                .map(name -> "ACH_" + name).toList());
+    }
+
+    /** Persists, mirrors to Steam and (optionally) toasts newly unlocked achievements. Render thread only. */
+    private void grantAchievements(List<Achievement> unlocked, boolean toast) {
+        if (unlocked.isEmpty()) {
+            return;
+        }
+        saveProfile();
+        steamManager.unlockAchievements(unlocked.stream().map(Achievement::steamApiName).toList());
+        if (toast) {
+            for (Achievement achievement : unlocked) {
+                toastState.show(com.paddleshock.i18n.I18n.t("toast.achievement_unlocked"),
+                        com.paddleshock.i18n.I18n.t(achievement.titleKey()),
+                        com.paddleshock.i18n.I18n.t(achievement.descKey()));
+            }
+        }
+    }
+
+    @Override
+    public void checkAchievements() {
+        grantAchievements(AchievementTracker.checkProfileState(profile), true);
+    }
+
+    /** Opens the achievements list (from the PROFILE screen). */
+    public void showAchievements(Runnable backAction) {
+        achievementsState.setBackAction(backAction);
+        profileState.setEnabled(false);
+        achievementsState.setEnabled(true);
     }
 
     @Override
@@ -271,6 +335,7 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
         howToPlayState.setEnabled(false);
         creditsState.setEnabled(false);
         worldTourState.setEnabled(false);
+        achievementsState.setEnabled(false);
         leaderboardState.setEnabled(false);
         profileState.setEnabled(false);
         tournamentState.setEnabled(false);
@@ -589,6 +654,8 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
             profile.recordRivalResult(opponentPlayerId, null, won);
         }
         saveProfile();
+        // Ranked matches get here from a network thread - achievements run on the render thread.
+        enqueue(() -> recordMatchAchievements(won, playerScore, opponentScore));
     }
 
     /** Same as {@link #endMatch}, but for the HOST side of a ranked multiplayer match: also
@@ -659,8 +726,27 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
         return reward;
     }
 
-    /** Stops the match and plays the win/defeat sting - shared by every match-end path. */
+    /** Evaluates achievements for the match captured in {@link #lastMatchContext}. Render thread. */
+    private void recordMatchAchievements(boolean won, int playerScore, int opponentScore) {
+        MatchContext context = lastMatchContext;
+        if (context == null) {
+            return;
+        }
+        lastMatchContext = null;
+        MatchOutcome outcome = new MatchOutcome(context.kind(), won, playerScore, opponentScore,
+                context.levelId(), context.aiDifficulty(), context.powerUpsUsed());
+        grantAchievements(AchievementTracker.recordMatch(profile, outcome), true);
+    }
+
+    /** Stops the match and plays the win/defeat sting - shared by every match-end path. Also
+     *  snapshots the match for achievements, while the gameplay state is still guaranteed to exist. */
     private void beginMatchEnd(boolean playerWon) {
+        MatchOutcome.Kind kind = gameplayState.getTourOpponent() != null ? MatchOutcome.Kind.WORLD_TOUR
+                : gameplayState.getMode() == GameplayAppState.Mode.SINGLE_PLAYER ? MatchOutcome.Kind.QUICK_MATCH
+                : MatchOutcome.Kind.ONLINE;
+        lastMatchContext = new MatchContext(kind, gameplayState.getAuthoritativeLevelId(),
+                kind == MatchOutcome.Kind.QUICK_MATCH ? gameSettings.getAiDifficulty() : null,
+                gameplayState.getLocalPowerUpsUsed());
         gameplayState.setEnabled(false);
         audioManager.stopMusic();
         audioManager.playSfx(playerWon ? "match_win.ogg" : "match_defeat.ogg");

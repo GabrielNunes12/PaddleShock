@@ -190,9 +190,22 @@ public class ProfileState extends BaseAppState {
         buildRivals(app, rightCard);
         fixCardWidth(rightCard, RIGHT_CARD_WIDTH);
 
-        Button back = panel.addChild(new Button(I18n.t("profile.back")));
+        Container footer = panel.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
+        // Explicit background: a bare Container otherwise picks up Lemur's default gradient style.
+        footer.setBackground(new QuadBackgroundComponent(Theme.PANEL));
+        footer.setInsets(new Insets3f(18, 0, 0, 0));
+        int unlockedCount = app.getProfile().getUnlockedAchievements().size();
+        Button achievements = footer.addChild(new Button(I18n.t("profile.achievements", unlockedCount,
+                com.paddleshock.achievements.Achievement.values().length)));
+        styleButton(achievements, Theme.ORANGE, Theme.ON_ACCENT, 14);
+        achievements.setInsets(new Insets3f(6, 0, 6, 12));
+        achievements.addClickCommands(source -> {
+            app.getAudioManager().playSfx("button_click.ogg");
+            commitNameEdit(app);
+            ((Navigator) getApplication()).showAchievements(((Navigator) getApplication())::showProfile);
+        });
+        Button back = footer.addChild(new Button(I18n.t("profile.back")));
         styleButton(back, Theme.PANEL_HOVER, Theme.TEXT, 14);
-        back.setInsets(new Insets3f(18, 0, 0, 0));
         back.addClickCommands(source -> {
             app.getAudioManager().playSfx("button_click.ogg");
             commitNameEdit(app);

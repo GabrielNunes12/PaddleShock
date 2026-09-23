@@ -350,6 +350,9 @@ public class StoreState extends BaseAppState {
                 success = profile.purchase(category, id, price);
             }
             app.saveProfile();
+            if (success && !owned) {
+                app.checkAchievements();
+            }
             app.getAudioManager().playSfx(success ? "button_confirm.ogg" : "purchase_denied.ogg");
             rebuild(app);
         });
@@ -412,6 +415,9 @@ public class StoreState extends BaseAppState {
             buy.addClickCommands((Command<Button>) source -> {
                 boolean success = profile.purchasePowerUp(item.getId(), item.getPrice());
                 app.saveProfile();
+                if (success) {
+                    app.checkAchievements();
+                }
                 app.getAudioManager().playSfx(success ? "button_confirm.ogg" : "purchase_denied.ogg");
                 rebuild(app);
             });

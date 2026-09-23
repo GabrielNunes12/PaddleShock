@@ -27,6 +27,9 @@ public interface PlayerContext {
 
     void saveProfile();
 
+    /** Re-checks profile-state achievements (e.g. after a purchase) and grants any newly earned. */
+    void checkAchievements();
+
     GameSettings getGameSettings();
 
     AudioManager getAudioManager();

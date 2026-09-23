@@ -43,6 +43,10 @@ final class RankedMatchCoordinator {
     private final RankService rankService;
     private final MatchEndState matchEndState;
     private final MatchEndCommon matchEndCommon;
+
+    /** Notified (on whatever thread the rank call completed on) with every non-null rank result,
+     *  e.g. for rank achievements. Optional. */
+    private volatile java.util.function.Consumer<RankState> rankListener;
     private final MatchHistoryRecorder matchHistoryRecorder;
 
     /** This player's rank as of just before the current joined match started - see
@@ -99,7 +103,7 @@ final class RankedMatchCoordinator {
 
         String joinerPlayerId = netHost == null ? "" : netHost.getJoinerPlayerId();
         if (joinerPlayerId == null || joinerPlayerId.isEmpty()) {
-            matchEndState.reportRankResult(null);
+            reportRank(null);
             matchHistoryRecorder.record("Ranked", playerScore, opponentScore, playerWon, 0, null);
             return;
         }
@@ -121,7 +125,7 @@ final class RankedMatchCoordinator {
                 // completed normally, so just show "rank unavailable" rather than fail anything.
                 NetLog.log("ranked match report failed (host)", e);
             }
-            matchEndState.reportRankResult(result);
+            reportRank(result);
             matchHistoryRecorder.record("Ranked", playerScore, opponentScore, playerWon,
                     result == null ? 0 : result.getLpChange(), joinerPlayerId);
         }, "rank-report");
@@ -164,7 +168,7 @@ final class RankedMatchCoordinator {
                 // offline, or the rank service is unreachable - the forfeit itself still stands.
                 NetLog.log("ranked forfeit report failed (host)", e);
             }
-            matchEndState.reportRankResult(result);
+            reportRank(result);
             matchHistoryRecorder.record("Ranked", playerScore, opponentScore, true,
                     result == null ? 0 : result.getLpChange(), joinerPlayerId);
         }, "rank-report-forfeit");
@@ -191,7 +195,7 @@ final class RankedMatchCoordinator {
             // failed entirely, or the connection dropped right after match-end).
             RankState relayed = waitForRelayedRankResult(netClient);
             if (relayed != null) {
-                matchEndState.reportRankResult(relayed);
+                reportRank(relayed);
                 matchHistoryRecorder.record("Ranked", playerScore, opponentScore, playerWon, relayed.getLpChange(), hostOpponentPlayerId);
                 return;
             }
@@ -221,15 +225,15 @@ final class RankedMatchCoordinator {
                     fetched = rankService.getRank(playerId); // gave up waiting - show whatever's there
                 }
                 RankState delta = fetched.withDeltaFrom(baseline);
-                matchEndState.reportRankResult(delta);
+                reportRank(delta);
                 matchHistoryRecorder.record("Ranked", playerScore, opponentScore, playerWon, delta.getLpChange(), hostOpponentPlayerId);
             } catch (IOException e) {
-                matchEndState.reportRankResult(null); // offline, or the rank service is unreachable
+                reportRank(null); // offline, or the rank service is unreachable
                 matchHistoryRecorder.record("Ranked", playerScore, opponentScore, playerWon, 0, hostOpponentPlayerId);
                 NetLog.log("ranked rank-fetch failed (joiner)", e);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                matchEndState.reportRankResult(null);
+                reportRank(null);
                 matchHistoryRecorder.record("Ranked", playerScore, opponentScore, playerWon, 0, hostOpponentPlayerId);
             }
         }, "rank-fetch");
@@ -267,5 +271,18 @@ final class RankedMatchCoordinator {
             Thread.sleep(200);
         }
         return preMatchRank;
+    }
+
+    public void setRankListener(java.util.function.Consumer<RankState> listener) {
+        this.rankListener = listener;
+    }
+
+    /** Hands a rank result to the match-end screen, and to the rank listener if it's real. */
+    private void reportRank(RankState state) {
+        matchEndState.reportRankResult(state);
+        java.util.function.Consumer<RankState> listener = rankListener;
+        if (state != null && listener != null) {
+            listener.accept(state);
+        }
     }
 }

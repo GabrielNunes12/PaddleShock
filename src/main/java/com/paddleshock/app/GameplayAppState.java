@@ -95,6 +95,9 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
     private float aiPowerUpMaxInterval;
     private float aiPowerUpTimer;
 
+    /** Power-ups the local player activated this match - for the POWER_PLAYER achievement. */
+    private int localPowerUpsUsed;
+
     // Colorblind-accessible power-up activation feedback: a transient centered text banner naming
     // both WHO activated it and whether it's a BUFF or a DEBUFF in words, not just the power-up's
     // swatch color - see showPowerUpBanner(). Previously the only feedback for an activation
@@ -722,6 +725,9 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                         // From the joiner's own point of view "you" are the joiner (mirroring the
                         // isHostWon() negation just below), so ACTOR_JOINER means the local viewer.
                         boolean byLocalViewer = snapshot.powerUpActorSide() == NetProtocol.SnapshotMessage.ACTOR_JOINER;
+                        if (byLocalViewer) {
+                            localPowerUpsUsed++;
+                        }
                         showPowerUpBanner(byLocalViewer, activatedType);
                     }
                 }
@@ -814,6 +820,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             // that's the host themselves - see updateHost's tick() argument order), so these map
             // straight onto showPowerUpBanner's "activated by the local viewer" flag.
             if (result.isPlayerPowerUpActivated()) {
+                localPowerUpsUsed++;
                 showPowerUpBanner(true, result.getPlayerActivatedType());
             } else if (result.isOpponentPowerUpActivated()) {
                 showPowerUpBanner(false, result.getOpponentActivatedType());
@@ -883,6 +890,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
         // single-player match, where these are already at their defaults and this is a no-op.
         joinerDisplayScore = 0;
         hostDisplayScore = 0;
+        localPowerUpsUsed = 0;
         lastAppliedSnapshot = null;
         disconnectHandled = false;
         reconnectWatcher.reset();
@@ -891,6 +899,18 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
 
     public Mode getMode() {
         return mode;
+    }
+
+    /** Power-ups the local player has activated so far this match. */
+    public int getLocalPowerUpsUsed() {
+        return localPowerUpsUsed;
+    }
+
+    /** The arena this match is played in, as far as this client authoritatively knows it: the
+     *  host/single-player's own level; {@code null} for a joiner/spectator, whose scene uses its
+     *  own equipped level rather than the host's. */
+    public String getAuthoritativeLevelId() {
+        return mode == Mode.SINGLE_PLAYER || mode == Mode.HOST ? level.getId() : null;
     }
 
     /** The World Tour opponent this match is against, or {@code null} for any other match. */

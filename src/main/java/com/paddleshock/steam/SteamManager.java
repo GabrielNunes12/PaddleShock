@@ -5,6 +5,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Collection;
 import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -14,6 +15,8 @@ import com.codedisaster.steamworks.SteamException;
 import com.codedisaster.steamworks.SteamFriends;
 import com.codedisaster.steamworks.SteamFriendsCallback;
 import com.codedisaster.steamworks.SteamLibraryLoader;
+import com.codedisaster.steamworks.SteamUserStats;
+import com.codedisaster.steamworks.SteamUserStatsCallback;
 
 /**
  * Best-effort wrapper around the Steamworks native API. Steam integration is entirely
@@ -35,6 +38,7 @@ public class SteamManager {
 
     private boolean available;
     private SteamFriends steamFriends;
+    private SteamUserStats userStats;
 
     public SteamManager() {
         try {
@@ -61,6 +65,14 @@ public class SteamManager {
                 // never throw regardless - fall back to offline-name behavior if it does.
                 steamFriends = null;
             }
+            try {
+                // Current SDKs load the user's stats/achievements during SteamAPI.init(), so no
+                // requestCurrentStats() round trip is needed before setAchievement().
+                userStats = new SteamUserStats(new SteamUserStatsCallback() {
+                });
+            } catch (Throwable t) {
+                userStats = null;
+            }
         }
     }
 
@@ -84,6 +96,26 @@ public class SteamManager {
         }
     }
 
+    /** Unlocks the given achievements (Steam API names, e.g. {@code ACH_FIRST_WIN}) on Steam and
+     *  stores them in one batch. Re-unlocking one Steam already has is a harmless no-op, which is
+     *  what lets every local unlock simply be re-sent on each launch. A name that isn't configured
+     *  in Steamworks just fails that one call. No-op without Steam; never throws. */
+    public void unlockAchievements(Collection<String> apiNames) {
+        if (!available || userStats == null || apiNames.isEmpty()) {
+            return;
+        }
+        try {
+            for (String apiName : apiNames) {
+                if (!userStats.setAchievement(apiName)) {
+                    LOG.fine("Steam rejected achievement " + apiName + " (not configured for this App ID?)");
+                }
+            }
+            userStats.storeStats();
+        } catch (Throwable t) {
+            LOG.log(Level.WARNING, "Steam achievement sync failed", t);
+        }
+    }
+
     /** Pumps Steam callbacks; safe to call every frame even when Steam is unavailable. */
     public void update() {
         if (!available) {
@@ -101,6 +133,15 @@ public class SteamManager {
     public void shutdown() {
         if (!available) {
             return;
+        }
+        if (userStats != null) {
+            try {
+                userStats.dispose();
+            } catch (Exception e) {
+                LOG.log(Level.WARNING, "SteamUserStats dispose failed", e);
+            } finally {
+                userStats = null;
+            }
         }
         if (steamFriends != null) {
             try {

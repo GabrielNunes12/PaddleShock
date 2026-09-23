@@ -80,6 +80,15 @@ public class PlayerProfile {
     // treat that as an empty set, same no-migration-needed treatment as rivals/friends above.
     private Set<String> tourBeatenIds = new HashSet<>();
 
+    // Achievements (see com.paddleshock.achievements.AchievementTracker): unlocked Achievement enum
+    // names, plus the lifetime counters some of them need. Match history is capped, so these are
+    // kept separately. Old saves predate all four; null sets read as empty, and the counters simply
+    // start at 0 from the first match played on this build.
+    private Set<String> unlockedAchievements = new HashSet<>();
+    private int totalWins;
+    private int powerUpsUsed;
+    private Set<String> levelsWonOn = new HashSet<>();
+
     private Set<String> ownedPaddleIds = new HashSet<>(Set.of("paddle_classic"));
     private Set<String> ownedTableIds = new HashSet<>(Set.of("table_classic"));
     private Set<String> ownedBallIds = new HashSet<>(Set.of("ball_classic"));
@@ -264,6 +273,47 @@ public class PlayerProfile {
             tourBeatenIds = new HashSet<>();
         }
         tourBeatenIds.add(opponentId);
+    }
+
+    /** Unlocked achievement names (see {@code Achievement}). Never {@code null}; read-only. */
+    public Set<String> getUnlockedAchievements() {
+        return unlockedAchievements == null ? Set.of() : Set.copyOf(unlockedAchievements);
+    }
+
+    /** Marks an achievement unlocked; returns {@code true} only if it wasn't already. */
+    public boolean unlockAchievement(String name) {
+        if (unlockedAchievements == null) {
+            unlockedAchievements = new HashSet<>();
+        }
+        return unlockedAchievements.add(name);
+    }
+
+    public int getTotalWins() {
+        return totalWins;
+    }
+
+    public int getPowerUpsUsed() {
+        return powerUpsUsed;
+    }
+
+    public void addPowerUpsUsed(int count) {
+        powerUpsUsed += Math.max(0, count);
+    }
+
+    /** Arenas (level ids) this player has won at least one match on. Never {@code null}; read-only. */
+    public Set<String> getLevelsWonOn() {
+        return levelsWonOn == null ? Set.of() : Set.copyOf(levelsWonOn);
+    }
+
+    /** Counts a win; {@code levelId} may be {@code null} when the arena isn't known. */
+    public void addWin(String levelId) {
+        totalWins++;
+        if (levelId != null) {
+            if (levelsWonOn == null) {
+                levelsWonOn = new HashSet<>();
+            }
+            levelsWonOn.add(levelId);
+        }
     }
 
     public boolean owns(String category, String id) {
