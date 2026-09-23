@@ -19,6 +19,17 @@ public class GameSettings {
     private Resolution resolution = Resolution.R_1280x720;
     private AiDifficulty aiDifficulty = AiDifficulty.NORMAL;
     private Lang language = Lang.EN;
+    /** Camera shake on impacts; some players find it uncomfortable, so it can be turned off.
+     *  Old settings files predate it and keep this default (on). */
+    private boolean screenShake = true;
+
+    public boolean isScreenShake() {
+        return screenShake;
+    }
+
+    public void setScreenShake(boolean screenShake) {
+        this.screenShake = screenShake;
+    }
 
     public int getSaveVersion() {
         return saveVersion;

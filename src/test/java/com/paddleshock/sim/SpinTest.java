@@ -115,4 +115,23 @@ class SpinTest {
         ball.bounceOffSideRail();
         assertEquals(-0.75f, ball.getSpin(), 1e-6f);
     }
+
+    @Test
+    void aReturnedBallIsNotReHitWhenTheNextFramesAreShort() {
+        // Regression (seen live): a fast ball carried deep into the paddle's reach zone by a
+        // normal frame, followed by very short frames (a hitch, or a 240Hz+ display), stayed in
+        // the zone after the hit and was re-hit every tick - bounced back into the paddle and
+        // trapped there. The same happens if the player pushes the paddle forward after a hit.
+        ball.setNetworkState(0.2f, 0.4f, GameConstants.PADDLE_PLAYER_Z + 0.7f, 0f, -14f, 0f);
+        int hits = sim.tick(1f / 60f, PaddleInput.none(), PaddleInput.none()).isPlayerPaddleHit() ? 1 : 0;
+        assertEquals(1, hits, "the normal frame makes contact deep inside the reach zone");
+        for (int i = 0; i < 200; i++) {
+            if (sim.tick(0.0007f, PaddleInput.none(), PaddleInput.none()).isPlayerPaddleHit()) {
+                hits++;
+            }
+        }
+        assertEquals(1, hits, "exactly one contact");
+        assertTrue(ball.getVelocity().z > 0f, "the ball leaves toward the opponent");
+        assertTrue(ball.getPosition().z > GameConstants.PADDLE_PLAYER_Z + 2f, "and actually gets away: " + ball.getPosition().z);
+    }
 }

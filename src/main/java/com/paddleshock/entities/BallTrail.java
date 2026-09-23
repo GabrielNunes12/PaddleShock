@@ -72,6 +72,7 @@ public class BallTrail {
             ColorRGBA color = trail.isRainbow() ? hue(time * 0.6f + i * 0.05f) : trail.getColor().clone();
             color.a = buffer.alpha(i, MAX_ALPHA);
             materials[i].setColor("Color", color);
+            materials[i].setColor("GlowColor", color.mult(color.a));
         }
     }
 

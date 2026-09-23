@@ -92,6 +92,26 @@ public class Ball {
         this.spin = spin;
     }
 
+    /** Seconds left of the contact "pop" (see {@link #pop}). Purely visual. */
+    private float popTimer;
+    private static final float POP_SECONDS = 0.14f;
+    private static final float POP_SCALE = 0.28f;
+
+    /** A quick swell on contact, so hits read at a glance. Visual only - radius is unchanged. */
+    public void pop() {
+        popTimer = POP_SECONDS;
+    }
+
+    /** Advances the pop swell; call every rendered frame on every client. */
+    public void animatePop(float tpf) {
+        if (popTimer <= 0f) {
+            return;
+        }
+        popTimer = Math.max(0f, popTimer - tpf);
+        float t = popTimer / POP_SECONDS;
+        node.setLocalScale(1f + POP_SCALE * t * t);
+    }
+
     /** Turns the model about its vertical axis in proportion to spin - purely visual, so every
      *  client (including a joiner that only renders snapshots) can call it each frame. */
     public void animateSpin(float tpf) {

@@ -233,6 +233,8 @@ public class MainMenuState extends BaseAppState {
         chip.setInsets(new Insets3f(0, 0, 0, 14));
 
         Button navButton = card.addChild(new Button(label));
+        // A nav row reads left-to-right after its chip, unlike the game's centered buttons.
+        navButton.setTextHAlignment(HAlignment.Left);
         navButton.setBackground(new QuadBackgroundComponent(Theme.PANEL));
         navButton.setColor(Theme.TEXT);
         navButton.setFontSize(16);

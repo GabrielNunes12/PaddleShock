@@ -95,6 +95,7 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
     }
 
     private volatile MatchContext lastMatchContext;
+
     private LeaderboardState leaderboardState;
     private ProfileState profileState;
     private TournamentState tournamentState;
@@ -144,6 +145,7 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
         GuiGlobals.initialize(this);
         BaseStyles.loadGlassStyle();
         GuiGlobals.getInstance().getStyles().setDefaultStyle("glass");
+        com.paddleshock.ui.UiStyle.apply(GuiGlobals.getInstance().getStyles());
 
         splashState = new SplashState();
         mainMenuState = new MainMenuState();
@@ -183,6 +185,16 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
         stateManager.attach(worldTourState);
         stateManager.attach(achievementsState);
         stateManager.attach(toastState);
+        // Fade whenever the visible screen changes; the gameplay state is recreated per match, so
+        // it's checked through the current field rather than a fixed instance.
+        java.util.List<java.util.function.BooleanSupplier> screens = new java.util.ArrayList<>();
+        for (com.jme3.app.state.BaseAppState screen : java.util.List.of(splashState, mainMenuState, pauseState,
+                optionsState, storeState, matchEndState, loadoutState, multiplayerState, howToPlayState, creditsState,
+                worldTourState, achievementsState, leaderboardState, profileState, tournamentState, friendsState)) {
+            screens.add(screen::isEnabled);
+        }
+        screens.add(() -> gameplayState != null && gameplayState.isEnabled());
+        stateManager.attach(new com.paddleshock.ui.FadeState(screens));
         stateManager.attach(leaderboardState);
         stateManager.attach(profileState);
         stateManager.attach(tournamentState);

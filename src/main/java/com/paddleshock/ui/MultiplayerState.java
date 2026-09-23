@@ -223,7 +223,9 @@ public class MultiplayerState extends BaseAppState {
 
         Button hostButton = panel.addChild(new Button(I18n.t("multiplayer.host_match")));
         styleButton(hostButton, Theme.ORANGE, Theme.ON_ACCENT, 18);
-        hostButton.setPreferredSize(new Vector3f(CARD_CONTENT_WIDTH, 50, 0));
+        // Lemur counts insets inside the preferred size, so the 22px gap below is added on top of
+        // the button's own height rather than eaten out of it.
+        hostButton.setPreferredSize(new Vector3f(CARD_CONTENT_WIDTH, 50 + 22, 0));
         hostButton.setInsets(new Insets3f(0, 0, 22, 0));
         hostButton.addClickCommands(source -> {
             app.getAudioManager().playSfx("button_click.ogg");
@@ -236,7 +238,7 @@ public class MultiplayerState extends BaseAppState {
         // presented as part of the card rather than a separate loose button.
         Button joinButton = panel.addChild(new Button(I18n.t("multiplayer.join_match")));
         styleButton(joinButton, Theme.PANEL_HOVER, Theme.TEXT, 16);
-        joinButton.setPreferredSize(new Vector3f(CARD_CONTENT_WIDTH, 46, 0));
+        joinButton.setPreferredSize(new Vector3f(CARD_CONTENT_WIDTH, 46 + 22, 0));
         joinButton.setInsets(new Insets3f(0, 0, 22, 0));
         joinButton.addClickCommands(source -> {
             app.getAudioManager().playSfx("button_click.ogg");

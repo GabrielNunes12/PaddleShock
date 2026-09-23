@@ -45,6 +45,24 @@ public class AudioManager {
         node.playInstance();
     }
 
+    /** Same, with per-play volume scale and pitch (e.g. harder hits sound higher and louder -
+     *  see {@link HitSoundMapping}). */
+    public void playSfx(String fileName, float volumeScale, float pitch) {
+        if (settings.getSoundVolume() <= 0f) {
+            return;
+        }
+        AudioNode node = sfxCache.computeIfAbsent(fileName, name -> {
+            AudioNode sfx = new AudioNode(assetManager, SFX_PATH + name, AudioData.DataType.Buffer);
+            sfx.setPositional(false);
+            sfx.setLooping(false);
+            return sfx;
+        });
+        node.setVolume(settings.getSoundVolume() * volumeScale);
+        node.setPitch(Math.max(0.5f, Math.min(2f, pitch)));
+        node.playInstance();
+        node.setPitch(1f);
+    }
+
     public void playMenuMusic() {
         playMusic(MUSIC_PATH + "menu_theme.ogg");
     }
