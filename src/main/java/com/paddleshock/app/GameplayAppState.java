@@ -108,6 +108,10 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
      *  Shield is shown as a glowing strip + label along the bottom of the HUD instead. */
     private Geometry ownShieldStrip;
 
+    /** Equipped cosmetics (local view only); null when the "none" default is equipped. */
+    private com.paddleshock.entities.BallTrail ballTrail;
+    private com.paddleshock.entities.CelebrationBurst celebrationBurst;
+
     /** Pinball Palace's two bumpers ([0] near/-z, [1] far/+z); null on every other arena. */
     private Node[] bumperNodes;
     private BitmapText ownShieldLabel;
@@ -323,15 +327,23 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                 tableDef.getTextureSet(), tableDef.getRestitutionMultiplier());
         gameNode.attachChild(table.getNode());
 
-        playerPaddle = new Paddle(getApplication().getAssetManager(), paddleDef.getColor(), paddleDef.getTextureSet(),
+        // A paddle skin recolors whichever paddle the local viewer controls - the near one, or for
+        // a joiner the far one (see applySnapshotToScene). Stats always come from the paddle item.
+        com.paddleshock.data.CosmeticDefinition skin = equippedCosmetic(profile, "skin");
+        boolean skinOnNear = skin != null && mode != Mode.JOINER && mode != Mode.SPECTATOR;
+        boolean skinOnFar = skin != null && mode == Mode.JOINER;
+        playerPaddle = new Paddle(getApplication().getAssetManager(),
+                skinOnNear ? skin.getColor() : paddleDef.getColor(),
+                skinOnNear ? skin.getTextureSet() : paddleDef.getTextureSet(),
                 paddleDef.getPaddleModel(), GameConstants.PADDLE_PLAYER_Z, paddleDef.getSpeedMultiplier(),
                 paddleDef.getSizeMultiplier());
         gameNode.attachChild(playerPaddle.getNode());
 
         ColorRGBA opponentColor = tourOpponent != null ? tourOpponent.paddleColor() : new ColorRGBA(1f, 0.35f, 0.3f, 1f);
         float opponentSize = tourOpponent != null ? tourOpponent.paddleSize() : 1f;
-        opponentPaddle = new Paddle(getApplication().getAssetManager(), opponentColor,
-                TextureSet.PLASTIC, PaddleModel.CLASSIC, GameConstants.PADDLE_OPPONENT_Z, 1f, opponentSize);
+        opponentPaddle = new Paddle(getApplication().getAssetManager(), skinOnFar ? skin.getColor() : opponentColor,
+                skinOnFar ? skin.getTextureSet() : TextureSet.PLASTIC, PaddleModel.CLASSIC,
+                GameConstants.PADDLE_OPPONENT_Z, 1f, opponentSize);
         gameNode.attachChild(opponentPaddle.getNode());
 
         // The level's own bounce energy stacks with the table's, so e.g. a bouncy table in the
@@ -354,6 +366,17 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                 mode != Mode.SINGLE_PLAYER, scoreboardDisplays));
 
         replayController = new ReplayController(ball, playerPaddle, opponentPaddle, app.getInputManager());
+
+        com.paddleshock.data.CosmeticDefinition trail = equippedCosmetic(profile, "trail");
+        if (trail != null && mode != Mode.SPECTATOR) {
+            ballTrail = new com.paddleshock.entities.BallTrail(getApplication().getAssetManager(), trail, ball.getRadius());
+            gameNode.attachChild(ballTrail.getNode());
+        }
+        com.paddleshock.data.CosmeticDefinition celebration = equippedCosmetic(profile, "celebration");
+        if (celebration != null && mode != Mode.SPECTATOR) {
+            celebrationBurst = new com.paddleshock.entities.CelebrationBurst(getApplication().getAssetManager(), celebration);
+            gameNode.attachChild(celebrationBurst.getNode());
+        }
 
         if (level.getHazard() == com.paddleshock.data.LevelHazard.BUMPERS) {
             bumperNodes = new Node[] {buildBumper(), buildBumper()};
@@ -452,6 +475,20 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             Spatial.CullHint hint = ownShield ? Spatial.CullHint.Never : Spatial.CullHint.Always;
             ownShieldStrip.setCullHint(hint);
             ownShieldLabel.setCullHint(hint);
+        }
+    }
+
+    /** The equipped cosmetic in {@code category}, or null for its "none" default. */
+    private static com.paddleshock.data.CosmeticDefinition equippedCosmetic(PlayerProfile profile, String category) {
+        return Catalog.findCosmetic(category, profile.getEquippedId(category))
+                .filter(c -> !c.isNone())
+                .orElse(null);
+    }
+
+    /** Fires the equipped score celebration at the goal the local player just scored on. */
+    private void celebrateLocalPoint(float goalZ) {
+        if (celebrationBurst != null) {
+            celebrationBurst.trigger(new Vector3f(0f, 0.4f, goalZ));
         }
     }
 
@@ -612,6 +649,7 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
 
     @Override
     public void update(float tpf) {
+        updateCosmetics(tpf);
         if (replayController.isReplaying()) {
             replayController.update(tpf);
             updatePowerUpBanner(tpf);
@@ -624,6 +662,17 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             case SPECTATOR -> updateSpectator(tpf);
         }
         updatePowerUpBanner(tpf);
+    }
+
+    /** Trail + celebration animation, every frame in every mode (also during the replay). The
+     *  trail hides whenever the ball does, so it can't give away a Ghost Ball. */
+    private void updateCosmetics(float tpf) {
+        if (ballTrail != null) {
+            ballTrail.update(ball.getPosition(), ball.getNode().getCullHint() != Spatial.CullHint.Always, tpf);
+        }
+        if (celebrationBurst != null) {
+            celebrationBurst.update(tpf);
+        }
     }
 
     /** Shows a centered, timed HUD banner naming who activated a power-up and whether it's a BUFF
@@ -872,6 +921,10 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
                 snapshot.joinerPaddleX(), snapshot.joinerPaddleZ(),
                 snapshot.hostScore(), snapshot.joinerScore()));
 
+        if (mode == Mode.JOINER && snapshot.joinerScore() > joinerDisplayScore) {
+            // The joiner scores on the host's (near, -z) goal.
+            celebrateLocalPoint(-GameConstants.TABLE_HALF_LENGTH);
+        }
         hostDisplayScore = snapshot.hostScore();
         joinerDisplayScore = snapshot.joinerScore();
 
@@ -1009,6 +1062,10 @@ public class GameplayAppState extends BaseAppState implements ActionListener {
             } else if (result.isOpponentPowerUpActivated()) {
                 showPowerUpBanner(false, result.getOpponentActivatedType());
             }
+        }
+        if (result.getScorer() == TickResult.Scorer.PLAYER) {
+            // "Player" is the local viewer in single-player and host modes; they scored on the far goal.
+            celebrateLocalPoint(GameConstants.TABLE_HALF_LENGTH);
         }
         if (result.getScorer() != TickResult.Scorer.NONE) {
             updateScoreText();

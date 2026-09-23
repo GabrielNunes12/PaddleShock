@@ -493,7 +493,11 @@ public class MatchEndState extends BaseAppState {
         attachScoreboard(centerX - scoreWidth / 2f, scoreWidth, scoreY, 108, playerScore, opponentScore, Theme.TEXT_DIM, Theme.TEXT);
 
         float consolationY = scoreY - 108 - 20;
-        attachCenteredText(centerX, consolationY, I18n.t("matchend.try_again", winScore), 16, Theme.TEXT_DIM);
+        String consolation = I18n.t("matchend.try_again", winScore);
+        if (rewardEarned > 0) {
+            consolation += "   " + I18n.t("matchend.consolation_reward", rewardEarned);
+        }
+        attachCenteredText(centerX, consolationY, consolation, 16, Theme.TEXT_DIM);
 
         float actionsY = consolationY - 24;
         if (ranked) {

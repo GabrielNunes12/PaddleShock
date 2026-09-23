@@ -138,6 +138,9 @@ public class StoreState extends BaseAppState {
         addTab(tabs, app, I18n.t("store.tab_tables"), "table");
         addTab(tabs, app, I18n.t("store.tab_balls"), "ball");
         addTab(tabs, app, I18n.t("store.tab_powerups"), "powerup");
+        addTab(tabs, app, I18n.t("store.tab_skins"), "skin");
+        addTab(tabs, app, I18n.t("store.tab_trails"), "trail");
+        addTab(tabs, app, I18n.t("store.tab_celebrations"), "celebration");
 
         Container cardsRow = panel.addChild(new Container(new SpringGridLayout(Axis.X, Axis.Y)));
         cardsRow.setInsets(new Insets3f(0, 0, 16, 0));
@@ -200,6 +203,9 @@ public class StoreState extends BaseAppState {
         addTab(tabs, app, I18n.t("store.tab_tables"), "table");
         addTab(tabs, app, I18n.t("store.tab_balls"), "ball");
         addTab(tabs, app, I18n.t("store.tab_powerups"), "powerup");
+        addTab(tabs, app, I18n.t("store.tab_skins"), "skin");
+        addTab(tabs, app, I18n.t("store.tab_trails"), "trail");
+        addTab(tabs, app, I18n.t("store.tab_celebrations"), "celebration");
         Vector3f tabsSize = tabs.getPreferredSize();
         tabs.setLocalTranslation((screenW - tabsSize.x) / 2f, screenH - (HEADER_HEIGHT - tabsSize.y) / 2f, 2);
         uiRoot.attachChild(tabs);
@@ -253,6 +259,7 @@ public class StoreState extends BaseAppState {
             case "table" -> Catalog.TABLES.size();
             case "ball" -> Catalog.BALLS.size();
             case "powerup" -> Catalog.POWERUPS.size();
+            case "skin", "trail", "celebration" -> Catalog.cosmeticsFor(category).size();
             default -> 0;
         };
     }
@@ -344,6 +351,16 @@ public class StoreState extends BaseAppState {
             case "powerup" -> {
                 for (PowerUpDefinition item : onPage(Catalog.POWERUPS)) {
                     addPowerUpCard(cardsRow, app, profile, item);
+                }
+            }
+            case "skin", "trail", "celebration" -> {
+                String[] stats = { I18n.t("store.cosmetic_tag") };
+                String[] defaultStats = { I18n.t("store.cosmetic_default") };
+                for (com.paddleshock.data.CosmeticDefinition item : onPage(Catalog.cosmeticsFor(selectedCategory))) {
+                    // A rainbow item has no single color; show it with the brand orange swatch.
+                    ColorRGBA swatch = item.isRainbow() ? Theme.ORANGE : item.getColor();
+                    addCard(cardsRow, app, profile, selectedCategory, item.getId(), item.getDisplayName(),
+                            item.getPrice(), swatch, item.isNone() ? defaultStats : stats);
                 }
             }
             default -> throw new IllegalStateException("Unknown category: " + selectedCategory);

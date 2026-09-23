@@ -13,7 +13,6 @@ import com.simsilica.lemur.style.BaseStyles;
 import java.io.IOException;
 import java.net.SocketException;
 
-import com.paddleshock.GameConstants;
 import com.paddleshock.achievements.Achievement;
 import com.paddleshock.achievements.AchievementTracker;
 import com.paddleshock.achievements.MatchOutcome;
@@ -589,10 +588,11 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
     private void endTourMatch(TourOpponent opponent, boolean playerWon, int playerScore, int opponentScore) {
         beginMatchEnd(playerWon);
         java.util.Set<String> beatenBefore = profile.getTourBeatenIds();
-        int reward = 0;
+        int reward = playerWon
+                ? WorldTour.winReward(beatenBefore, opponent, randomMatchReward())
+                : MatchRewards.forResult(false, ThreadLocalRandom.current());
+        profile.addCurrency(reward);
         if (playerWon) {
-            reward = WorldTour.winReward(beatenBefore, opponent, randomMatchReward());
-            profile.addCurrency(reward);
             profile.markTourBeaten(opponent.id());
         }
         boolean firstWin = playerWon && !beatenBefore.contains(opponent.id());
@@ -718,12 +718,10 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
     private int endMatchCommon(boolean playerWon, int playerScore, int opponentScore) {
         beginMatchEnd(playerWon);
 
-        int reward = 0;
-        if (playerWon) {
-            reward = randomMatchReward();
-            profile.addCurrency(reward);
-            saveProfile();
-        }
+        // A completed match always pays something - the win range, or a small consolation on a loss.
+        int reward = MatchRewards.forResult(playerWon, ThreadLocalRandom.current());
+        profile.addCurrency(reward);
+        saveProfile();
         return reward;
     }
 
@@ -754,7 +752,7 @@ public class PaddleShockApp extends SimpleApplication implements Navigator, Play
     }
 
     private static int randomMatchReward() {
-        return ThreadLocalRandom.current().nextInt(GameConstants.MATCH_REWARD_MIN, GameConstants.MATCH_REWARD_MAX + 1);
+        return MatchRewards.forResult(true, ThreadLocalRandom.current());
     }
 
     public void showStore() {

@@ -99,6 +99,15 @@ public class PlayerProfile {
     private String equippedBallId = "ball_classic";
     private String equippedLevelId = "level_classic";
 
+    // Cosmetics (see CosmeticDefinition). Old saves predate these and deserialize them as null;
+    // ownedSetFor()/getEquippedId() fall back to the free "none" defaults.
+    private Set<String> ownedSkinIds = new HashSet<>(Set.of("skin_none"));
+    private Set<String> ownedTrailIds = new HashSet<>(Set.of("trail_none"));
+    private Set<String> ownedCelebrationIds = new HashSet<>(Set.of("celebration_none"));
+    private String equippedSkinId = "skin_none";
+    private String equippedTrailId = "trail_none";
+    private String equippedCelebrationId = "celebration_none";
+
     /** Up to 3 owned power-up ids, one per key slot (1/2/3); a slot is empty when null. */
     private List<String> powerUpLoadout = new ArrayList<>(List.of("", "", ""));
 
@@ -343,6 +352,9 @@ public class PlayerProfile {
             case "table" -> equippedTableId = id;
             case "ball" -> equippedBallId = id;
             case "level" -> equippedLevelId = id;
+            case "skin" -> equippedSkinId = id;
+            case "trail" -> equippedTrailId = id;
+            case "celebration" -> equippedCelebrationId = id;
             default -> throw new IllegalArgumentException("Unknown category: " + category);
         }
     }
@@ -353,6 +365,9 @@ public class PlayerProfile {
             case "table" -> equippedTableId;
             case "ball" -> equippedBallId;
             case "level" -> equippedLevelId;
+            case "skin" -> equippedSkinId != null ? equippedSkinId : "skin_none";
+            case "trail" -> equippedTrailId != null ? equippedTrailId : "trail_none";
+            case "celebration" -> equippedCelebrationId != null ? equippedCelebrationId : "celebration_none";
             default -> throw new IllegalArgumentException("Unknown category: " + category);
         };
     }
@@ -363,8 +378,18 @@ public class PlayerProfile {
             case "paddle" -> ownedPaddleIds;
             case "table" -> ownedTableIds;
             case "ball" -> ownedBallIds;
+            case "skin" -> ownedSkinIds = withDefault(ownedSkinIds, "skin_none");
+            case "trail" -> ownedTrailIds = withDefault(ownedTrailIds, "trail_none");
+            case "celebration" -> ownedCelebrationIds = withDefault(ownedCelebrationIds, "celebration_none");
             default -> throw new IllegalArgumentException("Unknown category: " + category);
         };
+    }
+
+    /** An old save's missing cosmetic set becomes a fresh set holding just the free default. */
+    private static Set<String> withDefault(Set<String> owned, String defaultId) {
+        Set<String> set = owned != null ? owned : new HashSet<>();
+        set.add(defaultId);
+        return set;
     }
 
     public boolean ownsPowerUp(String id) {
